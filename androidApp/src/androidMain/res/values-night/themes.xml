@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark-system-theme variant — same as the default values/themes.xml
+         since the app is dark-only either way. Kept around so the
+         dark-mode resource resolution doesn't fall back to the platform
+         default. -->
+    <style name="Theme.ChinoMobile" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

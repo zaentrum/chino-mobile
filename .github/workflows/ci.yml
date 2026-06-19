@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Fails the build if any internal hostname, competitor product name, or
+  # content-acquisition vocabulary leaks into the public tree. This client is a
+  # neutral, bring-your-own-server app for the zaentrum platform; product names
+  # (chino / musig / tv) and the reverse-DNS app ids (io.github.zaentrum.chino,
+  # cloud.nalet.chino.*) are stable identifiers and are intentionally allowed.
+  neutrality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+
+      - name: No internal hostnames
+        run: |
+          # Any *.nalet.cloud host (sso/identity/kb/gitlab/registry/chino...).
+          # The bare "nalet" brand token and "cloud.nalet.chino" package ids are
+          # allowed; only the ".cloud" host suffix is forbidden.
+          if rg -n -i --hidden \
+               --glob '!.git/**' \
+               --glob '!.github/workflows/ci.yml' \
+               --glob '!LICENSE' \
+               'nalet\.cloud' . ; then
+            echo "::error::Found internal hostname(s) ending in nalet.cloud"
+            exit 1
+          fi
+          echo "OK: no nalet.cloud hosts"
+
+      - name: No competitor product names
+        run: |
+          if rg -n -i --hidden \
+               --glob '!.git/**' \
+               --glob '!.github/workflows/ci.yml' \
+               --glob '!LICENSE' \
+               'jellyfin|plex|emby|kodi|naletflix' . ; then
+            echo "::error::Found competitor product name(s)"
+            exit 1
+          fi
+          echo "OK: no competitor names"
+
+      - name: No content-acquisition vocabulary
+        run: |
+          # Whole-word match for the download/piracy lexicon. User-facing text
+          # and code/comments must describe the client on its own terms.
+          if rg -n -i --hidden \
+               --glob '!.git/**' \
+               --glob '!.github/workflows/ci.yml' \
+               --glob '!LICENSE' \
+               '\b(indexer|tracker|usenet|arr|torrent)\b' . ; then
+            echo "::error::Found content-acquisition vocabulary"
+            exit 1
+          fi
+          echo "OK: no acquisition vocabulary"
+
+  # Builds installable debug APKs for both flavors on every push. iOS is not
+  # built here (the App Store path needs a macOS runner + signing).
+  android-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - name: Build debug APKs (beta + prod)
+        env:
+          # Cap Gradle heap so the build fits the runner; daemon off for CI.
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2048m"
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon -PprodPointsToBeta=false \
+            :androidApp:assembleBetaDebug :androidApp:assembleProdDebug
+
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: chino-mobile-debug-apks
+          path: androidApp/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+  # The `secrets` context is not available in a job-level `if:`, so a tiny job
+  # exposes "is the signing keystore configured?" as an output the release job
+  # can gate on.
+  check-secrets:
+    runs-on: ubuntu-latest
+    outputs:
+      has_keystore: ${{ steps.probe.outputs.has_keystore }}
+    steps:
+      - id: probe
+        env:
+          SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$SIGNING_KEYSTORE_B64" ]; then
+            echo "has_keystore=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_keystore=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Signed release artifacts (AAB + APK). Runs ONLY when a signing keystore is
+  # configured as a repo/org secret; absent secrets simply skip the job and
+  # never fail the build.
+  android-release:
+    runs-on: ubuntu-latest
+    needs: [neutrality, android-build, check-secrets]
+    if: ${{ needs.check-secrets.outputs.has_keystore == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - name: Decode upload keystore
+        env:
+          SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: echo "$SIGNING_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+
+      - name: Build signed release (AAB + APK)
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2048m"
+          VERSION_CODE: ${{ github.run_number }}
+          SIGNING_KEYSTORE_FILE: ${{ runner.temp }}/upload.jks
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon -PprodPointsToBeta=false \
+            :androidApp:bundleProdRelease :androidApp:assembleProdRelease
+
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chino-mobile-release
+          path: |
+            androidApp/build/outputs/bundle/**/*.aab
+            androidApp/build/outputs/apk/**/*.apk
+          if-no-files-found: error

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App is dark-mode-only: the Compose ChinoTheme forces the dark
+         colour scheme regardless of system setting, and every chrome
+         surface paints over a dark canvas (#0B0F19 / #0D1117 / #161B22).
+         The default values/ theme used to inherit Material.Light which
+         set `windowLightStatusBar=true` and asked the system to draw the
+         clock + signal icons in *dark* text — invisible against our
+         #161B22 status-bar accent strip. Forcing the dark Material
+         parent + `windowLight*=false` gives us white system-bar icons
+         that read against the chrome canvas, matching the dark
+         values-night variant. -->
+    <style name="Theme.ChinoMobile" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

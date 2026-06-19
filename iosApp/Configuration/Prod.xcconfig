@@ -1,0 +1,12 @@
+// Prod build configuration.
+
+CHINO_FLAVOR = prod
+CHINO_BUNDLE_ID = io.github.zaentrum.chino
+APP_DISPLAY_NAME = Chino
+
+// Neutral self-host client: the live server (API base + OIDC issuer/client) is
+// resolved from the in-app Add-Server flow. Leave these EMPTY for the public
+// build; an operator distributing their own build can fill in real values here.
+CHINO_API_BASE_URL =
+CHINO_OIDC_ISSUER =
+CHINO_OIDC_CLIENT_ID = chino-mobile

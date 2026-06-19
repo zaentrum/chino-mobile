@@ -1,0 +1,13 @@
+// Beta build configuration — installs side-by-side with Prod thanks to the
+// distinct bundle id and display name.
+
+CHINO_FLAVOR = beta
+CHINO_BUNDLE_ID = io.github.zaentrum.chino.beta
+APP_DISPLAY_NAME = Chino Beta
+
+// Neutral self-host client: the live server (API base + OIDC issuer/client) is
+// resolved from the in-app Add-Server flow. Leave these EMPTY for the public
+// build; an operator distributing their own build can fill in real values here.
+CHINO_API_BASE_URL =
+CHINO_OIDC_ISSUER =
+CHINO_OIDC_CLIENT_ID = chino-mobile-beta
