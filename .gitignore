@@ -1,0 +1,46 @@
+# Gradle / Kotlin
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+.kotlin/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+local.properties
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.hmap
+
+# iOS pods / XcodeGen-generated artefacts
+Pods/
+Podfile.lock
+iosApp/iosApp.xcodeproj/
+
+# Native build
+*.dSYM.zip
+*.dSYM
+
+# Secrets / signing — never commit any keystore (incl. debug.keystore) or
+# signing config. Debug keys are public, but the appliance regenerates its own.
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+GoogleService-Info.plist
+
+# Browser automation scratch output
+.playwright-cli/
+
+# OS
+.DS_Store
+Thumbs.db
