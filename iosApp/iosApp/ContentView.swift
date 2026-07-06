@@ -24,8 +24,10 @@ private struct ComposeViewControllerRepresentable: UIViewControllerRepresentable
             flavor: info["ChinoFlavor"] as? String ?? "prod",
             apiBaseUrl: info["ChinoApiBaseUrl"] as? String ?? "",
             oidcIssuer: info["ChinoOidcIssuer"] as? String ?? "",
-            oidcClientId: info["ChinoOidcClientId"] as? String ?? "chino-mobile",
-            displayName: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Chino"
+            oidcClientId: info["ChinoOidcClientId"] as? String ?? "chino",
+            displayName: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Chino",
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0",
+            appBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
         )
     }
 

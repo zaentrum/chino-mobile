@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.feedback
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,8 +33,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -128,9 +142,9 @@ fun BugReportDialog(
                 .padding(24.dp)
                 .widthIn(max = 480.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF161B22))
-                .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(16.dp))
+                .clip(RectangleShape)
+                .background(ChinoSurface)
+                .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
                 .clickable(enabled = false) {}
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -144,7 +158,7 @@ fun BugReportDialog(
                     Icon(
                         imageVector = Lucide.Check,
                         contentDescription = null,
-                        tint = Color(0xFF3FB950),
+                        tint = ChinoGreen,
                         modifier = Modifier.size(20.dp),
                     )
                     Text(
@@ -157,14 +171,14 @@ fun BugReportDialog(
                 }
                 Text(
                     text = "Thanks — the report landed on the dev backlog.",
-                    color = Color(0xFF8B949E),
+                    color = ChinoMuted,
                     fontSize = 13.sp,
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                 ) {
-                    DialogButton(label = "Close", containerColor = Color(0xFF21262D), onClick = onDismiss)
+                    DialogButton(label = "Close", containerColor = ChinoBorder2, onClick = onDismiss)
                 }
             } else {
                 Row(
@@ -174,7 +188,7 @@ fun BugReportDialog(
                     Icon(
                         imageVector = Lucide.Bug,
                         contentDescription = null,
-                        tint = Color(0xFF58A6FF),
+                        tint = ChinoCloudBlue,
                         modifier = Modifier.size(20.dp),
                     )
                     Text(
@@ -190,21 +204,21 @@ fun BugReportDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF0D1117))
-                        .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(8.dp)),
+                        .clip(RectangleShape)
+                        .background(ChinoBg2)
+                        .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape),
                 ) {
                     BasicTextField(
                         value = description,
                         onValueChange = { description = it },
                         enabled = !submitting,
                         textStyle = TextStyle(color = Color.White, fontSize = 14.sp, lineHeight = 20.sp),
-                        cursorBrush = SolidColor(Color(0xFF58A6FF)),
+                        cursorBrush = SolidColor(ChinoCloudBlue),
                         decorationBox = { inner ->
                             if (description.isEmpty()) {
                                 Text(
                                     text = "What went wrong? What did you expect to happen?",
-                                    color = Color(0xFF8B949E),
+                                    color = ChinoMuted,
                                     fontSize = 14.sp,
                                     lineHeight = 20.sp,
                                 )
@@ -228,15 +242,15 @@ fun BugReportDialog(
                             modifier = Modifier
                                 .height(64.dp)
                                 .aspectRatio(thumb.width.toFloat() / thumb.height.toFloat())
-                                .clip(RoundedCornerShape(6.dp))
-                                .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(6.dp))
+                                .clip(RectangleShape)
+                                .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
                                 .alpha(if (includeShot) 1f else 0.35f),
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(text = "Include screenshot", color = Color.White, fontSize = 14.sp)
                             Text(
                                 text = if (includeShot) "Attached to the report" else "Not attached",
-                                color = Color(0xFF8B949E),
+                                color = ChinoMuted,
                                 fontSize = 12.sp,
                             )
                         }
@@ -252,14 +266,14 @@ fun BugReportDialog(
                 ) {
                     DialogButton(
                         label = "Cancel",
-                        containerColor = Color(0xFF21262D),
+                        containerColor = ChinoBorder2,
                         enabled = !submitting,
                         onClick = onDismiss,
                     )
                     DialogButton(
                         label = "Submit",
-                        containerColor = Color(0xFF58A6FF),
-                        textColor = Color(0xFF0D1117),
+                        containerColor = ChinoCloudBlue,
+                        textColor = ChinoBg2,
                         enabled = !submitting && description.isNotBlank(),
                         busy = submitting,
                         onClick = submit,
@@ -281,8 +295,8 @@ private fun DialogButton(
 ) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(if (enabled || busy) containerColor else Color(0xFF1F2633))
+            .clip(RectangleShape)
+            .background(if (enabled || busy) containerColor else ChinoBorder)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
@@ -296,7 +310,7 @@ private fun DialogButton(
         } else {
             Text(
                 text = label,
-                color = if (enabled) textColor else Color(0xFF8B949E),
+                color = if (enabled) textColor else ChinoMuted,
                 fontSize = 14.sp,
             )
         }
@@ -311,8 +325,8 @@ private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit) {
         modifier = Modifier
             .width(40.dp)
             .height(22.dp)
-            .clip(CircleShape)
-            .background(if (value) Color(0xFF58A6FF) else Color(0xFF1F2633))
+            .clip(RectangleShape)
+            .background(if (value) ChinoCloudBlue else ChinoBorder)
             .clickable { onChange(!value) },
         contentAlignment = if (value) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
@@ -320,7 +334,7 @@ private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit) {
             modifier = Modifier
                 .padding(2.dp)
                 .size(18.dp)
-                .clip(CircleShape)
+                .clip(RectangleShape)
                 .background(Color.White),
         )
     }

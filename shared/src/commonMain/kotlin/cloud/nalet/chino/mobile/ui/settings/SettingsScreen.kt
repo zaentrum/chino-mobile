@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.settings
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,8 +30,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -180,7 +194,7 @@ fun SettingsSection() {
                 text = "Default audio language. Picks the closest matching track on each item. " +
                     "Choose Original to follow the item's source language. Manual switches in the " +
                     "player only affect the current playback.",
-                color = Color(0xFF8B949E),
+                color = ChinoMuted,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
@@ -195,7 +209,7 @@ fun SettingsSection() {
             Text(
                 text = "Default subtitle language. Picks the closest matching track on each item. " +
                     "Choose Off to keep subtitles disabled by default.",
-                color = Color(0xFF8B949E),
+                color = ChinoMuted,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
@@ -236,17 +250,17 @@ private fun ActionRow(label: String, subtitle: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF161B22))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = label, color = Color.White, fontSize = 14.sp)
-            Text(text = subtitle, color = Color(0xFF8B949E), fontSize = 12.sp)
+            Text(text = subtitle, color = ChinoMuted, fontSize = 12.sp)
         }
-        Text(text = ">", color = Color(0xFF8B949E), fontSize = 16.sp)
+        Text(text = ">", color = ChinoMuted, fontSize = 16.sp)
     }
 }
 
@@ -255,8 +269,8 @@ private fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF161B22))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
             .clickable { onChange(!value) }
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -309,8 +323,8 @@ private fun LangPickerRow(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF161B22))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         FlowRow(
@@ -321,8 +335,8 @@ private fun LangPickerRow(
                 val on = value.equals(code, ignoreCase = true)
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (on) Color(0xFF58A6FF) else Color(0xFF1F2633))
+                        .clip(RectangleShape)
+                        .background(if (on) ChinoCloudBlue else ChinoBorder)
                         .clickable { onSelect(code) }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
@@ -347,8 +361,8 @@ private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit) {
         modifier = Modifier
             .width(40.dp)
             .height(22.dp)
-            .clip(CircleShape)
-            .background(if (value) Color(0xFF58A6FF) else Color(0xFF1F2633))
+            .clip(RectangleShape)
+            .background(if (value) ChinoCloudBlue else ChinoBorder)
             .clickable { onChange(!value) },
         contentAlignment = if (value) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
@@ -356,7 +370,7 @@ private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit) {
             modifier = Modifier
                 .padding(2.dp)
                 .size(18.dp)
-                .clip(CircleShape)
+                .clip(RectangleShape)
                 .background(Color.White),
         )
     }

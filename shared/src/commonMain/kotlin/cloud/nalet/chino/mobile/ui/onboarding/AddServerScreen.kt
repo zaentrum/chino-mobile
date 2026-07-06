@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.onboarding
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -123,7 +138,7 @@ class AddServerScreen(private val changeServer: Boolean = false) : Screen {
                     )
                     Text(
                         text = "Enter the address of your Chino server.",
-                        color = Color(0xFF8B949E),
+                        color = ChinoMuted,
                         fontSize = 15.sp,
                         textAlign = TextAlign.Center,
                     )
@@ -171,7 +186,7 @@ class AddServerScreen(private val changeServer: Boolean = false) : Screen {
                             horizontalAlignment = Alignment.Start,
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(text = "Recent", color = Color(0xFF8B949E), fontSize = 13.sp)
+                            Text(text = "Recent", color = ChinoMuted, fontSize = 13.sp)
                             recents.forEach { r ->
                                 SecondaryButton(
                                     label = r.substringAfter("://"),
@@ -185,10 +200,10 @@ class AddServerScreen(private val changeServer: Boolean = false) : Screen {
                     if (changeServer) {
                         Text(
                             text = "Cancel",
-                            color = Color(0xFF8B949E),
+                            color = ChinoMuted,
                             fontSize = 14.sp,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RectangleShape)
                                 .clickable(enabled = !probing) { nav.pop() }
                                 .padding(8.dp),
                         )
@@ -211,12 +226,12 @@ private fun UrlField(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF161B22))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) Color(0xFF58A6FF) else Color(0xFF30363D),
-                shape = RoundedCornerShape(8.dp),
+                color = if (focused) ChinoCloudBlue else ChinoBorder,
+                shape = RectangleShape,
             )
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -228,7 +243,7 @@ private fun UrlField(
                 singleLine = true,
                 enabled = enabled,
                 textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
-                cursorBrush = SolidColor(Color(0xFF58A6FF)),
+                cursorBrush = SolidColor(ChinoCloudBlue),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,
                     imeAction = ImeAction.Go,
@@ -240,7 +255,7 @@ private fun UrlField(
                         // URL on the store build, which starts with an empty field.
                         Text(
                             text = "https://media.example.com",
-                            color = Color(0xFF8B949E),
+                            color = ChinoMuted,
                             fontSize = 16.sp,
                         )
                     }
@@ -260,14 +275,14 @@ private fun PrimaryButton(label: String, enabled: Boolean, onClick: () -> Unit) 
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (enabled) Color(0xFF58A6FF) else Color(0xFF1F2633))
+            .clip(RectangleShape)
+            .background(if (enabled) ChinoCloudBlue else ChinoBorder)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            color = if (enabled) Color(0xFF0D1117) else Color(0xFF8B949E),
+            color = if (enabled) ChinoBg2 else ChinoMuted,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -280,9 +295,9 @@ private fun SecondaryButton(label: String, enabled: Boolean, onClick: () -> Unit
         modifier = Modifier
             .fillMaxWidth()
             .height(44.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF161B22))
-            .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(8.dp))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
+            .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.components
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -27,8 +43,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -115,7 +129,7 @@ fun HeroBanner(
                 .fillMaxWidth()
                 .height(if (isWide) 500.dp else 280.dp)
                 // CDP-verified: web hero is `rounded-xl` = 12px, not 16.
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RectangleShape)
                 // CDP-verified: web hero card uses `bg-black` = pure
                 // black (rgb 0,0,0), not the canvas color. The mask on
                 // the backdrop image fades to this black, which is the
@@ -156,7 +170,7 @@ fun HeroBanner(
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
-                                .clip(CircleShape)
+                                .clip(RectangleShape)
                                 .background(
                                     if (isActive) Color.White else Color.White.copy(alpha = 0.3f),
                                 )
@@ -235,7 +249,7 @@ private fun HeroContentNarrow(item: Item, baseUrl: String, streamToken: String, 
             HeroButton(
                 label = "Play",
                 icon = Lucide.Play,
-                background = Color(0xFF58A6FF),
+                background = ChinoCloudBlue,
                 contentColor = Color.White,
                 onClick = { onPlay?.invoke(item.id) },
             )
@@ -330,7 +344,7 @@ private fun HeroContentWide(item: Item, baseUrl: String, streamToken: String, on
             item.overview?.let { overview ->
                 Text(
                     text = overview,
-                    color = Color(0xFFC9D1D9),
+                    color = ChinoFg2,
                     fontSize = 18.sp,
                     lineHeight = 28.sp,
                     maxLines = 3,
@@ -357,7 +371,7 @@ private fun HeroContentWide(item: Item, baseUrl: String, streamToken: String, on
             HeroButton(
                 label = "Play",
                 icon = Lucide.Play,
-                background = Color(0xFF58A6FF),
+                background = ChinoCloudBlue,
                 contentColor = Color.White,
                 onClick = { onPlay?.invoke(item.id) },
             )
@@ -396,8 +410,8 @@ private fun YearRatingChipRow(item: Item) {
             }
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF58A6FF))
+                    .clip(RectangleShape)
+                    .background(ChinoCloudBlue)
                     .padding(horizontal = 8.dp, vertical = 2.dp),
             ) {
                 Text(
@@ -426,7 +440,7 @@ private fun HeroButton(
     // text-base = 16px, icon SVG 20×20. At tablet's 1280dp we're md+.
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RectangleShape)
             .background(background)
             .clickable(onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -536,8 +550,8 @@ private fun SeeAllTile(cardWidth: Dp, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .width(cardWidth)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF161B22))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
             .clickable(onClick = onClick),
     ) {
         Box(
@@ -553,20 +567,20 @@ private fun SeeAllTile(cardWidth: Dp, onClick: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF21262D)),
+                        .clip(RectangleShape)
+                        .background(ChinoBorder2),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Lucide.ChevronRight,
                         contentDescription = null,
-                        tint = Color(0xFF58A6FF),
+                        tint = ChinoCloudBlue,
                         modifier = Modifier.size(24.dp),
                     )
                 }
                 Text(
                     text = "See all",
-                    color = Color(0xFF58A6FF),
+                    color = ChinoCloudBlue,
                     fontSize = 16.sp,
                     lineHeight = 24.sp,
                     fontWeight = FontWeight.Medium,
@@ -640,8 +654,8 @@ fun MediaCard(
             // tablet/wide). Height wraps: 2:3 poster + info block, so cards stay
             // uniform (title/meta are single-line) and scale with the width.
             .width(cardWidth)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF161B22))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
             .let { base ->
                 // Long-press opens the overflow menu when any menu action is
                 // wired (phone-appropriate affordance, web parity for the
@@ -669,7 +683,7 @@ fun MediaCard(
                 modifier = Modifier.fillMaxSize(),
             )
             // Watched badge — top-end emerald circle with a white check.
-            // Mirrors the TV PosterCard badge (CircleShape, #2EA043). Shown
+            // Mirrors the TV PosterCard badge (RectangleShape, #2EA043). Shown
             // when chino-api reports a watched_at timestamp for the item.
             if (item.watchedAt != null) {
                 Box(
@@ -677,8 +691,8 @@ fun MediaCard(
                         .align(Alignment.TopEnd)
                         .padding(6.dp)
                         .size(20.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF2EA043)),
+                        .clip(RectangleShape)
+                        .background(ChinoGreen),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -697,14 +711,14 @@ fun MediaCard(
                         .align(Alignment.TopStart)
                         .padding(6.dp)
                         .size(20.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xCC161B22)),
+                        .clip(RectangleShape)
+                        .background(ChinoSurface.copy(alpha = 0.8f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Lucide.BookmarkCheck,
                         contentDescription = "Saved",
-                        tint = Color(0xFF58A6FF),
+                        tint = ChinoCloudBlue,
                         modifier = Modifier.size(12.dp),
                     )
                 }
@@ -728,7 +742,7 @@ fun MediaCard(
                     Box(
                         modifier = Modifier
                             .size(28.dp)
-                            .clip(CircleShape)
+                            .clip(RectangleShape)
                             .background(Color(0x99000000))
                             .clickable { menuOpen = true },
                         contentAlignment = Alignment.Center,
@@ -787,13 +801,13 @@ fun MediaCard(
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
                         .height(4.dp)
-                        .background(Color(0xFF30363D)),
+                        .background(ChinoBorder),
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
                             .fillMaxWidth(progress.coerceIn(0f, 100f) / 100f)
-                            .background(Color(0xFF58A6FF)),
+                            .background(ChinoCloudBlue),
                     )
                 }
             }
@@ -812,7 +826,7 @@ fun MediaCard(
         ) {
             Text(
                 text = item.title,
-                color = Color(0xFFC9D1D9),
+                color = ChinoFg2,
                 fontSize = 16.sp,
                 lineHeight = 24.sp,
                 fontWeight = FontWeight.Medium,
@@ -829,15 +843,15 @@ fun MediaCard(
                     Text(
                         text = "S${episodeBadge.season.toString().padStart(2, '0')}" +
                             "E${episodeBadge.episode.toString().padStart(2, '0')}",
-                        color = Color(0xFF58A6FF),
+                        color = ChinoCloudBlue,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
                     )
                     episodeBadge.episodeTitle?.let { epTitle ->
-                        Text("·", color = Color(0xFF8B949E), fontSize = 14.sp, lineHeight = 20.sp)
+                        Text("·", color = ChinoMuted, fontSize = 14.sp, lineHeight = 20.sp)
                         Text(
                             text = epTitle,
-                            color = Color(0xFF8B949E),
+                            color = ChinoMuted,
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
                             maxLines = 1,
@@ -853,15 +867,15 @@ fun MediaCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         item.year?.let {
-                            Text(it.toString(), color = Color(0xFF8B949E), fontSize = 14.sp, lineHeight = 20.sp)
+                            Text(it.toString(), color = ChinoMuted, fontSize = 14.sp, lineHeight = 20.sp)
                         }
                         item.rating?.let { r ->
                             if (item.year != null) {
-                                Text("•", color = Color(0xFF8B949E), fontSize = 14.sp, lineHeight = 20.sp)
+                                Text("•", color = ChinoMuted, fontSize = 14.sp, lineHeight = 20.sp)
                             }
                             Text(
                                 text = ((r * 10).toInt() / 10.0).toString(),
-                                color = Color(0xFF58A6FF),
+                                color = ChinoCloudBlue,
                                 fontSize = 14.sp,
                                 lineHeight = 20.sp,
                             )

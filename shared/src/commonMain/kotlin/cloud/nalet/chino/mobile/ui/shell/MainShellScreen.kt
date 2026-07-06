@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.shell
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,8 +39,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import com.composables.icons.lucide.Bell
 import com.composables.icons.lucide.Bookmark
@@ -248,12 +262,12 @@ private fun SideRail(active: Section, onChange: (Section) -> Unit) {
     // divider so the corner where rail + topbar meet aligns
     // pixel-perfectly via the layout system (drawBehind on adjacent
     // chrome would land at slightly different float positions).
-    val dividerColor = Color(0xFF30363D)
+    val dividerColor = ChinoBorder
     Row(
         modifier = Modifier
             .width(80.dp)
             .fillMaxHeight()
-            .background(Color(0xFF0D1117)),
+            .background(ChinoBg2),
     ) {
         Column(
             modifier = Modifier
@@ -301,7 +315,7 @@ private fun SideRail(active: Section, onChange: (Section) -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Color(0xFF30363D)),
+                    .background(ChinoBorder),
             )
         }
         Column(
@@ -348,15 +362,15 @@ private fun RailButton(section: Section, isActive: Boolean, onClick: () -> Unit)
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isActive) Color(0xFF161B22) else Color.Transparent)
+            .clip(RectangleShape)
+            .background(if (isActive) ChinoSurface else Color.Transparent)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = section.icon,
             contentDescription = section.label,
-            tint = if (isActive) Color(0xFF58A6FF) else Color(0xFF8B949E),
+            tint = if (isActive) ChinoCloudBlue else ChinoMuted,
             modifier = Modifier.size(24.dp),
         )
     }
@@ -385,8 +399,8 @@ private fun BottomNav(active: Section, onChange: (Section) -> Unit) {
     // TopBar bottom divider) so layout pins it pixel-perfectly. The
     // outer Column carries the canvas bg + edge-to-edge background; the
     // inner Row holds the icon cluster + navigationBars inset.
-    val dividerColor = Color(0xFF30363D)
-    Column(modifier = Modifier.fillMaxWidth().background(Color(0xFF0D1117))) {
+    val dividerColor = ChinoBorder
+    Column(modifier = Modifier.fillMaxWidth().background(ChinoBg2)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -412,7 +426,7 @@ private fun BottomNav(active: Section, onChange: (Section) -> Unit) {
 private fun BottomNavItem(section: Section, isActive: Boolean, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RectangleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -421,12 +435,12 @@ private fun BottomNavItem(section: Section, isActive: Boolean, onClick: () -> Un
         Icon(
             imageVector = section.icon,
             contentDescription = section.label,
-            tint = if (isActive) Color(0xFF58A6FF) else Color(0xFF8B949E),
+            tint = if (isActive) ChinoCloudBlue else ChinoMuted,
             modifier = Modifier.size(22.dp),
         )
         Text(
             text = section.label,
-            color = if (isActive) Color(0xFF58A6FF) else Color(0xFF8B949E),
+            color = if (isActive) ChinoCloudBlue else ChinoMuted,
             fontSize = 11.sp,
             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
         )
@@ -455,8 +469,8 @@ private fun TopBar(searchQuery: String, onSearchChange: (String) -> Unit) {
     // line ~11dp above the sibling SideRail's logo-cell divider —
     // structural Box-as-divider lets the layout system pin both to the
     // exact same Y so the rail/topbar corner reads as one clean L.
-    val dividerColor = Color(0xFF30363D)
-    Column(modifier = Modifier.fillMaxWidth().background(Color(0xFF0D1117))) {
+    val dividerColor = ChinoBorder
+    Column(modifier = Modifier.fillMaxWidth().background(ChinoBg2)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -528,9 +542,9 @@ private fun SearchField(modifier: Modifier = Modifier, query: String, onChange: 
     Row(
         modifier = modifier
             .height(42.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF161B22))
-            .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(8.dp))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
+            .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
             .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -538,7 +552,7 @@ private fun SearchField(modifier: Modifier = Modifier, query: String, onChange: 
         Icon(
             imageVector = Lucide.Search,
             contentDescription = null,
-            tint = Color(0xFFC9D1D9),
+            tint = ChinoFg2,
             modifier = Modifier.size(20.dp),
         )
         androidx.compose.foundation.text.BasicTextField(
@@ -546,16 +560,16 @@ private fun SearchField(modifier: Modifier = Modifier, query: String, onChange: 
             onValueChange = onChange,
             singleLine = true,
             textStyle = androidx.compose.ui.text.TextStyle(
-                color = Color(0xFFC9D1D9),
+                color = ChinoFg2,
                 fontSize = 16.sp,
                 lineHeight = 24.sp,
             ),
-            cursorBrush = androidx.compose.ui.graphics.SolidColor(Color(0xFF58A6FF)),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(ChinoCloudBlue),
             decorationBox = { inner ->
                 if (query.isEmpty()) {
                     Text(
                         text = "Search movies, shows…",
-                        color = Color(0xFF8B949E),
+                        color = ChinoMuted,
                         fontSize = 16.sp,
                         lineHeight = 24.sp,
                     )
@@ -570,14 +584,14 @@ private fun SearchField(modifier: Modifier = Modifier, query: String, onChange: 
             Box(
                 modifier = Modifier
                     .size(24.dp)
-                    .clip(CircleShape)
+                    .clip(RectangleShape)
                     .clickable { onChange("") },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Lucide.X,
                     contentDescription = "Clear",
-                    tint = Color(0xFF8B949E),
+                    tint = ChinoMuted,
                     modifier = Modifier.size(16.dp),
                 )
             }
@@ -595,7 +609,7 @@ private fun IconCell(icon: ImageVector, contentDescription: String, onClick: () 
     Box(
         modifier = Modifier
             .size(36.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RectangleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

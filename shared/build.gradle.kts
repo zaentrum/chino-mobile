@@ -9,6 +9,14 @@ plugins {
 }
 
 kotlin {
+    // App-wide experimental opt-ins. Top-level compilerOptions propagates to
+    // ALL targets; the Native/iOS compile is stricter than Android's (FlowRow /
+    // FlowColumn layout + foundation APIs used across the shared Compose UI).
+    compilerOptions {
+        optIn.add("androidx.compose.foundation.ExperimentalFoundationApi")
+        optIn.add("androidx.compose.foundation.layout.ExperimentalLayoutApi")
+    }
+
     // jvmTarget lives on each JVM-flavoured target — multiplatform's top-level
     // compilerOptions doesn't expose it, so we set it on androidTarget only.
     androidTarget {
@@ -55,10 +63,12 @@ kotlin {
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor)
 
-            // Lucide icons, KMP-compatible. Replaces the closest-match
-            // Material outlined glyphs with the actual lucide-react set
-            // chino-web uses (one-for-one parity).
-            implementation(libs.icons.lucide.cmp)
+            // Lucide icons — vendored as ImageVectors in
+            // commonMain/com/composables/icons/lucide/Lucide.kt (same package +
+            // accessor API). The external icons-lucide-cmp artifact only ships a
+            // Kotlin 2.2.x iOS klib (ABI 2.2.0), unreadable by this project's
+            // Kotlin 2.1.0 Native compiler; vendoring keeps iOS buildable
+            // without a toolchain bump. Re-generate via tools/gen_lucide.py.
         }
 
         androidMain.dependencies {

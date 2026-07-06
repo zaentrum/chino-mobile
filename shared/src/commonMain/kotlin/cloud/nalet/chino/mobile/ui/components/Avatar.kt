@@ -1,10 +1,25 @@
 package cloud.nalet.chino.mobile.ui.components
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -55,7 +70,7 @@ fun Avatar(
     Box(
         modifier = Modifier
             .size(size)
-            .clip(CircleShape)
+            .clip(RectangleShape)
             .background(bg)
             .let { if (onClick != null) it.clickable(onClick = onClick) else it },
         contentAlignment = Alignment.Center,
@@ -75,7 +90,7 @@ fun Avatar(
             AsyncImage(
                 model = gravatar,
                 contentDescription = "Avatar for $displayName",
-                modifier = Modifier.size(size).clip(CircleShape),
+                modifier = Modifier.size(size).clip(RectangleShape),
             )
         }
     }
@@ -85,9 +100,9 @@ fun Avatar(
  *  shows the same colour everywhere they sign in. */
 private fun avatarColor(seed: String): Color {
     val palette = listOf(
-        Color(0xFF58A6FF), // brand blue
+        ChinoCloudBlue, // brand blue
         Color(0xFFFFB454), // amber
-        Color(0xFF2EA043), // emerald
+        ChinoGreen, // emerald
         Color(0xFF9E86FF), // violet
         Color(0xFFFF6B6B), // coral
         Color(0xFF14B8A6), // teal

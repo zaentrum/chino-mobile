@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.search
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,7 +29,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -125,8 +140,8 @@ private fun SearchInput(query: String, onChange: (String) -> Unit) {
             .fillMaxWidth()
             .padding(16.dp)
             .height(48.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF161B22))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -134,7 +149,7 @@ private fun SearchInput(query: String, onChange: (String) -> Unit) {
         Icon(
             imageVector = Lucide.Search,
             contentDescription = null,
-            tint = Color(0xFF8B949E),
+            tint = ChinoMuted,
             modifier = Modifier.size(20.dp),
         )
         BasicTextField(
@@ -142,12 +157,12 @@ private fun SearchInput(query: String, onChange: (String) -> Unit) {
             onValueChange = onChange,
             singleLine = true,
             textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
-            cursorBrush = SolidColor(Color(0xFF58A6FF)),
+            cursorBrush = SolidColor(ChinoCloudBlue),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { /* search fires reactively */ }),
             decorationBox = { inner ->
                 if (query.isEmpty()) {
-                    Text(text = "Search movies, shows…", color = Color(0xFF8B949E), fontSize = 16.sp)
+                    Text(text = "Search movies, shows…", color = ChinoMuted, fontSize = 16.sp)
                 }
                 inner()
             },
@@ -204,7 +219,7 @@ private fun ResultRow(item: Item, baseUrl: String, streamToken: String, onTap: (
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RectangleShape)
             .clickable { onTap(item.id) }
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -213,8 +228,8 @@ private fun ResultRow(item: Item, baseUrl: String, streamToken: String, onTap: (
         Box(
             modifier = Modifier
                 .size(width = 60.dp, height = 90.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF161B22)),
+                .clip(RectangleShape)
+                .background(ChinoSurface),
         ) {
             AsyncImage(
                 model = "$baseUrl/v1/items/${item.id}/poster?stream=$streamToken",
@@ -229,7 +244,7 @@ private fun ResultRow(item: Item, baseUrl: String, streamToken: String, onTap: (
                 item.rating?.let { ((it * 10).toInt() / 10.0).toString() },
             ).joinToString(" • ")
             if (sub.isNotEmpty()) {
-                Text(text = sub, color = Color(0xFF8B949E), fontSize = 12.sp)
+                Text(text = sub, color = ChinoMuted, fontSize = 12.sp)
             }
         }
     }
@@ -240,7 +255,7 @@ private fun EmptyHint(text: String, isError: Boolean = false) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
             text = text,
-            color = if (isError) MaterialTheme.colorScheme.error else Color(0xFF8B949E),
+            color = if (isError) MaterialTheme.colorScheme.error else ChinoMuted,
             fontSize = 14.sp,
         )
     }

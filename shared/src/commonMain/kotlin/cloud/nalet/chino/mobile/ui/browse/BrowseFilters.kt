@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.browse
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,7 +31,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -178,7 +193,7 @@ private fun hasActiveFilter(q: BrowseQuery): Boolean =
 private fun FilterLabel(text: String) {
     Text(
         text = text,
-        color = Color(0xFF8B949E),
+        color = ChinoMuted,
         fontSize = 13.sp,
         modifier = Modifier.widthIn(min = 56.dp),
     )
@@ -191,15 +206,15 @@ private fun FilterLabel(text: String) {
 private fun ClearFiltersChip(onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(Color(0xFF161B22))
-            .border(BorderStroke(1.dp, Color(0xFF30363D)), RoundedCornerShape(999.dp))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
+            .border(BorderStroke(1.dp, ChinoBorder), RectangleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
         Text(
             text = "Clear filters",
-            color = Color(0xFF8B949E),
+            color = ChinoMuted,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
         )
@@ -208,14 +223,14 @@ private fun ClearFiltersChip(onClick: () -> Unit) {
 
 @Composable
 private fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
-    val bg = if (active) Color(0xFF58A6FF) else Color(0xFF161B22)
-    val border = if (active) Color(0xFF58A6FF) else Color(0xFF30363D)
-    val fg = if (active) Color.White else Color(0xFFC9D1D9)
+    val bg = if (active) ChinoCloudBlue else ChinoSurface
+    val border = if (active) ChinoCloudBlue else ChinoBorder
+    val fg = if (active) Color.White else ChinoFg2
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
+            .clip(RectangleShape)
             .background(bg)
-            .border(BorderStroke(1.dp, border), RoundedCornerShape(999.dp))
+            .border(BorderStroke(1.dp, border), RectangleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {

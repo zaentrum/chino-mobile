@@ -4,6 +4,7 @@ import cloud.nalet.chino.mobile.currentTimeMillis
 import cloud.nalet.chino.mobile.data.api.ChinoApi
 import cloud.nalet.chino.mobile.data.api.TelemetryBatch
 import cloud.nalet.chino.mobile.data.api.TelemetryEvent
+import kotlin.concurrent.Volatile
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch

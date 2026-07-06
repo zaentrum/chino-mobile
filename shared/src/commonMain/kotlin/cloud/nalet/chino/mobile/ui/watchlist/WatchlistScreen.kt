@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.watchlist
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,7 +34,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -281,7 +296,7 @@ private fun EmptyShelf(list: Watchlist, onOpen: () -> Unit) {
         )
         Text(
             text = "Save titles with the + button on any movie or show.",
-            color = Color(0xFF8B949E),
+            color = ChinoMuted,
             fontSize = 14.sp,
             lineHeight = 20.sp,
             modifier = Modifier.padding(horizontal = 16.dp),
@@ -293,8 +308,8 @@ private fun EmptyShelf(list: Watchlist, onOpen: () -> Unit) {
 private fun NewListChip(onClick: () -> Unit) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(999.dp))
+            .clip(RectangleShape)
+            .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -303,10 +318,10 @@ private fun NewListChip(onClick: () -> Unit) {
         Icon(
             imageVector = Lucide.Plus,
             contentDescription = "New list",
-            tint = Color(0xFF8B949E),
+            tint = ChinoMuted,
             modifier = Modifier.size(16.dp),
         )
-        Text(text = "New list", color = Color(0xFFC9D1D9), fontSize = 14.sp)
+        Text(text = "New list", color = ChinoFg2, fontSize = 14.sp)
     }
 }
 
@@ -351,7 +366,7 @@ private fun ListMoreView(
                 )
                 Text(
                     text = "· ${list.itemCount}",
-                    color = Color(0xFF8B949E),
+                    color = ChinoMuted,
                     fontSize = 16.sp,
                 )
             }
@@ -366,7 +381,7 @@ private fun ListMoreView(
             items.isEmpty() -> Center {
                 Text(
                     "This list is empty. Add things from a title's page.",
-                    color = Color(0xFF8B949E),
+                    color = ChinoMuted,
                 )
             }
             else -> LazyVerticalGrid(
@@ -399,7 +414,7 @@ private fun HeaderIconButton(icon: ImageVector, contentDescription: String, onCl
     Box(
         modifier = Modifier
             .size(36.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RectangleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -449,9 +464,9 @@ internal fun NameListDialog(
         Column(
             modifier = Modifier
                 .padding(24.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF161B22))
-                .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(16.dp))
+                .clip(RectangleShape)
+                .background(ChinoSurface)
+                .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
                 .clickable(enabled = false) {}
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -466,21 +481,21 @@ internal fun NameListDialog(
                 value = name,
                 onValueChange = { if (it.length <= 60) name = it },
                 singleLine = true,
-                placeholder = { Text("List name", color = Color(0xFF8B949E)) },
+                placeholder = { Text("List name", color = ChinoMuted) },
                 textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 16.sp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { if (valid) onConfirm(trimmed) }),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFF0D1117),
-                    unfocusedContainerColor = Color(0xFF0D1117),
-                    focusedIndicatorColor = Color(0xFF58A6FF),
-                    unfocusedIndicatorColor = Color(0xFF30363D),
-                    cursorColor = Color(0xFF58A6FF),
+                    focusedContainerColor = ChinoBg2,
+                    unfocusedContainerColor = ChinoBg2,
+                    focusedIndicatorColor = ChinoCloudBlue,
+                    unfocusedIndicatorColor = ChinoBorder,
+                    cursorColor = ChinoCloudBlue,
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
             errorText?.let {
-                Text(text = it, color = Color(0xFFF85149), fontSize = 13.sp)
+                Text(text = it, color = ChinoRed, fontSize = 13.sp)
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -488,13 +503,13 @@ internal fun NameListDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 onDelete?.let {
-                    DialogTextButton(label = "Delete list", color = Color(0xFFF85149), onClick = it)
+                    DialogTextButton(label = "Delete list", color = ChinoRed, onClick = it)
                 }
                 Box(modifier = Modifier.weight(1f))
-                DialogButton(label = "Cancel", containerColor = Color(0xFF21262D), onClick = onDismiss)
+                DialogButton(label = "Cancel", containerColor = ChinoBorder2, onClick = onDismiss)
                 DialogButton(
                     label = confirmLabel,
-                    containerColor = if (valid) Color(0xFF58A6FF) else Color(0xFF30363D),
+                    containerColor = if (valid) ChinoCloudBlue else ChinoBorder,
                     onClick = { if (valid) onConfirm(trimmed) },
                 )
             }
@@ -518,9 +533,9 @@ private fun ConfirmDeleteListDialog(
         Column(
             modifier = Modifier
                 .padding(24.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF161B22))
-                .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(16.dp))
+                .clip(RectangleShape)
+                .background(ChinoSurface)
+                .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
                 .clickable(enabled = false) {}
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -534,12 +549,12 @@ private fun ConfirmDeleteListDialog(
             )
             Text(
                 text = "This removes the list and everything in it. Titles stay in your other lists.",
-                color = Color(0xFFC9D1D9),
+                color = ChinoFg2,
                 fontSize = 13.sp,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DialogButton(label = "Cancel", containerColor = Color(0xFF21262D), onClick = onDismiss)
-                DialogButton(label = "Delete", containerColor = Color(0xFFDA3633), onClick = onConfirm)
+                DialogButton(label = "Cancel", containerColor = ChinoBorder2, onClick = onDismiss)
+                DialogButton(label = "Delete", containerColor = ChinoRed, onClick = onConfirm)
             }
         }
     }
@@ -549,7 +564,7 @@ private fun ConfirmDeleteListDialog(
 internal fun DialogButton(label: String, containerColor: Color, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RectangleShape)
             .background(containerColor)
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp),
@@ -563,7 +578,7 @@ internal fun DialogButton(label: String, containerColor: Color, onClick: () -> U
 private fun DialogTextButton(label: String, color: Color, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RectangleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,

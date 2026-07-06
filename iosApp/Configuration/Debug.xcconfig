@@ -1,0 +1,17 @@
+// Debug build configuration — io.github.zaentrum.chino.debug so a dev build can
+// install alongside a release (mirrors Android's .debug suffix). One app id, no
+// beta flavor.
+
+CHINO_FLAVOR = prod
+CHINO_BUNDLE_ID = io.github.zaentrum.chino.debug
+APP_DISPLAY_NAME = Chino
+
+// Pin which shared-framework variant embedAndSign builds: Debug -> debug.
+KOTLIN_FRAMEWORK_BUILD_TYPE = debug
+
+// Neutral self-host client: the live server (API base + OIDC issuer/client) is
+// resolved from the in-app Add-Server flow. Leave these EMPTY for the public
+// build; an operator distributing their own build can fill in real values here.
+CHINO_API_BASE_URL =
+CHINO_OIDC_ISSUER =
+CHINO_OIDC_CLIENT_ID = chino

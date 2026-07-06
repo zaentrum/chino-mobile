@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.auth
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,8 +33,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -135,7 +149,7 @@ class AccountPickerScreen : Screen {
                         )
                         Text(
                             text = "Tap to switch. Tap the sign-out badge to remove an account.",
-                            color = Color(0xFF8B949E),
+                            color = ChinoMuted,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
                         )
@@ -198,7 +212,7 @@ private fun AccountTile(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RectangleShape)
             .clickable(enabled = enabled, onClick = onSelect)
             .padding(8.dp),
     ) {
@@ -206,10 +220,10 @@ private fun AccountTile(
             Box(
                 modifier = Modifier
                     .size(96.dp)
-                    .clip(CircleShape)
+                    .clip(RectangleShape)
                     .then(
                         if (isActive) {
-                            Modifier.border(width = 3.dp, color = Color(0xFF58A6FF), shape = CircleShape)
+                            Modifier.border(width = 3.dp, color = ChinoCloudBlue, shape = RectangleShape)
                         } else Modifier,
                     ),
                 contentAlignment = Alignment.Center,
@@ -222,23 +236,23 @@ private fun AccountTile(
             Box(
                 modifier = Modifier
                     .size(28.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xCC0D1117))
-                    .border(width = 1.dp, color = Color(0xFF30363D), shape = CircleShape)
+                    .clip(RectangleShape)
+                    .background(ChinoBg2.copy(alpha = 0.8f))
+                    .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
                     .clickable(enabled = enabled, onClick = onRemove),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Lucide.LogOut,
                     contentDescription = "Remove ${account.displayName}",
-                    tint = Color(0xFFC9D1D9),
+                    tint = ChinoFg2,
                     modifier = Modifier.size(14.dp),
                 )
             }
         }
         Text(
             text = account.displayName,
-            color = if (isActive) Color.White else Color(0xFFC9D1D9),
+            color = if (isActive) Color.White else ChinoFg2,
             fontSize = 14.sp,
             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
             textAlign = TextAlign.Center,
@@ -255,14 +269,14 @@ private fun AddAccountTile(signing: Boolean, onClick: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RectangleShape)
             .clickable(enabled = !signing, onClick = onClick)
             .padding(8.dp),
     ) {
         Box(
             modifier = Modifier
                 .size(96.dp)
-                .clip(CircleShape)
+                .clip(RectangleShape)
                 .background(Color(0x1AFFFFFF)),
             contentAlignment = Alignment.Center,
         ) {
@@ -279,7 +293,7 @@ private fun AddAccountTile(signing: Boolean, onClick: () -> Unit) {
         }
         Text(
             text = if (signing) "Signing in…" else "Add account",
-            color = Color(0xFFC9D1D9),
+            color = ChinoFg2,
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
@@ -304,9 +318,9 @@ private fun ConfirmRemoveDialog(account: Account, onConfirm: () -> Unit, onDismi
         Column(
             modifier = Modifier
                 .padding(24.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF161B22))
-                .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(16.dp))
+                .clip(RectangleShape)
+                .background(ChinoSurface)
+                .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
                 .clickable(enabled = false) {}
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -322,13 +336,13 @@ private fun ConfirmRemoveDialog(account: Account, onConfirm: () -> Unit, onDismi
             )
             Text(
                 text = "You'll need to sign in again to use this account on this device.",
-                color = Color(0xFFC9D1D9),
+                color = ChinoFg2,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DialogButton(label = "Cancel", containerColor = Color(0xFF21262D), onClick = onDismiss)
-                DialogButton(label = "Remove", containerColor = Color(0xFFDA3633), onClick = onConfirm)
+                DialogButton(label = "Cancel", containerColor = ChinoBorder2, onClick = onDismiss)
+                DialogButton(label = "Remove", containerColor = ChinoRed, onClick = onConfirm)
             }
         }
     }
@@ -338,7 +352,7 @@ private fun ConfirmRemoveDialog(account: Account, onConfirm: () -> Unit, onDismi
 private fun DialogButton(label: String, containerColor: Color, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RectangleShape)
             .background(containerColor)
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp),

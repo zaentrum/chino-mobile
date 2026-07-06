@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.detail
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,8 +30,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
@@ -75,12 +89,12 @@ fun AddToListSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                .background(Color(0xFF161B22))
+                .clip(RectangleShape)
+                .background(ChinoSurface)
                 .border(
                     width = 1.dp,
-                    color = Color(0xFF30363D),
-                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                    color = ChinoBorder,
+                    shape = RectangleShape,
                 )
                 // Swallow card clicks so a tap inside doesn't dismiss.
                 .clickable(enabled = false) {}
@@ -121,7 +135,7 @@ fun AddToListSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RectangleShape)
                         .clickable { addingNew = true }
                         .padding(horizontal = 8.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -130,10 +144,10 @@ fun AddToListSheet(
                     Icon(
                         imageVector = Lucide.Plus,
                         contentDescription = null,
-                        tint = Color(0xFF58A6FF),
+                        tint = ChinoCloudBlue,
                         modifier = Modifier.size(20.dp),
                     )
-                    Text(text = "New list…", color = Color(0xFF58A6FF), fontSize = 15.sp)
+                    Text(text = "New list…", color = ChinoCloudBlue, fontSize = 15.sp)
                 }
             }
         }
@@ -145,7 +159,7 @@ private fun ListCheckRow(name: String, checked: Boolean, onToggle: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RectangleShape)
             .clickable(onClick = onToggle)
             .padding(horizontal = 8.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -154,12 +168,12 @@ private fun ListCheckRow(name: String, checked: Boolean, onToggle: () -> Unit) {
         Box(
             modifier = Modifier
                 .size(24.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (checked) Color(0xFF2EA043) else Color.Transparent)
+                .clip(RectangleShape)
+                .background(if (checked) ChinoGreen else Color.Transparent)
                 .border(
                     width = 1.5.dp,
-                    color = if (checked) Color(0xFF2EA043) else Color(0xFF30363D),
-                    shape = RoundedCornerShape(6.dp),
+                    color = if (checked) ChinoGreen else ChinoBorder,
+                    shape = RectangleShape,
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -194,7 +208,7 @@ private fun NewListInlineField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
-            placeholder = { Text("List name", color = Color(0xFF8B949E)) },
+            placeholder = { Text("List name", color = ChinoMuted) },
             textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 16.sp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSubmit() }),
@@ -203,8 +217,8 @@ private fun NewListInlineField(
                     modifier = Modifier
                         .padding(end = 4.dp)
                         .size(32.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF58A6FF))
+                        .clip(RectangleShape)
+                        .background(ChinoCloudBlue)
                         .clickable(onClick = onSubmit),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -217,16 +231,16 @@ private fun NewListInlineField(
                 }
             },
             colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF0D1117),
-                unfocusedContainerColor = Color(0xFF0D1117),
-                focusedIndicatorColor = Color(0xFF58A6FF),
-                unfocusedIndicatorColor = Color(0xFF30363D),
-                cursorColor = Color(0xFF58A6FF),
+                focusedContainerColor = ChinoBg2,
+                unfocusedContainerColor = ChinoBg2,
+                focusedIndicatorColor = ChinoCloudBlue,
+                unfocusedIndicatorColor = ChinoBorder,
+                cursorColor = ChinoCloudBlue,
             ),
             modifier = Modifier.fillMaxWidth(),
         )
         errorText?.let {
-            Text(text = it, color = Color(0xFFF85149), fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+            Text(text = it, color = ChinoRed, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
         }
     }
 }

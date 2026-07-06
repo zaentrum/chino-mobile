@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -98,9 +99,10 @@ class AuthScreen : Screen {
                         )
                         when (val s = state) {
                             AuthUiState.Idle -> {
-                                Button(onClick = {
-                                    scope.launch { model.signIn(launcher) }
-                                }) { Text("Sign in") }
+                                Button(
+                                    onClick = { scope.launch { model.signIn(launcher) } },
+                                    shape = RectangleShape,
+                                ) { Text("Sign in") }
                             }
                             AuthUiState.Signing -> CircularProgressIndicator()
                             AuthUiState.Authenticated -> Unit
@@ -110,9 +112,10 @@ class AuthScreen : Screen {
                                     color = MaterialTheme.colorScheme.error,
                                     textAlign = TextAlign.Center,
                                 )
-                                Button(onClick = {
-                                    scope.launch { model.signIn(launcher) }
-                                }) { Text("Try again") }
+                                Button(
+                                    onClick = { scope.launch { model.signIn(launcher) } },
+                                    shape = RectangleShape,
+                                ) { Text("Try again") }
                             }
                         }
                     }

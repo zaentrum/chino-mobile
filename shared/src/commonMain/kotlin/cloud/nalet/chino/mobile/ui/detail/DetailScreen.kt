@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.detail
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,8 +42,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -202,7 +216,7 @@ private fun ReadyContent(
     // Resolved trailer URL (null when none) — drives both the pill's
     // visibility and its click. Mirrors web/TV pickTrailer.
     val trailerUrl = pickTrailer(item.trailers)
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(0xFF0D1117))) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ChinoBg2)) {
         // Backdrop = 21:9 but capped at 60vh (web `max-h-[60vh]`) so in
         // landscape the action row stays near the fold instead of the tall
         // 21:9 image eating the whole screen.
@@ -228,7 +242,7 @@ private fun ReadyContent(
                         Brush.verticalGradient(
                             0.0f to Color.Transparent,
                             0.5f to Color(0x66000000),
-                            1.0f to Color(0xFF0D1117),
+                            1.0f to ChinoBg2,
                         ),
                     ),
                 )
@@ -250,8 +264,8 @@ private fun ReadyContent(
                         modifier = Modifier
                             .width(192.dp)
                             .aspectRatio(2f / 3f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF161B22)),
+                            .clip(RectangleShape)
+                            .background(ChinoSurface),
                     )
                 }
                 val content: @Composable (Modifier, androidx.compose.ui.unit.TextUnit) -> Unit = { mod, titleSize ->
@@ -266,7 +280,7 @@ private fun ReadyContent(
                         item.tagline?.takeIf { it.isNotBlank() }?.let {
                             Text(
                                 text = it,
-                                color = Color(0xFF8B949E),
+                                color = ChinoMuted,
                                 fontSize = 16.sp,
                                 fontStyle = FontStyle.Italic,
                             )
@@ -296,7 +310,7 @@ private fun ReadyContent(
                         item.overview?.takeIf { it.isNotBlank() }?.let { overview ->
                             Text(
                                 text = overview,
-                                color = Color(0xFFC9D1D9),
+                                color = ChinoFg2,
                                 fontSize = 16.sp,
                                 lineHeight = 24.sp,
                             )
@@ -374,7 +388,7 @@ private fun ReadyContent(
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(start = 16.dp, top = 16.dp)
                 .size(40.dp)
-                .clip(CircleShape)
+                .clip(RectangleShape)
                 .background(Color(0x80000000))
                 .clickable(onClick = onBack),
             contentAlignment = Alignment.Center,
@@ -403,11 +417,11 @@ private fun MetaRow(item: Item) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item.year?.let {
-            Text(it.toString(), color = Color(0xFFC9D1D9), fontSize = 14.sp)
+            Text(it.toString(), color = ChinoFg2, fontSize = 14.sp)
         }
         runtimeText?.let {
             if (item.year != null) Bullet()
-            Text(it, color = Color(0xFFC9D1D9), fontSize = 14.sp)
+            Text(it, color = ChinoFg2, fontSize = 14.sp)
         }
         item.rating?.let { r ->
             if (item.year != null || runtimeText != null) Bullet()
@@ -418,12 +432,12 @@ private fun MetaRow(item: Item) {
                 Icon(
                     imageVector = Lucide.Star,
                     contentDescription = null,
-                    tint = Color(0xFF58A6FF),
+                    tint = ChinoCloudBlue,
                     modifier = Modifier.size(16.dp),
                 )
                 Text(
                     text = ((r * 10).toInt() / 10.0).toString(),
-                    color = Color(0xFFC9D1D9),
+                    color = ChinoFg2,
                     fontSize = 14.sp,
                 )
             }
@@ -431,7 +445,7 @@ private fun MetaRow(item: Item) {
         item.kind?.takeIf { it.isNotBlank() }?.let {
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(999.dp))
+                    .clip(RectangleShape)
                     .background(Color.White.copy(alpha = 0.1f))
                     .padding(horizontal = 8.dp, vertical = 2.dp),
             ) {
@@ -448,7 +462,7 @@ private fun MetaRow(item: Item) {
 
 @Composable
 private fun Bullet() {
-    Text("•", color = Color(0xFF8B949E), fontSize = 14.sp)
+    Text("•", color = ChinoMuted, fontSize = 14.sp)
 }
 
 @Composable
@@ -514,7 +528,7 @@ private fun ActionRow(
         CircleIconButton(
             icon = if (watched) Lucide.Check else Lucide.Eye,
             tint = Color.White,
-            background = if (watched) Color(0xFF2EA043) else Color.White.copy(alpha = 0.1f),
+            background = if (watched) ChinoGreen else Color.White.copy(alpha = 0.1f),
             onClick = onToggleWatched,
         )
         CircleIconButton(
@@ -535,8 +549,8 @@ private fun PillButton(
 ) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(if (primary) Color(0xFF58A6FF) else Color.White.copy(alpha = 0.1f))
+            .clip(RectangleShape)
+            .background(if (primary) ChinoCloudBlue else Color.White.copy(alpha = 0.1f))
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -569,7 +583,7 @@ private fun CircleIconButton(
     Box(
         modifier = Modifier
             .size(44.dp)
-            .clip(CircleShape)
+            .clip(RectangleShape)
             .background(background)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -600,8 +614,8 @@ private fun WatchlistButton(
         Box(
             modifier = Modifier
                 .size(44.dp)
-                .clip(CircleShape)
-                .background(if (inAnyList) Color(0xFF2EA043) else Color.White.copy(alpha = 0.1f))
+                .clip(RectangleShape)
+                .background(if (inAnyList) ChinoGreen else Color.White.copy(alpha = 0.1f))
                 .combinedClickable(onClick = onToggle, onLongClick = onOpenPicker),
             contentAlignment = Alignment.Center,
         ) {
@@ -616,7 +630,7 @@ private fun WatchlistButton(
         Box(
             modifier = Modifier
                 .size(28.dp)
-                .clip(CircleShape)
+                .clip(RectangleShape)
                 .background(Color.White.copy(alpha = 0.1f))
                 .clickable(onClick = onOpenPicker),
             contentAlignment = Alignment.Center,
@@ -660,10 +674,10 @@ private fun FooterGrid(item: Item) {
 @Composable
 private fun FooterColumn(header: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(text = header, color = Color(0xFF8B949E), fontSize = 14.sp)
+        Text(text = header, color = ChinoMuted, fontSize = 14.sp)
         Text(
             text = value,
-            color = Color(0xFFC9D1D9),
+            color = ChinoFg2,
             fontSize = 14.sp,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -696,15 +710,15 @@ private fun GenreChips(genres: List<String>) {
         genres.forEach { g ->
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color(0xFF21262D))
+                    .clip(RectangleShape)
+                    .background(ChinoBorder2)
                     .border(
-                        BorderStroke(1.dp, Color(0xFF30363D)),
-                        RoundedCornerShape(999.dp),
+                        BorderStroke(1.dp, ChinoBorder),
+                        RectangleShape,
                     )
                     .padding(horizontal = 12.dp, vertical = 4.dp),
             ) {
-                Text(text = g, color = Color(0xFFC9D1D9), fontSize = 12.sp)
+                Text(text = g, color = ChinoFg2, fontSize = 12.sp)
             }
         }
     }
@@ -719,7 +733,7 @@ private fun StarringRow(item: Item, onPersonNavigate: ((String) -> Unit)?) {
     val actors = item.cast.filter { it.role == null || it.role.equals("actor", true) }
     if (actors.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(text = "Starring", color = Color(0xFF8B949E), fontSize = 13.sp)
+        Text(text = "Starring", color = ChinoMuted, fontSize = 13.sp)
         CastNameFlow(names = actors.take(8), onPersonNavigate = onPersonNavigate)
     }
 }
@@ -750,7 +764,7 @@ private fun DirectorsRow(item: Item, onPersonNavigate: ((String) -> Unit)?) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = if (directors.size > 1) "Directors" else "Director",
-            color = Color(0xFF8B949E),
+            color = ChinoMuted,
             fontSize = 13.sp,
         )
         CastNameFlow(names = directors, onPersonNavigate = onPersonNavigate)
@@ -773,7 +787,7 @@ private fun CastNameFlow(
             val tappable = pid != null && onPersonNavigate != null
             Text(
                 text = label,
-                color = if (tappable) Color(0xFF58A6FF) else Color(0xFFC9D1D9),
+                color = if (tappable) ChinoCloudBlue else ChinoFg2,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
                 modifier = if (tappable) {
@@ -831,8 +845,8 @@ private fun SeasonRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF161B22)),
+            .clip(RectangleShape)
+            .background(ChinoSurface),
     ) {
         Row(
             modifier = Modifier
@@ -850,14 +864,14 @@ private fun SeasonRow(
             )
             Text(
                 text = "${season.episodes.size} episodes",
-                color = Color(0xFF8B949E),
+                color = ChinoMuted,
                 fontSize = 14.sp,
                 modifier = Modifier.weight(1f),
             )
             Icon(
                 imageVector = if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
                 contentDescription = if (expanded) "Collapse" else "Expand",
-                tint = Color(0xFF8B949E),
+                tint = ChinoMuted,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -872,7 +886,7 @@ private fun SeasonRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(1.dp)
-                                .background(Color(0xFF21262D)),
+                                .background(ChinoBorder2),
                         )
                     }
                     // Effective episode watched state: optimistic override
@@ -913,8 +927,8 @@ private fun EpisodeRow(
             modifier = Modifier
                 .width(160.dp)
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF0D1117)),
+                .clip(RectangleShape)
+                .background(ChinoBg2),
         ) {
             AsyncImage(
                 model = "$baseUrl/v1/items/${episode.id}/backdrop?stream=$streamToken",
@@ -932,8 +946,8 @@ private fun EpisodeRow(
                     .align(Alignment.TopEnd)
                     .padding(6.dp)
                     .size(24.dp)
-                    .clip(CircleShape)
-                    .background(if (watched) Color(0xFF2EA043) else Color(0x99000000))
+                    .clip(RectangleShape)
+                    .background(if (watched) ChinoGreen else Color(0x99000000))
                     .clickable(onClick = onToggleWatched),
                 contentAlignment = Alignment.Center,
             ) {
@@ -952,13 +966,13 @@ private fun EpisodeRow(
             ).joinToString("")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (epNum.isNotEmpty()) {
-                    Text(text = epNum, color = Color(0xFF58A6FF), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Text(text = "·", color = Color(0xFF8B949E), fontSize = 13.sp)
+                    Text(text = epNum, color = ChinoCloudBlue, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "·", color = ChinoMuted, fontSize = 13.sp)
                 }
                 Text(
                     text = episode.title,
                     // Web dims a watched episode's title to #8b949e.
-                    color = if (watched) Color(0xFF8B949E) else Color.White,
+                    color = if (watched) ChinoMuted else Color.White,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -969,13 +983,13 @@ private fun EpisodeRow(
                 // title's weight(1f) above eats the slack between them.
                 val epRuntimeMin = episode.durationMs?.let { (it / 60_000L).toInt() } ?: 0
                 if (epRuntimeMin > 0) {
-                    Text(text = "${epRuntimeMin}m", color = Color(0xFF8B949E), fontSize = 12.sp)
+                    Text(text = "${epRuntimeMin}m", color = ChinoMuted, fontSize = 12.sp)
                 }
             }
             episode.overview?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     text = it,
-                    color = Color(0xFFC9D1D9),
+                    color = ChinoFg2,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
                     maxLines = 2,
@@ -1025,8 +1039,8 @@ private fun SimilarCard(
     Column(
         modifier = Modifier
             .width(168.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF161B22))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
             .clickable(onClick = onClick),
     ) {
         AsyncImage(
@@ -1036,12 +1050,12 @@ private fun SimilarCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .background(Color(0xFF0D1117)),
+                .background(ChinoBg2),
         )
         Column(modifier = Modifier.padding(8.dp)) {
             Text(
                 text = item.title,
-                color = Color(0xFFC9D1D9),
+                color = ChinoFg2,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
@@ -1057,11 +1071,11 @@ private fun SimilarCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     item.year?.let {
-                        Text(it.toString(), color = Color(0xFF8B949E), fontSize = 12.sp)
+                        Text(it.toString(), color = ChinoMuted, fontSize = 12.sp)
                     }
                     ratingText?.let {
-                        if (item.year != null) Text("•", color = Color(0xFF8B949E), fontSize = 12.sp)
-                        Text(it, color = Color(0xFF58A6FF), fontSize = 12.sp)
+                        if (item.year != null) Text("•", color = ChinoMuted, fontSize = 12.sp)
+                        Text(it, color = ChinoCloudBlue, fontSize = 12.sp)
                     }
                 }
             }
