@@ -61,7 +61,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.detail.DetailScreen
-import coil3.compose.AsyncImage
+import cloud.nalet.chino.mobile.ui.theme.PosterImage
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Search
 import kotlinx.coroutines.delay
@@ -231,8 +231,9 @@ private fun ResultRow(item: Item, baseUrl: String, streamToken: String, onTap: (
                 .clip(RectangleShape)
                 .background(ChinoSurface),
         ) {
-            AsyncImage(
+            PosterImage(
                 model = "$baseUrl/v1/items/${item.id}/poster?stream=$streamToken",
+                title = item.title,
                 contentDescription = item.title,
                 modifier = Modifier.fillMaxSize(),
             )

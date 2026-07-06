@@ -95,6 +95,45 @@ class OidcDeviceClient(
         @Suppress("UNREACHABLE_CODE") error("unreachable")
     }
 
+    /**
+     * OAuth 2.0 Authorization Code + PKCE token exchange. Trades the `code`
+     * returned on the redirect (captured by the platform in-app browser —
+     * iOS ASWebAuthenticationSession) for tokens, proving possession of the
+     * PKCE `code_verifier`. Public client, so no client secret: Keycloak's
+     * `chino` client is configured as public + PKCE-required.
+     *
+     * The Android path uses AppAuth's own performTokenRequest instead; this
+     * is the iOS counterpart, sharing the same discovered [tokenEndpoint] +
+     * [clientId] so both platforms hit an identical exchange. [redirectUri]
+     * must byte-match the one sent on the authorize request (and registered
+     * on the OIDC client) or Keycloak rejects with invalid_grant.
+     */
+    suspend fun exchangeAuthorizationCode(
+        code: String,
+        codeVerifier: String,
+        redirectUri: String,
+    ): Tokens {
+        val response = http.submitForm(
+            url = tokenEndpoint,
+            formParameters = parameters {
+                append("client_id", clientId)
+                append("grant_type", "authorization_code")
+                append("code", code)
+                append("code_verifier", codeVerifier)
+                append("redirect_uri", redirectUri)
+            },
+        )
+        if (response.status.value !in 200..299) {
+            error("Code exchange failed: HTTP ${response.status.value} — ${response.bodyAsText()}")
+        }
+        val tok = json.decodeFromString(TokenResponse.serializer(), response.bodyAsText())
+        return Tokens(
+            accessToken = tok.accessToken,
+            refreshToken = tok.refreshToken,
+            expiresAtEpochMillis = currentTimeMillis() + tok.expiresIn * 1000L,
+        )
+    }
+
     /** Silent renew via refresh_token. Called from [TokenManager] when the
      *  cached access token is within REFRESH_SLACK_MS of expiry OR after a
      *  401. Returns null on any non-2xx so the caller can decide whether to

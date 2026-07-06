@@ -15,6 +15,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+import cloud.nalet.chino.mobile.ui.theme.PosterImage
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -257,8 +258,9 @@ private fun ReadyContent(
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 val isWideDetail = maxWidth >= 600.dp
                 val poster: @Composable () -> Unit = {
-                    AsyncImage(
+                    PosterImage(
                         model = "${ready.baseUrl}/v1/items/${item.id}/poster?stream=${ready.streamToken}",
+                        title = item.title,
                         contentDescription = item.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

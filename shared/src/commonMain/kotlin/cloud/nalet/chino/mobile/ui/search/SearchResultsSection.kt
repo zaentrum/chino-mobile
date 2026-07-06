@@ -15,6 +15,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+import cloud.nalet.chino.mobile.ui.theme.PosterImage
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,7 +58,6 @@ import cloud.nalet.chino.mobile.data.api.Person
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.person.InitialsAvatar
 import cloud.nalet.chino.mobile.ui.person.creditLabel
-import coil3.compose.AsyncImage
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Lucide
 import kotlinx.coroutines.delay
@@ -258,8 +258,9 @@ private fun SearchCard(
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f),
         ) {
-            AsyncImage(
+            PosterImage(
                 model = "$baseUrl/v1/items/${item.id}/poster?stream=$streamToken",
+                title = item.title,
                 contentDescription = item.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

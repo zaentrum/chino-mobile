@@ -15,6 +15,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+import cloud.nalet.chino.mobile.ui.theme.PosterImage
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -676,8 +677,9 @@ fun MediaCard(
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f),
         ) {
-            AsyncImage(
+            PosterImage(
                 model = posterUrl,
+                title = item.title,
                 contentDescription = item.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
