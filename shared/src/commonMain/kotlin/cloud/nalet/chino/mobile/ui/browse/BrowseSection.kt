@@ -61,7 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.model.Item
-import coil3.compose.AsyncImage
+import cloud.nalet.chino.mobile.ui.theme.PosterImage
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.EllipsisVertical
 import com.composables.icons.lucide.Eye
@@ -233,8 +233,9 @@ private fun BrowseCard(
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f),
         ) {
-            AsyncImage(
+            PosterImage(
                 model = "$baseUrl/v1/items/${item.id}/poster?stream=$streamToken",
+                title = item.title,
                 contentDescription = item.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

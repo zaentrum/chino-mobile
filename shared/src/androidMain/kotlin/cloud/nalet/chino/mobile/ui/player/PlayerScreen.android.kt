@@ -61,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -912,7 +913,25 @@ private fun PlaybackSurface(
     val activeSkipSegment = remember(positionMs, state.segments) {
         val ms = positionMs
         state.segments.firstOrNull { seg ->
-            ms >= seg.startMs && ms < seg.endMs && seg.kind.lowercase() in SKIPPABLE_KINDS
+            ms >= seg.startMs && ms < seg.endMs &&
+                seg.kind.lowercase() in SKIPPABLE_KINDS &&
+                // A post-credits preview (a next-episode teaser mislabelled as a
+                // recap, or an explicit `preview`) is NOT skippable — the teaser
+                // plays under a "Next episode ▶" card instead. Excluding it here
+                // stops a post-credits recap from showing "Skip Recap".
+                !isPostCreditsPreview(seg, state.segments)
+        }
+    }
+
+    // Active post-credits preview under the played head — only meaningful when a
+    // next episode exists. Drives the "Next episode ▶" card (and, with
+    // autoPlayNext on, the auto-next countdown below). An explicit `preview`
+    // segment, or a `recap` starting at/after the credits, both qualify.
+    val activePreviewSegment = remember(positionMs, state.segments, state.nextEpisodeId) {
+        if (state.nextEpisodeId == null) return@remember null
+        val ms = positionMs
+        state.segments.firstOrNull { seg ->
+            ms >= seg.startMs && ms < seg.endMs && isPostCreditsPreview(seg, state.segments)
         }
     }
 
@@ -949,18 +968,22 @@ private fun PlaybackSurface(
         container.telemetry.event("binge_prewarm", itemId = itemId, extra = mapOf("next_item" to nextId))
     }
 
-    // Auto-play-next countdown: arms when we're in credits/near-end AND a
-    // next episode exists AND the setting is on AND the user hasn't
-    // dismissed it. Counts down `countdownSec` then advances. autoNextSec ==
-    // null → no overlay. A single in-flight guard (`advancing`) stops the
-    // tick loop from firing the nav twice if recomposition re-enters at 0.
+    // Auto-play-next countdown: arms when we're in credits/near-end OR inside a
+    // post-credits preview teaser, AND a next episode exists AND the setting is
+    // on AND the user hasn't dismissed it. Counts down `countdownSec` then
+    // advances. autoNextSec == null → no overlay. A single in-flight guard
+    // (`advancing`) stops the tick loop from firing the nav twice if
+    // recomposition re-enters at 0. The preview reuses this same countdown +
+    // next-episode id + navigation the credits auto-advance already uses; the
+    // "Next episode ▶" card just renders the seconds instead of AutoNextOverlay.
     var autoNextSec by remember { mutableStateOf<Int?>(null) }
     var autoNextDismissed by remember { mutableStateOf(false) }
     var advancing by remember { mutableStateOf(false) }
-    LaunchedEffect(atEnd, state.nextEpisodeId, settings.autoPlayNext, autoNextDismissed) {
+    val previewActive = activePreviewSegment != null
+    LaunchedEffect(atEnd, previewActive, state.nextEpisodeId, settings.autoPlayNext, autoNextDismissed) {
         val nextId = state.nextEpisodeId
         val wantAuto = settings.autoPlayNext
-        if (!atEnd || nextId == null || autoNextDismissed || !wantAuto) {
+        if ((!atEnd && !previewActive) || nextId == null || autoNextDismissed || !wantAuto) {
             autoNextSec = null
             return@LaunchedEffect
         }
@@ -1136,27 +1159,51 @@ private fun PlaybackSurface(
                 onBack = onBack,
             )
         }
-        // Auto-play-next countdown overlay — rendered OUTSIDE
+        // Auto-play-next affordance — rendered OUTSIDE
         // AnimatedVisibility(chromeVisible) so it stays on screen even after
-        // the chrome auto-hides during the credits. Sits at the
-        // bottom-center above the controls. Dismiss cancels the auto-fire
-        // for the rest of this episode; "Play now" advances immediately.
+        // the chrome auto-hides during the credits / preview. Sits at the
+        // bottom above the controls. Dismiss cancels the auto-fire for the
+        // rest of this episode; "Play now" advances immediately.
         val nextId = state.nextEpisodeId
         val sec = autoNextSec
-        if (sec != null && nextId != null) {
-            AutoNextOverlay(
-                secondsLeft = sec,
-                onDismiss = {
-                    autoNextDismissed = true
-                    autoNextSec = null
-                },
-                onPlayNow = {
-                    if (!advancing) {
-                        advancing = true
-                        onSwitchItem(nextId)
-                    }
-                },
-            )
+        when {
+            // Post-credits preview teaser: the teaser keeps playing under a
+            // "Next episode ▶" card. With autoPlayNext on it counts down
+            // (autoNextSec, reusing the credits countdown) and auto-advances at
+            // 0; with it off, it's a plain manual button. Either way it reuses
+            // state.nextEpisodeId + onSwitchItem — the SAME nav the credits
+            // auto-advance uses. Takes priority over AutoNextOverlay so the two
+            // don't stack while a preview is active.
+            activePreviewSegment != null && nextId != null -> {
+                NextEpisodeCard(
+                    secondsLeft = sec.takeIf { settings.autoPlayNext },
+                    onDismiss = {
+                        autoNextDismissed = true
+                        autoNextSec = null
+                    },
+                    onPlayNext = {
+                        if (!advancing) {
+                            advancing = true
+                            onSwitchItem(nextId)
+                        }
+                    },
+                )
+            }
+            sec != null && nextId != null -> {
+                AutoNextOverlay(
+                    secondsLeft = sec,
+                    onDismiss = {
+                        autoNextDismissed = true
+                        autoNextSec = null
+                    },
+                    onPlayNow = {
+                        if (!advancing) {
+                            advancing = true
+                            onSwitchItem(nextId)
+                        }
+                    },
+                )
+            }
         }
         // Manual Skip pill — Lucide SkipForward + web wording ("Skip Intro"
         // / "Skip Recap" / "Skip Credits"), bottom-right, seeking to the
@@ -1185,8 +1232,33 @@ private fun PlaybackSurface(
 }
 
 /** Segment kinds that get a manual "Skip …" pill. Matches web's
- *  skipSegment('intro' | 'credits' | 'recap'). */
+ *  skipSegment('intro' | 'credits' | 'recap'). Post-credits previews are
+ *  excluded — they get the "Next episode ▶" card instead (see
+ *  [isPostCreditsPreview]). */
 private val SKIPPABLE_KINDS = setOf("intro", "recap", "credits")
+
+/**
+ * Position-based reclassification of a next-episode preview. The analyzer
+ * mislabels post-credits "next time on…" teasers as `recap` (a "Previously
+ * on…" opener) — hundreds of them in the catalog — so a recap that STARTS at
+ * or after the credits is really a post-roll preview, and an explicit `preview`
+ * kind always is. Such segments get the "Next episode ▶" card treatment (play
+ * the teaser, offer to jump) instead of the skip-recap treatment (seek past it,
+ * which robbed the viewer of the teaser). A genuine opening recap starts near
+ * 0:00 and keeps the skip behaviour. Mirrors the TV impl exactly.
+ */
+private fun isPostCreditsPreview(seg: Segment, all: List<Segment>): Boolean {
+    return when (seg.kind.lowercase()) {
+        "preview" -> true
+        "recap" -> {
+            val creditsStart = all
+                .filter { it.kind.equals("credits", ignoreCase = true) }
+                .minByOrNull { it.startMs }?.startMs ?: return false
+            seg.startMs >= creditsStart
+        }
+        else -> false
+    }
+}
 
 /** Web wording for the manual skip pill (PlayerPage.tsx: "Skip Intro" /
  *  "Skip Recap" / "Skip Credits"). Unknown kinds fall back to a
@@ -2471,6 +2543,99 @@ private fun AutoNextOverlay(
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) {
                         Text(text = "Cancel", color = Color.White, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** "Next episode ▶" card shown over a still-playing post-credits preview (a
+ *  next-episode teaser the analyzer mislabelled as a recap, or an explicit
+ *  `preview`). Unlike [AutoNextOverlay] the teaser is NOT skipped — it plays
+ *  underneath. When [secondsLeft] is non-null (autoPlayNext on) the card
+ *  counts down and auto-advances at 0; Dismiss keeps the teaser playing.
+ *  When null (autoPlayNext off) it's a plain manual button: tap advances,
+ *  ignore lets the teaser play. Styled as the brand-blue counterpart of
+ *  [SkipSegmentButton] with SQUARE corners per the nalet design system, so it
+ *  reads as the same "there's an action here" affordance family as the TV. */
+@Composable
+private fun NextEpisodeCard(
+    secondsLeft: Int?,
+    onDismiss: () -> Unit,
+    onPlayNext: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Box(
+            modifier = Modifier
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 96.dp, start = 16.dp, end = 16.dp)
+                .widthIn(max = 420.dp)
+                // Square corners (surface-2 fill, 1px border) per the DS —
+                // never rounded.
+                .background(Color(0xFF161B26))
+                .border(BorderStroke(1.dp, Color(0xFF1F2633)), RectangleShape)
+                .padding(16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Up next",
+                    color = Color(0xFF8B949E),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    // With a countdown, echo the credits card's wording; without
+                    // it, invite the tap while the teaser keeps playing.
+                    text = if (secondsLeft != null) {
+                        "Playing next episode in ${secondsLeft}s"
+                    } else {
+                        "Preview playing — jump to the next episode"
+                    },
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier
+                            // Brand-blue primary action, square corners.
+                            .background(Color(0xFF58A6FF))
+                            .clickable(onClick = onPlayNext)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            // SkipForward while counting down (auto-advance
+                            // intent), Play for the plain manual button.
+                            imageVector = if (secondsLeft != null) Lucide.SkipForward else Lucide.Play,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = "Next episode",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    // Dismiss only when a countdown is armed — nothing to cancel
+                    // otherwise (the manual button already leaves the teaser
+                    // playing when ignored).
+                    if (secondsLeft != null) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.1f))
+                                .clickable(onClick = onDismiss)
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        ) {
+                            Text(text = "Dismiss", color = Color.White, fontSize = 14.sp)
+                        }
                     }
                 }
             }

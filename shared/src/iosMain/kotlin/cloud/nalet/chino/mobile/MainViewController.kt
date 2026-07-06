@@ -7,6 +7,7 @@ import cloud.nalet.chino.mobile.data.PlatformSettingsStoreFactory
 import cloud.nalet.chino.mobile.data.auth.IosSignInLauncher
 import cloud.nalet.chino.mobile.data.auth.PlatformAccountStoreFactory
 import cloud.nalet.chino.mobile.data.auth.PlatformTokenStoreFactory
+import platform.Foundation.NSBundle
 import platform.UIKit.UIDevice
 import platform.UIKit.UIViewController
 
@@ -57,5 +58,30 @@ fun MainViewController(
             "client" to "chino-mobile-ios",
         ),
     )
-    App(container = container, signInLauncher = IosSignInLauncher())
+    // The app's OWN OAuth redirect scheme (registered on the operator's OIDC
+    // client), NOT taken from the server. Mirrors Android's OIDC_REDIRECT_BASE
+    // (+ ".debug" on a debug build) — both the bare and .debug schemes are
+    // registered on the shared `chino` Keycloak client, so a dev build signs in
+    // alongside a release install.
+    val redirectBase = "cloud.nalet.chino"
+    val bundleId = NSBundle.mainBundle.bundleIdentifier ?: ""
+    val redirectScheme = redirectBase + if (bundleId.endsWith(".debug")) ".debug" else ""
+    App(
+        container = container,
+        signInLauncher = IosSignInLauncher(
+            // Prefer the endpoint OIDC discovery found on the connected server;
+            // fall back to the Keycloak path layout from the issuer. Resolved
+            // lazily at sign-in time so the neutral client follows the server
+            // the user connected to via Add-Server.
+            authEndpoint = {
+                container.serverConfig?.authEndpoint
+                    ?: "${container.config.oidcIssuer}/protocol/openid-connect/auth"
+            },
+            clientId = { container.config.oidcClientId },
+            redirectScheme = redirectScheme,
+            exchange = { code, verifier, redirectUri ->
+                container.oidcDeviceClient.exchangeAuthorizationCode(code, verifier, redirectUri)
+            },
+        ),
+    )
 }
