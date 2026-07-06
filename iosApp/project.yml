@@ -3,8 +3,9 @@
 # project is .gitignored — regenerate locally whenever you change targets,
 # schemes, or build settings.
 #
-# Two configurations (Beta / Prod) feed the shared MainViewController via
-# Info.plist keys, which themselves come from Configuration/<env>.xcconfig.
+# Two configurations (Debug / Release) feed the shared MainViewController via
+# Info.plist keys, which come from Configuration/<config>.xcconfig. One app id
+# (io.github.zaentrum.chino; Debug adds .debug) — no beta flavor.
 
 name: iosApp
 options:
@@ -18,18 +19,21 @@ settings:
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     OTHER_LDFLAGS: "$(inherited) -framework shared"
     FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
-  configs:
-    Beta: Configuration/Beta.xcconfig
-    Prod: Configuration/Prod.xcconfig
 
 configs:
-  Beta: debug
-  Prod: release
+  Debug: debug
+  Release: release
 
 targets:
   iosApp:
     type: application
     platform: iOS
+    # Per-config xcconfig files (define CHINO_BUNDLE_ID / CHINO_* + the KMP
+    # framework build type). xcodegen attaches these at the build-config level
+    # via `configFiles`; the `settings.configs` form with a path is invalid.
+    configFiles:
+      Debug: Configuration/Debug.xcconfig
+      Release: Configuration/Release.xcconfig
     sources:
       - path: iosApp
         excludes:
@@ -43,6 +47,9 @@ targets:
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         UILaunchScreen: {}
+        # Required by Compose Multiplatform: its PlistSanityCheck throws an
+        # uncaught Kotlin exception (SIGABRT) at launch if this key is absent.
+        CADisableMinimumFrameDurationOnPhone: true
         ChinoFlavor: "$(CHINO_FLAVOR)"
         ChinoApiBaseUrl: "$(CHINO_API_BASE_URL)"
         ChinoOidcIssuer: "$(CHINO_OIDC_ISSUER)"
@@ -51,6 +58,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(CHINO_BUNDLE_ID)"
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        # Automatic signing — "Automatically manage signing" pre-checked. The
+        # DEVELOPMENT_TEAM is per-developer (a free Personal Team works for
+        # on-device dev): set it in Xcode's Signing tab, or pass
+        # -PDEVELOPMENT_TEAM / DEVELOPMENT_TEAM=<id> to xcodebuild.
+        CODE_SIGN_STYLE: Automatic
     preBuildScripts:
       - name: "Build shared framework"
         script: |

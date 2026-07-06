@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.browse
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -20,8 +36,6 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -142,13 +156,13 @@ fun BrowseSection(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CircularProgressIndicator(color = Color(0xFF58A6FF))
+                    CircularProgressIndicator(color = ChinoCloudBlue)
                 }
             }
             state.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
                     text = "No items match the current filters.",
-                    color = Color(0xFF8B949E),
+                    color = ChinoMuted,
                     fontSize = 14.sp,
                 )
             }
@@ -172,12 +186,12 @@ fun BrowseSection(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (state.nextPageToken != null) {
-                            CircularProgressIndicator(color = Color(0xFF58A6FF))
+                            CircularProgressIndicator(color = ChinoCloudBlue)
                         } else {
                             Text(
                                 text = "You've reached the end of the catalogue — " +
                                     "${state.items.size} ${if (type == "movie") "movies" else "shows"}.",
-                                color = Color(0xFF8B949E),
+                                color = ChinoMuted,
                                 fontSize = 12.sp,
                             )
                         }
@@ -204,8 +218,8 @@ private fun BrowseCard(
     var menuOpen by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF161B22))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
             .let { base ->
                 if (onToggleWatched != null) {
                     base.combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
@@ -225,7 +239,7 @@ private fun BrowseCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF0D1117)),
+                    .background(ChinoBg2),
             )
             // Watched badge — same emerald check overlay as Home/Search.
             if (item.watchedAt != null) {
@@ -234,8 +248,8 @@ private fun BrowseCard(
                         .align(Alignment.TopEnd)
                         .padding(6.dp)
                         .size(20.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF2EA043)),
+                        .clip(RectangleShape)
+                        .background(ChinoGreen),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -258,7 +272,7 @@ private fun BrowseCard(
                     Box(
                         modifier = Modifier
                             .size(28.dp)
-                            .clip(CircleShape)
+                            .clip(RectangleShape)
                             .background(Color(0x99000000))
                             .clickable { menuOpen = true },
                         contentAlignment = Alignment.Center,
@@ -299,7 +313,7 @@ private fun BrowseCard(
         ) {
             Text(
                 text = item.title,
-                color = Color(0xFFC9D1D9),
+                color = ChinoFg2,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
@@ -312,17 +326,17 @@ private fun BrowseCard(
                 item.year?.let {
                     Text(
                         it.toString(),
-                        color = Color(0xFF8B949E),
+                        color = ChinoMuted,
                         fontSize = 12.sp,
                     )
                 }
                 item.rating?.let { r ->
                     if (item.year != null) {
-                        Text("•", color = Color(0xFF8B949E), fontSize = 12.sp)
+                        Text("•", color = ChinoMuted, fontSize = 12.sp)
                     }
                     Text(
                         text = ((r * 10).toInt() / 10.0).toString(),
-                        color = Color(0xFF58A6FF),
+                        color = ChinoCloudBlue,
                         fontSize = 12.sp,
                     )
                 }

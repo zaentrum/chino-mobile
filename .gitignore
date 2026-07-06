@@ -44,3 +44,6 @@ GoogleService-Info.plist
 # OS
 .DS_Store
 Thumbs.db
+
+# xcodegen-generated (from project.yml)
+iosApp/iosApp/Info.plist

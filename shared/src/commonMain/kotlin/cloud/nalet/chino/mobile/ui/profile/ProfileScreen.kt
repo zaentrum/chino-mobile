@@ -1,5 +1,19 @@
 package cloud.nalet.chino.mobile.ui.profile
 
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,8 +32,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -206,7 +218,7 @@ class ProfileScreen : Screen {
                         Text(
                             text = "Nothing watched yet. Watched items appear here once you " +
                                 "finish a movie or episode (or mark one watched on a detail page).",
-                            color = Color(0xFF8B949E),
+                            color = ChinoMuted,
                             fontSize = 14.sp,
                         )
                     }
@@ -216,24 +228,24 @@ class ProfileScreen : Screen {
                     // detail page's episodes-list idiom, denser).
                     else -> itemsIndexed(list, key = { _, it -> it.id }) { index, item ->
                         val shape = when {
-                            list.size == 1 -> RoundedCornerShape(12.dp)
-                            index == 0 -> RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+                            list.size == 1 -> RectangleShape
+                            index == 0 -> RectangleShape
                             index == list.lastIndex ->
-                                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
+                                RectangleShape
                             else -> RectangleShape
                         }
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(shape)
-                                .background(Color(0xFF161B22)),
+                                .background(ChinoSurface),
                         ) {
                             if (index > 0) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(1.dp)
-                                        .background(Color(0xFF21262D)),
+                                        .background(ChinoBorder2),
                                 )
                             }
                             HistoryRow(
@@ -272,7 +284,7 @@ private fun ProfileHeader(onBack: () -> Unit) {
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .clip(CircleShape)
+                .clip(RectangleShape)
                 .background(Color(0x80000000))
                 .clickable(onClick = onBack),
             contentAlignment = Alignment.Center,
@@ -301,9 +313,9 @@ private fun IdentityCard(displayName: String, email: String, onSignOut: () -> Un
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF161B22))
-            .border(width = 1.dp, color = Color(0xFF30363D), shape = RoundedCornerShape(12.dp))
+            .clip(RectangleShape)
+            .background(ChinoSurface)
+            .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -321,7 +333,7 @@ private fun IdentityCard(displayName: String, email: String, onSignOut: () -> Un
             if (email.isNotBlank() && email != displayName) {
                 Text(
                     text = email,
-                    color = Color(0xFF8B949E),
+                    color = ChinoMuted,
                     fontSize = 13.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -330,7 +342,7 @@ private fun IdentityCard(displayName: String, email: String, onSignOut: () -> Un
         }
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
+                .clip(RectangleShape)
                 .background(Color(0x1AFFFFFF))
                 .clickable(onClick = onSignOut)
                 .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -377,8 +389,8 @@ private fun HistoryRow(
             modifier = Modifier
                 .height(56.dp)
                 .aspectRatio(if (isEpisode) 16f / 9f else 2f / 3f)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF0D1117)),
+                .clip(RectangleShape)
+                .background(ChinoBg2),
         ) {
             AsyncImage(
                 model = if (isEpisode) {
@@ -415,12 +427,12 @@ private fun HistoryRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     if (epNum.isNotEmpty()) {
-                        Text(text = epNum, color = Color(0xFF58A6FF), fontSize = 12.sp)
-                        Text(text = "·", color = Color(0xFF8B949E), fontSize = 12.sp)
+                        Text(text = epNum, color = ChinoCloudBlue, fontSize = 12.sp)
+                        Text(text = "·", color = ChinoMuted, fontSize = 12.sp)
                     }
                     Text(
                         text = item.title,
-                        color = Color(0xFF8B949E),
+                        color = ChinoMuted,
                         fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -436,32 +448,32 @@ private fun HistoryRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         item.year?.let {
-                            Text(it.toString(), color = Color(0xFF8B949E), fontSize = 12.sp)
+                            Text(it.toString(), color = ChinoMuted, fontSize = 12.sp)
                         }
                         ratingText?.let {
                             if (item.year != null) {
-                                Text("•", color = Color(0xFF8B949E), fontSize = 12.sp)
+                                Text("•", color = ChinoMuted, fontSize = 12.sp)
                             }
-                            Text(it, color = Color(0xFF58A6FF), fontSize = 12.sp)
+                            Text(it, color = ChinoCloudBlue, fontSize = 12.sp)
                         }
                     }
                 }
             }
         }
         watchedDateLabel(item.watchedAt)?.let {
-            Text(text = it, color = Color(0xFF8B949E), fontSize = 12.sp, maxLines = 1)
+            Text(text = it, color = ChinoMuted, fontSize = 12.sp, maxLines = 1)
         }
         Box(
             modifier = Modifier
                 .size(32.dp)
-                .clip(CircleShape)
+                .clip(RectangleShape)
                 .clickable(onClick = onUnwatch),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Lucide.EyeOff,
                 contentDescription = "Mark as unwatched",
-                tint = Color(0xFF8B949E),
+                tint = ChinoMuted,
                 modifier = Modifier.size(16.dp),
             )
         }

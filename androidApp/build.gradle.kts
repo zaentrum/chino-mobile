@@ -12,30 +12,21 @@ plugins {
 val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
 // Release signing: CI decodes a base64 upload keystore to SIGNING_KEYSTORE_FILE.
 val releaseKeystore = System.getenv("SIGNING_KEYSTORE_FILE")?.takeIf { it.isNotBlank() && file(it).exists() }
-// Point the prod flavor at the beta backend until the prod backend is live.
-val prodPointsToBeta = (project.findProperty("prodPointsToBeta") as? String) == "true"
-// OIDC redirect scheme base. When prod points to beta it uses the beta OIDC
-// client, whose registered redirect URIs are the .beta scheme(s) — so the prod
-// build must send/claim the beta redirect scheme too, not its own app id.
-// This is the OAuth redirect SCHEME (the `chino` Keycloak client's registered
-// redirect URIs), kept as cloud.nalet.chino even though the published app id is
-// now io.github.zaentrum.chino — a redirect scheme is a separate identifier and
-// need not match the app id. While prod points at beta it uses the beta scheme
-// (the beta client only knows .beta URIs); the prod->prod branch uses the prod
-// scheme. Aligning this to io.github.zaentrum.chino later needs that URI added
-// to the Keycloak client first.
-val redirectBaseProd = if (prodPointsToBeta) "cloud.nalet.chino.mobile.beta" else "cloud.nalet.chino"
+// OAuth redirect scheme (the `chino` Keycloak client's registered redirect URI).
+// This is a SEPARATE identifier from the published app id — it stays
+// cloud.nalet.chino (what the Keycloak client knows) even though the app id is
+// io.github.zaentrum.chino. Debug builds append ".debug" (also registered).
+val redirectBase = "cloud.nalet.chino"
 
-// Build-flavor server defaults. The neutral self-host client resolves its live
-// server (API base + OIDC issuer/client) from the persisted ServerConfig set
-// via the in-app Add-Server flow, so these are only non-UI fallbacks before a
-// server is connected. The committed default is EMPTY — an operator building
-// their own distribution can inject real values without code changes via
-// gradle project properties (-PbetaApiBaseUrl=..., or gradle.properties /
+// Neutral self-host server defaults. The client resolves its live server (API
+// base + OIDC issuer/client) from the persisted ServerConfig set via the in-app
+// Add-Server flow, so these are only non-UI fallbacks before a server is
+// connected. The committed default is EMPTY — an operator building their own
+// distribution can inject real values without code changes via gradle project
+// properties (-PapiBaseUrl=..., -PoidcIssuer=..., or gradle.properties /
 // ~/.gradle/gradle.properties / ORG_GRADLE_PROJECT_* env vars).
 fun prop(name: String): String = (project.findProperty(name) as? String) ?: ""
-val betaApiBaseUrl = prop("betaApiBaseUrl")
-val prodApiBaseUrl = prop("prodApiBaseUrl")
+val apiBaseUrl = prop("apiBaseUrl")
 val oidcIssuer = prop("oidcIssuer")
 
 kotlin {
@@ -90,6 +81,9 @@ android {
     compileSdk = 35
 
     defaultConfig {
+        // Single unified app id — no product flavors. Forks override via
+        // -PchinoAppId; debug builds append ".debug" (see buildTypes below).
+        applicationId = chinoAppId
         minSdk = 24
         targetSdk = 35
         versionCode = ciVersionCode ?: 1
@@ -97,60 +91,25 @@ android {
         // AndroidJUnitRunner — invoked by `am instrument` to enumerate +
         // execute @Test methods inside the androidInstrumentedTest APK.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
+        resValue("string", "app_name", "Chino")
 
-    flavorDimensions += "env"
-    productFlavors {
-        create("beta") {
-            dimension = "env"
-            applicationId = "$chinoAppId.mobile.beta"
-            resValue("string", "app_name", "Chino Beta")
-            buildConfigField("String", "FLAVOR_NAME", "\"beta\"")
-            buildConfigField("String", "API_BASE_URL", "\"$betaApiBaseUrl\"")
-            // Add-Server prefill: BLANK on every flavor so beta + prod behave
-            // identically — neutral self-host client, field starts empty with a
-            // generic placeholder, no baked operator URL. Separate from
-            // API_BASE_URL (the internal non-UI fallback), on purpose.
-            buildConfigField("String", "SERVER_PRESET", "\"\"")
-            buildConfigField("String", "OIDC_ISSUER", "\"$oidcIssuer\"")
-            buildConfigField("String", "OIDC_CLIENT_ID", "\"chino-mobile-beta\"")
-            buildConfigField("String", "DISPLAY_NAME", "\"Chino Beta\"")
-            // OIDC redirect scheme base; the app appends ".debug" at runtime for
-            // debug builds (and the release manifest scheme is set in onVariants).
-            buildConfigField("String", "OIDC_REDIRECT_BASE", "\"cloud.nalet.chino.mobile.beta\"")
-            // Debug-build redirect scheme registered on RedirectUriReceiverActivity
-            // (release is overridden per-variant in androidComponents below). The
-            // Keycloak client lists both the .beta and .beta.debug schemes.
-            manifestPlaceholders["appAuthRedirectScheme"] = "cloud.nalet.chino.mobile.beta.debug"
-        }
-        create("prod") {
-            dimension = "env"
-            // Unified Play listing id, shared with chino-androidtv's prod AAB.
-            applicationId = chinoAppId
-            resValue("string", "app_name", "Chino")
-            buildConfigField("String", "FLAVOR_NAME", "\"prod\"")
-            // With -PprodPointsToBeta=true the prod app uses the beta backend +
-            // beta OIDC client (e.g. before a prod backend is live). Both base
-            // URLs default to EMPTY and are injected by the operator's build via
-            // -PprodApiBaseUrl / -PbetaApiBaseUrl. The neutral client resolves
-            // its live server from the in-app Add-Server flow anyway.
-            val prodApi = if (prodPointsToBeta) betaApiBaseUrl else prodApiBaseUrl
-            val prodClient = if (prodPointsToBeta) "chino-mobile-beta" else "chino"
-            buildConfigField("String", "API_BASE_URL", "\"$prodApi\"")
-            // Neutral store build: NO pre-typed operator URL in the Add-Server
-            // field. Blank => empty field + neutral placeholder + no suggestion
-            // chip. API_BASE_URL above stays as the internal non-UI fallback.
-            buildConfigField("String", "SERVER_PRESET", "\"\"")
-            buildConfigField("String", "OIDC_ISSUER", "\"$oidcIssuer\"")
-            buildConfigField("String", "OIDC_CLIENT_ID", "\"$prodClient\"")
-            buildConfigField("String", "DISPLAY_NAME", "\"Chino\"")
-            // Redirect scheme follows the OIDC client: pointing prod at beta means
-            // using the beta client, so the redirect scheme must be the beta one
-            // (the prod app id is NOT registered on the beta client). The app
-            // appends ".debug" at runtime for debug builds; release is set below.
-            buildConfigField("String", "OIDC_REDIRECT_BASE", "\"$redirectBaseProd\"")
-            manifestPlaceholders["appAuthRedirectScheme"] = "$redirectBaseProd.debug"
-        }
+        // Neutral bring-your-own-server client: everything below is an internal,
+        // non-UI fallback only (empty by default). The connected server's
+        // /api/config + OIDC discovery supplies the real values at runtime.
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+        // Add-Server prefill: blank (neutral) — empty field, generic placeholder,
+        // no baked operator URL.
+        buildConfigField("String", "SERVER_PRESET", "\"\"")
+        buildConfigField("String", "OIDC_ISSUER", "\"$oidcIssuer\"")
+        buildConfigField("String", "OIDC_CLIENT_ID", "\"chino\"")
+        buildConfigField("String", "DISPLAY_NAME", "\"Chino\"")
+        // No flavors anymore; kept as a stable tag for telemetry / bug reports.
+        buildConfigField("String", "FLAVOR_NAME", "\"prod\"")
+        // OAuth redirect scheme (separate from app id). Debug builds use
+        // base+".debug"; release is overridden to the bare base in
+        // androidComponents below. Both are registered on the Keycloak client.
+        buildConfigField("String", "OIDC_REDIRECT_BASE", "\"$redirectBase\"")
+        manifestPlaceholders["appAuthRedirectScheme"] = "$redirectBase.debug"
     }
 
     signingConfigs {
@@ -225,13 +184,11 @@ android {
 
 androidComponents {
     onVariants { variant ->
-        // Release builds have no .debug suffix, so set the RedirectUriReceiver
-        // scheme to the redirect base for the variant's flavor. For prod that
-        // base follows prodPointsToBeta (the beta client only knows .beta URIs).
-        // Debug builds keep the flavor placeholder (base + ".debug").
+        // Release builds have no ".debug" suffix, so the RedirectUriReceiver
+        // scheme is the bare redirect base; debug keeps base+".debug" (the
+        // defaultConfig placeholder). Both are registered on the Keycloak client.
         if (variant.buildType == "release") {
-            val base = if (variant.flavorName == "beta") "cloud.nalet.chino.mobile.beta" else redirectBaseProd
-            variant.manifestPlaceholders.put("appAuthRedirectScheme", base)
+            variant.manifestPlaceholders.put("appAuthRedirectScheme", redirectBase)
         }
     }
 }

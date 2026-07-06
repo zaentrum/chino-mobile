@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.person
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +34,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -84,7 +99,7 @@ class PersonScreen(private val personId: String, private val initialName: String
         Scaffold(containerColor = MaterialTheme.colorScheme.background) { _ ->
             Box(modifier = Modifier.fillMaxSize()) {
                 when (val s = state) {
-                    PersonUiState.Loading -> Center { CircularProgressIndicator(color = Color(0xFF58A6FF)) }
+                    PersonUiState.Loading -> Center { CircularProgressIndicator(color = ChinoCloudBlue) }
                     is PersonUiState.Error -> Center {
                         Text(s.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
                     }
@@ -101,7 +116,7 @@ class PersonScreen(private val personId: String, private val initialName: String
                         .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(start = 16.dp, top = 16.dp)
                         .size(40.dp)
-                        .clip(CircleShape)
+                        .clip(RectangleShape)
                         .background(Color(0x80000000))
                         .clickable { nav.pop() },
                     contentAlignment = Alignment.Center,
@@ -146,7 +161,7 @@ class PersonScreen(private val personId: String, private val initialName: String
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
                         text = "No titles found.",
-                        color = Color(0xFF8B949E),
+                        color = ChinoMuted,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(top = 8.dp),
                     )
@@ -176,7 +191,7 @@ private fun PersonHeader(name: String, credits: Int) {
             )
             Text(
                 text = creditLabel(credits),
-                color = Color(0xFF8B949E),
+                color = ChinoMuted,
                 fontSize = 14.sp,
             )
         }
@@ -204,7 +219,7 @@ internal fun InitialsAvatar(name: String, size: Dp) {
     Box(
         modifier = Modifier
             .size(size)
-            .clip(CircleShape)
+            .clip(RectangleShape)
             .background(personAvatarColor(name)),
         contentAlignment = Alignment.Center,
     ) {
@@ -219,7 +234,7 @@ internal fun InitialsAvatar(name: String, size: Dp) {
 
 private fun personAvatarColor(seed: String): Color {
     val palette = listOf(
-        Color(0xFF58A6FF), Color(0xFFFFB454), Color(0xFF2EA043), Color(0xFF9E86FF),
+        ChinoCloudBlue, Color(0xFFFFB454), ChinoGreen, Color(0xFF9E86FF),
         Color(0xFFFF6B6B), Color(0xFF14B8A6), Color(0xFFE879F9), Color(0xFFEAB308),
         Color(0xFF38BDF8), Color(0xFFF472B6), Color(0xFF4ADE80), Color(0xFFFB923C),
     )

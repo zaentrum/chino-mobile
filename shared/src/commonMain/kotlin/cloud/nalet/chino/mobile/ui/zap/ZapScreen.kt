@@ -1,5 +1,21 @@
 package cloud.nalet.chino.mobile.ui.zap
 
+import androidx.compose.ui.graphics.RectangleShape
+
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
+import cloud.nalet.chino.mobile.ui.theme.ChinoRed
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -21,7 +37,6 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -264,7 +279,7 @@ private fun ZapCard(
             ActionButton(
                 icon = if (saved) Lucide.BookmarkCheck else Lucide.Bookmark,
                 label = "Save",
-                tint = if (saved) Color(0xFF58A6FF) else Color.White,
+                tint = if (saved) ChinoCloudBlue else Color.White,
                 onClick = onToggleSave,
             )
             ActionButton(
@@ -326,7 +341,7 @@ private fun ActionButton(
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .clip(CircleShape)
+                .clip(RectangleShape)
                 .background(Color.White.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center,
         ) {
@@ -362,10 +377,10 @@ private fun ZapInfoOverlay(item: Item, modifier: Modifier = Modifier) {
                 Icon(
                     imageVector = Lucide.Zap,
                     contentDescription = null,
-                    tint = Color(0xFF58A6FF),
+                    tint = ChinoCloudBlue,
                     modifier = Modifier.size(16.dp),
                 )
-                Text("Zap", color = Color(0xFF58A6FF), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("Zap", color = ChinoCloudBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
             Text(
                 text = item.title,
@@ -379,18 +394,18 @@ private fun ZapInfoOverlay(item: Item, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item.year?.let { Text(it.toString(), color = Color(0xFFC9D1D9), fontSize = 14.sp) }
+                item.year?.let { Text(it.toString(), color = ChinoFg2, fontSize = 14.sp) }
                 item.rating?.let {
-                    Text("★ ${((it * 10).toInt() / 10.0)}", color = Color(0xFF58A6FF), fontSize = 14.sp)
+                    Text("★ ${((it * 10).toInt() / 10.0)}", color = ChinoCloudBlue, fontSize = 14.sp)
                 }
                 item.genres.take(2).takeIf { it.isNotEmpty() }?.let {
-                    Text(it.joinToString(" · "), color = Color(0xFF8B949E), fontSize = 13.sp)
+                    Text(it.joinToString(" · "), color = ChinoMuted, fontSize = 13.sp)
                 }
             }
             item.overview?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     text = it,
-                    color = Color(0xFFC9D1D9),
+                    color = ChinoFg2,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
                     maxLines = 3,
@@ -399,7 +414,7 @@ private fun ZapInfoOverlay(item: Item, modifier: Modifier = Modifier) {
             }
             Text(
                 text = "Tap to watch from here  ·  Swipe up for next",
-                color = Color(0xFF8B949E),
+                color = ChinoMuted,
                 fontSize = 12.sp,
             )
         }
@@ -415,12 +430,12 @@ private fun ZapMessage(text: String, subtitle: String? = null, spinner: Boolean 
             modifier = Modifier.padding(horizontal = 32.dp),
         ) {
             if (spinner) {
-                CircularProgressIndicator(color = Color(0xFF58A6FF))
+                CircularProgressIndicator(color = ChinoCloudBlue)
             } else {
                 Icon(
                     imageVector = Lucide.Zap,
                     contentDescription = null,
-                    tint = Color(0xFF58A6FF),
+                    tint = ChinoCloudBlue,
                     modifier = Modifier.size(48.dp),
                 )
             }
@@ -428,7 +443,7 @@ private fun ZapMessage(text: String, subtitle: String? = null, spinner: Boolean 
             subtitle?.let {
                 Text(
                     text = it,
-                    color = Color(0xFF8B949E),
+                    color = ChinoMuted,
                     fontSize = 14.sp,
                     modifier = Modifier.fillMaxWidth(),
                 )

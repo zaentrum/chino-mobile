@@ -14,6 +14,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoMonoFamily
 
 /** Chino brand mark — `>c` glyph (cloud-blue chevron + light-grey c) in
@@ -45,6 +47,6 @@ fun LogoMark(sizeDp: Int = 28) {
 }
 
 private fun chinoGlyph(): AnnotatedString = buildAnnotatedString {
-    withStyle(SpanStyle(color = Color(0xFF58A6FF))) { append(">") }
-    withStyle(SpanStyle(color = Color(0xFFC9D1D9))) { append("c") }
+    withStyle(SpanStyle(color = ChinoCloudBlue)) { append(">") }
+    withStyle(SpanStyle(color = ChinoFg2)) { append("c") }
 }

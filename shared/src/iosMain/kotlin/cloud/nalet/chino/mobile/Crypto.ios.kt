@@ -1,7 +1,9 @@
 package cloud.nalet.chino.mobile
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toCValues
 import kotlinx.cinterop.usePinned
