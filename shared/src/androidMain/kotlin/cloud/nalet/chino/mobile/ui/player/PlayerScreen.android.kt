@@ -100,12 +100,15 @@ import cloud.nalet.chino.mobile.data.api.PlayInfo
 import cloud.nalet.chino.mobile.data.api.QualityRung
 import cloud.nalet.chino.mobile.data.api.Segment
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
+import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.feedback.BugReportDialog
+import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Captions
 import com.composables.icons.lucide.ChevronLeft
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Gauge
+import com.composables.icons.lucide.House
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Maximize
@@ -212,6 +215,13 @@ actual class PlayerScreen actual constructor(
                 // lives on Item.parentId for episodes; for movies parentId is
                 // null and the prev/next chevrons stay disabled.
                 val seriesId = item?.parentId
+                // Series title for the episode player heading. The episode Item
+                // doesn't carry the series name, so fetch the parent series item
+                // by id. Best-effort — a failed/absent fetch degrades the title
+                // to "S01E02 · {episodeTitle}".
+                val seriesTitle = seriesId?.let { sid ->
+                    runCatching { container.chinoApi.getItem(sid).title }.getOrNull()
+                }
                 val flatEpisodes = seriesId?.let { sid ->
                     runCatching {
                         container.chinoApi.seriesEpisodes(sid).seasons
@@ -245,8 +255,7 @@ actual class PlayerScreen actual constructor(
                     currentQuality = streamQuality,
                     qualities = info?.qualities ?: emptyList(),
                     resumeMs = resume * 1000L,
-                    title = item?.title ?: "Playing",
-                    modeBadge = composeModeBadge(info, streamQuality),
+                    title = composePlayerTitle(item, seriesTitle),
                     info = info,
                     segments = segs,
                     prevEpisodeId = prevId,
@@ -266,6 +275,10 @@ actual class PlayerScreen actual constructor(
                 state = ready!!,
                 itemId = itemId,
                 onBack = { nav.pop() },
+                // Home: reset the stack to the signed-in shell root. Same idiom
+                // the auth/profile flows use (replaceAll(MainShellScreen())),
+                // so it lands on Home regardless of how deep the stack is.
+                onHome = { nav.replaceAll(MainShellScreen()) },
                 onSwitchItem = { newId ->
                     // Replace this player screen with the new one so back
                     // doesn't pile up sibling episodes in the stack.
@@ -295,7 +308,6 @@ private data class PlayState(
     val qualities: List<QualityRung>,
     val resumeMs: Long,
     val title: String,
-    val modeBadge: String?,
     val info: PlayInfo?,
     val segments: List<Segment>,
     val prevEpisodeId: String?,
@@ -527,6 +539,7 @@ private fun PlaybackSurface(
     state: PlayState,
     itemId: String,
     onBack: () -> Unit,
+    onHome: () -> Unit,
     onSwitchItem: (String) -> Unit,
     onPlaybackError: (String) -> Unit,
 ) {
@@ -1157,6 +1170,7 @@ private fun PlaybackSurface(
                 onPrevEpisode = state.prevEpisodeId?.let { id -> { onSwitchItem(id) } },
                 onNextEpisode = state.nextEpisodeId?.let { id -> { onSwitchItem(id) } },
                 onBack = onBack,
+                onHome = onHome,
             )
         }
         // Auto-play-next affordance — rendered OUTSIDE
@@ -1342,6 +1356,7 @@ private fun Chrome(
     onPrevEpisode: (() -> Unit)?,
     onNextEpisode: (() -> Unit)?,
     onBack: () -> Unit,
+    onHome: () -> Unit,
 ) {
     // System bar insets are applied to TopBar (statusBars) and the
     // bottom-strip wrapper (navigationBars) individually — NOT to the
@@ -1364,8 +1379,8 @@ private fun Chrome(
     ) {
         TopBar(
             title = state.title,
-            modeBadge = state.modeBadge,
             onBack = onBack,
+            onHome = onHome,
         )
         Box(
             modifier = Modifier
@@ -1509,7 +1524,7 @@ private fun Chrome(
 }
 
 @Composable
-private fun TopBar(title: String, modeBadge: String?, onBack: () -> Unit) {
+private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
     Box(modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
@@ -1537,6 +1552,13 @@ private fun TopBar(title: String, modeBadge: String?, onBack: () -> Unit) {
                 onClick = onBack,
                 variant = ChromeBtnVariant.Neutral,
             )
+            // Home — resets to the app root (chino-web parity). Sits next to
+            // Back, same neutral chrome styling.
+            ChromeButton(
+                icon = Lucide.House,
+                onClick = onHome,
+                variant = ChromeBtnVariant.Neutral,
+            )
             Text(
                 text = title,
                 color = Color.White,
@@ -1546,21 +1568,8 @@ private fun TopBar(title: String, modeBadge: String?, onBack: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
-            if (modeBadge != null) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(Color.White.copy(alpha = 0.1f))
-                        .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(999.dp))
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                ) {
-                    Text(
-                        text = modeBadge,
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 12.sp,
-                    )
-                }
-            }
+            // The playback mode is no longer surfaced on the always-visible
+            // chrome — it lives in the Playback info dialog (Info button).
             Spacer(Modifier.weight(1f))
         }
     }
@@ -2990,19 +2999,25 @@ private fun segmentColor(kind: String): Color = when (kind.lowercase()) {
     else -> Color(0xFFFFFFFF)
 }
 
-/** chino-web PlayerPage.tsx L2547-2560: passthrough → null,
- *  remux → "Remux ${container}", transcode → "${codec} → H.264 · ${q}". */
-private fun composeModeBadge(info: PlayInfo?, quality: String): String? {
-    if (info?.mode == null) return null
-    return when (info.mode.lowercase()) {
-        "passthrough" -> null
-        "remux" -> info.container?.takeIf { it.isNotBlank() }?.let { "Remux $it" } ?: "Remux"
-        "transcode" -> {
-            val codec = info.videoCodec?.uppercase()?.takeIf { it.isNotBlank() } ?: "Source"
-            "$codec → H.264 · ${labelForQuality(quality)}"
-        }
-        else -> info.mode.replaceFirstChar { it.uppercase() }
+/**
+ * Player heading. For an EPISODE (Item.kind == "episode", or any item that
+ * carries a season/episode number) the title reads
+ * `{seriesTitle} — S01E02 · {episodeTitle}` (2-digit zero-padded). When the
+ * series title isn't resolved yet it degrades to `S01E02 · {episodeTitle}`.
+ * Movies / series-level items keep their plain title. Mirrors chino-web's
+ * player heading composition.
+ */
+private fun composePlayerTitle(item: Item?, seriesTitle: String?): String {
+    val episodeTitle = item?.title ?: "Playing"
+    val isEpisode = item?.kind.equals("episode", ignoreCase = true) ||
+        item?.seasonNumber != null || item?.episodeNumber != null
+    if (item == null || !isEpisode) return episodeTitle
+    val se = buildString {
+        item.seasonNumber?.let { append("S").append(it.toString().padStart(2, '0')) }
+        item.episodeNumber?.let { append("E").append(it.toString().padStart(2, '0')) }
     }
+    val tail = if (se.isNotEmpty()) "$se · $episodeTitle" else episodeTitle
+    return if (!seriesTitle.isNullOrBlank()) "$seriesTitle — $tail" else tail
 }
 
 private fun labelForQuality(q: String): String = when (q.lowercase()) {

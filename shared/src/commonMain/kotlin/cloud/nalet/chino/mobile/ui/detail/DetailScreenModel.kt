@@ -24,6 +24,11 @@ sealed interface DetailUiState {
         /** "More like this" — empty when chino-api can't find similars
          *  or the source item is unknown. */
         val similar: List<Item> = emptyList(),
+        /** When the detail target was an EPISODE, the page redirects to its
+         *  parent SERIES and stamps the episode id here so the episodes
+         *  accordion auto-expands that season, scrolls the row into view, and
+         *  highlights it. Null for a series/movie opened directly. */
+        val focusEpisodeId: String? = null,
     ) : DetailUiState
     data class Error(val message: String) : DetailUiState
 }
@@ -34,6 +39,13 @@ class DetailScreenModel(
 ) : ScreenModel {
     private val _state = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
     val state: StateFlow<DetailUiState> = _state.asStateFlow()
+
+    /** The id the page actually renders detail for. Normally the constructor
+     *  [itemId]; when [itemId] resolves to an EPISODE the page redirects to its
+     *  parent SERIES, so this becomes the series id and drives the action-row
+     *  watchlist / watched / list-membership toggles (which are series-level).
+     *  Per-episode toggles still target their own episode ids explicitly. */
+    private var displayItemId: String = itemId
 
     /** Optimistic local override for the detail item's own watched flag.
      *  null = follow the server-stamped `item.watchedAt`; non-null = the
@@ -70,13 +82,13 @@ class DetailScreenModel(
      *  (UserFlagsRepository), keeping Zap + the card badge in sync. Mirrors
      *  chino-web's plain-tap behaviour. */
     fun toggleDefaultWatchlist() {
-        val inDefault = itemId in container.userFlags.watchlist.value
-        container.userFlags.setWatchlist(itemId, !inDefault)
+        val inDefault = displayItemId in container.userFlags.watchlist.value
+        container.userFlags.setWatchlist(displayItemId, !inDefault)
     }
 
     /** Toggles the item's membership in a specific [listId] from the picker. */
     fun toggleListMembership(listId: String, checked: Boolean) {
-        container.watchlists.setMembership(itemId, listId, checked)
+        container.watchlists.setMembership(displayItemId, listId, checked)
     }
 
     /** Creates a list from the picker's inline field and adds the item to it.
@@ -86,7 +98,7 @@ class DetailScreenModel(
             runCatching { container.watchlists.create(name) }
                 .onSuccess { created ->
                     _addToListError.value = null
-                    container.watchlists.setMembership(itemId, created.id, true)
+                    container.watchlists.setMembership(displayItemId, created.id, true)
                 }
                 .onFailure { _addToListError.value = friendlyListError(it) }
         }
@@ -113,8 +125,8 @@ class DetailScreenModel(
         _watchedOverride.value = next
         screenModelScope.launch {
             val result = runCatching {
-                if (next) container.chinoApi.postWatched(itemId)
-                else container.chinoApi.deleteWatched(itemId)
+                if (next) container.chinoApi.postWatched(displayItemId)
+                else container.chinoApi.deleteWatched(displayItemId)
             }
             // Roll back the optimistic flip if the write didn't land, so the
             // UI doesn't lie about server state.
@@ -143,17 +155,37 @@ class DetailScreenModel(
         screenModelScope.launch {
             _state.value = try {
                 coroutineScope {
-                    val itemDef = async { container.chinoApi.getItem(itemId) }
-                    val progressDef = async {
-                        runCatching { container.chinoApi.getProgress(itemId).positionSec }.getOrDefault(0)
-                    }
                     val tokenDef = async { container.streamTokenManager.valid() }
-                    val similarDef = async {
-                        runCatching { container.chinoApi.similar(itemId).items }.getOrDefault(emptyList())
+                    val requested = container.chinoApi.getItem(itemId)
+                    // Episode redirect: if the target is an episode, render the
+                    // PARENT SERIES detail instead of a standalone episode page,
+                    // and remember the requested episode so the accordion
+                    // expands + scrolls + highlights it. Falls back to showing
+                    // the episode itself if the parent can't be resolved.
+                    val isEpisode = requested.kind == "episode" ||
+                        (requested.kind != "series" && requested.parentId != null)
+                    val parent = if (isEpisode) {
+                        requested.parentId?.let { pid ->
+                            runCatching { container.chinoApi.getItem(pid) }.getOrNull()
+                        }
+                    } else null
+                    val focusEpisodeId = if (parent != null) requested.id else null
+                    val item = parent ?: requested
+                    // Point the action-row toggles at whatever the page now
+                    // renders (the series when redirected). Re-warm the flag /
+                    // membership caches for that id so the icons seed correctly.
+                    if (item.id != displayItemId) {
+                        displayItemId = item.id
+                        launch { runCatching { container.watchlists.warmMemberships(listOf(item.id)) } }
                     }
-                    val item = itemDef.await()
+                    val progressDef = async {
+                        runCatching { container.chinoApi.getProgress(item.id).positionSec }.getOrDefault(0)
+                    }
+                    val similarDef = async {
+                        runCatching { container.chinoApi.similar(item.id).items }.getOrDefault(emptyList())
+                    }
                     val seasons = if (item.kind == "series") {
-                        runCatching { container.chinoApi.seriesEpisodes(itemId).seasons }
+                        runCatching { container.chinoApi.seriesEpisodes(item.id).seasons }
                             .getOrDefault(emptyList())
                     } else emptyList()
                     DetailUiState.Ready(
@@ -163,6 +195,7 @@ class DetailScreenModel(
                         streamToken = tokenDef.await(),
                         seasons = seasons,
                         similar = similarDef.await(),
+                        focusEpisodeId = focusEpisodeId,
                     )
                 }
             } catch (e: Exception) {

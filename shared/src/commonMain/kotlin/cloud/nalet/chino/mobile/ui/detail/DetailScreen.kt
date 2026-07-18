@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -84,6 +85,7 @@ import com.composables.icons.lucide.Youtube
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Eye
 import com.composables.icons.lucide.Heart
+import com.composables.icons.lucide.House
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Play
 import com.composables.icons.lucide.Plus
@@ -115,8 +117,13 @@ class DetailScreen(private val itemId: String) : Screen {
         val lists by container.watchlists.lists.collectAsState()
         val memberships by container.watchlists.memberships.collectAsState()
         val addToListError by model.addToListError.collectAsState()
-        val itemMemberships = memberships[itemId] ?: emptySet()
-        val inAnyList = itemId in watchlist || itemMemberships.isNotEmpty()
+        // The id the page actually renders — normally [itemId], but the SERIES
+        // id when an episode target redirected to its parent. The action-row
+        // watchlist / like / add-to-list controls operate on THIS id so they
+        // reflect (and mutate) the shown item, not the source episode.
+        val effectiveId = (state as? DetailUiState.Ready)?.item?.id ?: itemId
+        val itemMemberships = memberships[effectiveId] ?: emptySet()
+        val inAnyList = effectiveId in watchlist || itemMemberships.isNotEmpty()
         // Controls the add-to-list picker (long-press / caret on the toggle).
         var showAddToList by remember(itemId) { mutableStateOf(false) }
 
@@ -132,12 +139,16 @@ class DetailScreen(private val itemId: String) : Screen {
                     ReadyContent(
                         ready = s,
                         inWatchlist = inAnyList,
-                        liked = itemId in likes,
+                        liked = effectiveId in likes,
                         watched = watched,
                         episodeWatched = episodeWatched,
                         onBack = { nav.pop() },
+                        // Home: reset the stack to the signed-in shell root — the
+                        // same idiom the auth/profile flows use. Lands on Home no
+                        // matter how deep the detail stack is.
+                        onHome = { nav.replaceAll(cloud.nalet.chino.mobile.ui.shell.MainShellScreen()) },
                         onPlay = { resume ->
-                            nav.push(PlayerScreen(itemId = itemId, fromStart = !resume))
+                            nav.push(PlayerScreen(itemId = effectiveId, fromStart = !resume))
                         },
                         // Plain tap: when the item is in NO list, add it to the
                         // default list (casual users never see the picker); when
@@ -146,7 +157,7 @@ class DetailScreen(private val itemId: String) : Screen {
                         // full add-to-list picker.
                         onToggleWatchlist = { model.toggleDefaultWatchlist() },
                         onOpenAddToList = { showAddToList = true },
-                        onToggleLike = { container.userFlags.setLike(itemId, itemId !in likes) },
+                        onToggleLike = { container.userFlags.setLike(effectiveId, effectiveId !in likes) },
                         onToggleWatched = { model.toggleWatched(watched) },
                         onToggleEpisodeWatched = { epId, epWatched -> model.toggleEpisodeWatched(epId, epWatched) },
                         onItemNavigate = { id -> nav.push(DetailScreen(id)) },
@@ -166,7 +177,7 @@ class DetailScreen(private val itemId: String) : Screen {
                         val defaultListId = lists.firstOrNull { it.isDefault }?.id
                         val checked = buildSet {
                             addAll(itemMemberships)
-                            if (itemId in watchlist && defaultListId != null) add(defaultListId)
+                            if (effectiveId in watchlist && defaultListId != null) add(defaultListId)
                         }
                         AddToListSheet(
                             lists = lists,
@@ -178,7 +189,7 @@ class DetailScreen(private val itemId: String) : Screen {
                                 // when the picker toggles the default list, so
                                 // Zap + card badges follow.
                                 if (listId == defaultListId) {
-                                    container.userFlags.setWatchlist(itemId, isChecked)
+                                    container.userFlags.setWatchlist(effectiveId, isChecked)
                                 }
                             },
                             onCreateAndAdd = { name -> model.createListAndAdd(name) },
@@ -202,6 +213,7 @@ private fun ReadyContent(
     watched: Boolean,
     episodeWatched: Map<String, Boolean>,
     onBack: () -> Unit,
+    onHome: () -> Unit,
     onPlay: (resume: Boolean) -> Unit,
     onToggleWatchlist: () -> Unit,
     onOpenAddToList: () -> Unit,
@@ -364,6 +376,7 @@ private fun ReadyContent(
                         baseUrl = ready.baseUrl,
                         streamToken = ready.streamToken,
                         episodeWatched = episodeWatched,
+                        focusEpisodeId = ready.focusEpisodeId,
                         onEpisodePlay = { id -> onEpisodePlay?.invoke(id) },
                         onToggleEpisodeWatched = onToggleEpisodeWatched,
                     )
@@ -379,29 +392,56 @@ private fun ReadyContent(
                 Box(modifier = Modifier.height(32.dp))
             }
         }
-        // Back button — overlays the backdrop top-left. Web:
+        // Back + Home buttons — overlay the backdrop top-left. Web:
         // `absolute top-4 left-4 p-2 rounded-full bg-black/50`. The
-        // `windowInsetsPadding(statusBars)` pushes the button below the
-        // system status bar (clock + battery) when running edge-to-edge;
-        // without it the back chip collides with the system bar on
-        // tablets and looks clipped. Same fix as the player's TopBar.
-        Box(
+        // `windowInsetsPadding(statusBars)` pushes them below the system
+        // status bar (clock + battery) when running edge-to-edge; without
+        // it the chips collide with the system bar on tablets and look
+        // clipped. Same fix as the player's TopBar. Home resets to the app
+        // root (chino-web parity) and sits next to Back with the same styling.
+        Row(
             modifier = Modifier
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(start = 16.dp, top = 16.dp)
-                .size(40.dp)
-                .clip(RectangleShape)
-                .background(Color(0x80000000))
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center,
+                .padding(start = 16.dp, top = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(
-                imageVector = Lucide.ArrowLeft,
+            OverlayIconButton(
+                icon = Lucide.ArrowLeft,
                 contentDescription = "Back",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp),
+                onClick = onBack,
+            )
+            OverlayIconButton(
+                icon = Lucide.House,
+                contentDescription = "Home",
+                onClick = onHome,
             )
         }
+    }
+}
+
+/** Dark translucent square icon chip used for the detail backdrop overlay
+ *  affordances (Back / Home). Matches web's `p-2 rounded bg-black/50` with
+ *  the app's square-corner tokens. */
+@Composable
+private fun OverlayIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RectangleShape)
+            .background(Color(0x80000000))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = Color.White,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
@@ -811,6 +851,9 @@ private fun EpisodesSection(
     baseUrl: String,
     streamToken: String,
     episodeWatched: Map<String, Boolean>,
+    /** When set, the season containing this episode is auto-expanded and the
+     *  row is scrolled into view + highlighted (episode-detail redirect). */
+    focusEpisodeId: String?,
     onEpisodePlay: (String) -> Unit,
     onToggleEpisodeWatched: (episodeId: String, currentlyWatched: Boolean) -> Unit,
 ) {
@@ -822,11 +865,14 @@ private fun EpisodesSection(
             fontWeight = FontWeight.Bold,
         )
         seasons.forEach { season ->
+            val containsFocus = focusEpisodeId != null && season.episodes.any { it.id == focusEpisodeId }
             SeasonRow(
                 season = season,
                 baseUrl = baseUrl,
                 streamToken = streamToken,
                 episodeWatched = episodeWatched,
+                focusEpisodeId = if (containsFocus) focusEpisodeId else null,
+                initiallyExpanded = containsFocus,
                 onEpisodePlay = onEpisodePlay,
                 onToggleEpisodeWatched = onToggleEpisodeWatched,
             )
@@ -840,10 +886,12 @@ private fun SeasonRow(
     baseUrl: String,
     streamToken: String,
     episodeWatched: Map<String, Boolean>,
+    focusEpisodeId: String?,
+    initiallyExpanded: Boolean,
     onEpisodePlay: (String) -> Unit,
     onToggleEpisodeWatched: (episodeId: String, currentlyWatched: Boolean) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(initiallyExpanded) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -900,6 +948,7 @@ private fun SeasonRow(
                         baseUrl = baseUrl,
                         streamToken = streamToken,
                         watched = epWatched,
+                        focused = ep.id == focusEpisodeId,
                         onClick = { onEpisodePlay(ep.id) },
                         onToggleWatched = { onToggleEpisodeWatched(ep.id, epWatched) },
                     )
@@ -909,18 +958,40 @@ private fun SeasonRow(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun EpisodeRow(
     episode: cloud.nalet.chino.mobile.data.api.Episode,
     baseUrl: String,
     streamToken: String,
     watched: Boolean,
+    /** True when this row is the redirect target — highlighted (ChinoAccent
+     *  ring + tint) and scrolled into view once on first composition. */
+    focused: Boolean = false,
     onClick: () -> Unit,
     onToggleWatched: () -> Unit,
 ) {
+    // Scroll the redirected episode into view within the detail's outer
+    // verticalScroll. Fires once after the row lands in composition.
+    val bringIntoView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    if (focused) {
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            bringIntoView.bringIntoView()
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (focused) Modifier.bringIntoViewRequester(bringIntoView) else Modifier)
+            .then(
+                if (focused) {
+                    Modifier
+                        .background(ChinoCloudBlue.copy(alpha = 0.12f))
+                        .border(BorderStroke(1.dp, ChinoCloudBlue), RectangleShape)
+                } else {
+                    Modifier
+                },
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
