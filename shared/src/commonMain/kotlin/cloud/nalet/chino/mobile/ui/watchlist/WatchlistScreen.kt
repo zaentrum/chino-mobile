@@ -70,6 +70,7 @@ import cloud.nalet.chino.mobile.data.api.Watchlist
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.components.MediaCard
 import cloud.nalet.chino.mobile.ui.components.MediaRow
+import cloud.nalet.chino.mobile.ui.components.episodeBadgeFor
 import cloud.nalet.chino.mobile.ui.detail.DetailScreen
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Lucide
@@ -264,6 +265,8 @@ private fun WatchlistHub(
                     onSeeAll = { onOpenList(list) },
                     onTitleClick = { onOpenList(list) },
                     saved = true,
+                    // Saved EPISODES carry their SxxEyy badge (CW-rail idiom).
+                    episodeBadges = true,
                 )
             }
         }
@@ -396,6 +399,8 @@ private fun ListMoreView(
                         item = item,
                         posterUrl = "$baseUrl/v1/items/${item.id}/poster?stream=$token",
                         onClick = { onItemClick(item.id) },
+                        // Saved EPISODES carry their SxxEyy badge (CW-rail idiom).
+                        episodeBadge = episodeBadgeFor(item),
                         cardWidth = 110.dp,
                         // Every tile here is, by definition, in the open
                         // list — surface the "saved" badge (in >=1 list).
