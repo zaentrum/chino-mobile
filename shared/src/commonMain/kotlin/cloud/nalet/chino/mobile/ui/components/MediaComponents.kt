@@ -491,6 +491,10 @@ fun MediaRow(
     // Watchlist hub: every tile on a list shelf is by definition saved, so
     // the hub turns the bookmark badge on for the whole row.
     saved: Boolean = false,
+    // Watchlist hub: list shelves can contain EPISODES; when true, episode
+    // items swap the year•rating subtitle for the SxxEyy badge (same idiom
+    // as the Continue Watching cards). Home rails leave this off.
+    episodeBadges: Boolean = false,
     // #188: per-card watched toggle. When set, each card's overflow menu gains
     // a Mark-watched/Mark-unwatched item; the callback receives the item id and
     // owns the optimistic update (Home rails drop the card; Browse flips the
@@ -525,6 +529,7 @@ fun MediaRow(
                         item = item,
                         posterUrl = "$baseUrl/v1/items/${item.id}/poster?stream=$streamToken",
                         onClick = onItemClick?.let { cb -> { cb(item.id) } },
+                        episodeBadge = if (episodeBadges) episodeBadgeFor(item) else null,
                         cardWidth = cardWidth,
                         saved = saved,
                         onToggleWatched = onToggleWatched?.let { cb -> { cb(item.id) } },
@@ -597,6 +602,17 @@ private fun SeeAllTile(cardWidth: Dp, onClick: () -> Unit) {
 /** Episode coordinates used by Continue Watching cards. Mirrors chino-
  *  web's MediaCard `episode` prop: SxxExx badge + optional episode title. */
 data class EpisodeBadge(val season: Int, val episode: Int, val episodeTitle: String?)
+
+/** SxxEyy coordinates for an EPISODE catalogue item, or null for anything
+ *  else (or an episode missing its numbers). Used by surfaces whose item
+ *  lists can contain episodes — the watchlist hub shelves + per-list grid —
+ *  so saved episodes carry the same badge the Continue Watching rail shows.
+ *  The card title stays the episode's own title, so no episodeTitle here
+ *  (it would just duplicate the line above). */
+fun episodeBadgeFor(item: Item): EpisodeBadge? =
+    if (item.kind == "episode" && item.seasonNumber != null && item.episodeNumber != null) {
+        EpisodeBadge(season = item.seasonNumber, episode = item.episodeNumber, episodeTitle = null)
+    } else null
 
 /**
  * Single poster tile. 2:3 portrait poster + title beneath. Mirrors chino-

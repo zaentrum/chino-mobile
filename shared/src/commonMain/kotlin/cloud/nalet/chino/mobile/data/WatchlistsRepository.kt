@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -66,16 +67,25 @@ class WatchlistsRepository(
 
     /** Fetches memberships for [ids] not already cached and folds them into
      *  the cache. Items the server omits map to the empty set so the "saved"
-     *  badge can resolve to false without a second round-trip. */
+     *  badge can resolve to false without a second round-trip.
+     *
+     *  The fold is NON-clobbering: an optimistic [setMembership] made while
+     *  the fetch was in flight (open the sheet → tap a list fast) writes the
+     *  id into the cache, so at fold time only ids still ABSENT are written
+     *  — the fetched (stale) set never overwrites the user's toggle. */
     suspend fun warmMemberships(ids: List<String>) {
         val missing = ids.filter { it !in _memberships.value }
         if (missing.isEmpty()) return
         runCatching { api.getMemberships(missing).memberships }.onSuccess { fetched ->
-            val next = _memberships.value.toMutableMap()
-            missing.forEach { id ->
-                next[id] = fetched[id]?.toSet() ?: emptySet()
+            _memberships.update { current ->
+                val next = current.toMutableMap()
+                missing.forEach { id ->
+                    if (id !in current) {
+                        next[id] = fetched[id]?.toSet() ?: emptySet()
+                    }
+                }
+                next
             }
-            _memberships.value = next
         }
     }
 

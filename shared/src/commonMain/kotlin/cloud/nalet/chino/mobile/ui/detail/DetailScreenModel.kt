@@ -29,9 +29,16 @@ sealed interface DetailUiState {
          *  accordion auto-expands that season, scrolls the row into view, and
          *  highlights it. Null for a series/movie opened directly. */
         val focusEpisodeId: String? = null,
+        /** Series only: episodeId -> in-progress resume state derived from the
+         *  continue-watching feed. Rows absent here have nothing to resume. */
+        val episodeResume: Map<String, EpisodeResume> = emptyMap(),
     ) : DetailUiState
     data class Error(val message: String) : DetailUiState
 }
+
+/** One episode row's in-progress state (from /me/continue-watching): more
+ *  than 30s in, not finished, not an up-next substitution. */
+data class EpisodeResume(val positionSec: Int, val durationSec: Int)
 
 class DetailScreenModel(
     private val container: AppContainer,
@@ -86,22 +93,31 @@ class DetailScreenModel(
         container.userFlags.setWatchlist(displayItemId, !inDefault)
     }
 
-    /** Toggles the item's membership in a specific [listId] from the picker. */
-    fun toggleListMembership(listId: String, checked: Boolean) {
-        container.watchlists.setMembership(displayItemId, listId, checked)
+    /** Toggles [targetId]'s membership in a specific [listId] from the picker.
+     *  The target is the displayed item when the picker was opened from the
+     *  action row, or an EPISODE id when opened from an episode row's "+". */
+    fun toggleListMembership(targetId: String, listId: String, checked: Boolean) {
+        container.watchlists.setMembership(targetId, listId, checked)
     }
 
-    /** Creates a list from the picker's inline field and adds the item to it.
-     *  On a server rejection the error is surfaced via [addToListError]. */
-    fun createListAndAdd(name: String) {
+    /** Creates a list from the picker's inline field and adds [targetId] to
+     *  it. On a server rejection the error is surfaced via [addToListError]. */
+    fun createListAndAdd(targetId: String, name: String) {
         screenModelScope.launch {
             runCatching { container.watchlists.create(name) }
                 .onSuccess { created ->
                     _addToListError.value = null
-                    container.watchlists.setMembership(displayItemId, created.id, true)
+                    container.watchlists.setMembership(targetId, created.id, true)
                 }
                 .onFailure { _addToListError.value = friendlyListError(it) }
         }
+    }
+
+    /** Best-effort membership warm for an episode row's add-to-list picker,
+     *  so the sheet's checkmarks seed correctly on first open (only the
+     *  displayed item's memberships are warmed at load time). */
+    fun warmMemberships(id: String) {
+        screenModelScope.launch { runCatching { container.watchlists.warmMemberships(listOf(id)) } }
     }
 
     fun clearAddToListError() { _addToListError.value = null }
@@ -184,6 +200,26 @@ class DetailScreenModel(
                     val similarDef = async {
                         runCatching { container.chinoApi.similar(item.id).items }.getOrDefault(emptyList())
                     }
+                    // Per-episode resume state (series only, best-effort):
+                    // the episodes payload carries no progress fields, but the
+                    // continue-watching feed stamps position/duration on its
+                    // in-progress rows — episodes included. Keyed by episode
+                    // id, so lookups only ever hit this series' own rows.
+                    // Up-next substitutions (position=0) and finished rows
+                    // (within 60s of the end) are skipped — nothing to
+                    // resume. Rows the feed stamps with duration<=0 are KEPT
+                    // (web parity): the EpisodeRow falls back to the
+                    // episode's catalogue runtime for the bar + remaining.
+                    val episodeResumeDef = async {
+                        if (item.kind != "series") return@async emptyMap<String, EpisodeResume>()
+                        runCatching { container.chinoApi.continueWatching().items }
+                            .getOrDefault(emptyList())
+                            .filter {
+                                !it.upNext && it.positionSec > 30 &&
+                                    (it.durationSec <= 0 || it.positionSec < it.durationSec - 60)
+                            }
+                            .associate { it.id to EpisodeResume(it.positionSec, it.durationSec) }
+                    }
                     val seasons = if (item.kind == "series") {
                         runCatching { container.chinoApi.seriesEpisodes(item.id).seasons }
                             .getOrDefault(emptyList())
@@ -196,6 +232,7 @@ class DetailScreenModel(
                         seasons = seasons,
                         similar = similarDef.await(),
                         focusEpisodeId = focusEpisodeId,
+                        episodeResume = episodeResumeDef.await(),
                     )
                 }
             } catch (e: Exception) {

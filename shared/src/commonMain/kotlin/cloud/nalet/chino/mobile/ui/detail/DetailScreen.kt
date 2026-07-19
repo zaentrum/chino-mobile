@@ -124,8 +124,11 @@ class DetailScreen(private val itemId: String) : Screen {
         val effectiveId = (state as? DetailUiState.Ready)?.item?.id ?: itemId
         val itemMemberships = memberships[effectiveId] ?: emptySet()
         val inAnyList = effectiveId in watchlist || itemMemberships.isNotEmpty()
-        // Controls the add-to-list picker (long-press / caret on the toggle).
-        var showAddToList by remember(itemId) { mutableStateOf(false) }
+        // Controls the add-to-list picker (long-press / caret on the action-
+        // row toggle, or an episode row's "+"). Holds the TARGET id the sheet
+        // mutates — the displayed item for the action row, the EPISODE id for
+        // a row's "+". null = sheet closed.
+        var addToListTargetId by remember(itemId) { mutableStateOf<String?>(null) }
 
         Scaffold(containerColor = MaterialTheme.colorScheme.background) { _ ->
             when (val s = state) {
@@ -142,6 +145,7 @@ class DetailScreen(private val itemId: String) : Screen {
                         liked = effectiveId in likes,
                         watched = watched,
                         episodeWatched = episodeWatched,
+                        episodeResume = s.episodeResume,
                         onBack = { nav.pop() },
                         // Home: reset the stack to the signed-in shell root — the
                         // same idiom the auth/profile flows use. Lands on Home no
@@ -156,7 +160,7 @@ class DetailScreen(private val itemId: String) : Screen {
                         // from the default list. The caret / long-press opens the
                         // full add-to-list picker.
                         onToggleWatchlist = { model.toggleDefaultWatchlist() },
-                        onOpenAddToList = { showAddToList = true },
+                        onOpenAddToList = { addToListTargetId = effectiveId },
                         onToggleLike = { container.userFlags.setLike(effectiveId, effectiveId !in likes) },
                         onToggleWatched = { model.toggleWatched(watched) },
                         onToggleEpisodeWatched = { epId, epWatched -> model.toggleEpisodeWatched(epId, epWatched) },
@@ -167,35 +171,45 @@ class DetailScreen(private val itemId: String) : Screen {
                         onEpisodePlay = { episodeId ->
                             nav.push(PlayerScreen(itemId = episodeId, fromStart = false))
                         },
+                        onEpisodeAddToList = { episodeId ->
+                            // Warm the episode's memberships so the sheet's
+                            // checkmarks seed correctly (only the displayed
+                            // item is warmed at load time), then open the
+                            // picker targeting the EPISODE.
+                            model.warmMemberships(episodeId)
+                            addToListTargetId = episodeId
+                        },
                     )
-                    if (showAddToList) {
+                    addToListTargetId?.let { targetId ->
                         // Seed checkmarks from BOTH the membership cache and the
-                        // back-compat default-list set: the default list's id
-                        // lives in [lists], and an item the user added via the
-                        // plain-tap path is in `watchlist` but might not be in
-                        // the membership cache yet.
+                        // back-compat default-list set for the sheet's TARGET
+                        // (the displayed item, or an EPISODE opened from a
+                        // row's "+"): the default list's id lives in [lists],
+                        // and an item the user added via the plain-tap path is
+                        // in `watchlist` but might not be in the membership
+                        // cache yet.
                         val defaultListId = lists.firstOrNull { it.isDefault }?.id
                         val checked = buildSet {
-                            addAll(itemMemberships)
-                            if (effectiveId in watchlist && defaultListId != null) add(defaultListId)
+                            addAll(memberships[targetId] ?: emptySet())
+                            if (targetId in watchlist && defaultListId != null) add(defaultListId)
                         }
                         AddToListSheet(
                             lists = lists,
                             checkedListIds = checked,
                             createError = addToListError,
                             onToggle = { listId, isChecked ->
-                                model.toggleListMembership(listId, isChecked)
+                                model.toggleListMembership(targetId, listId, isChecked)
                                 // Keep the back-compat default-list flag in sync
                                 // when the picker toggles the default list, so
                                 // Zap + card badges follow.
                                 if (listId == defaultListId) {
-                                    container.userFlags.setWatchlist(effectiveId, isChecked)
+                                    container.userFlags.setWatchlist(targetId, isChecked)
                                 }
                             },
-                            onCreateAndAdd = { name -> model.createListAndAdd(name) },
+                            onCreateAndAdd = { name -> model.createListAndAdd(targetId, name) },
                             onDismiss = {
                                 model.clearAddToListError()
-                                showAddToList = false
+                                addToListTargetId = null
                             },
                         )
                     }
@@ -212,6 +226,7 @@ private fun ReadyContent(
     liked: Boolean,
     watched: Boolean,
     episodeWatched: Map<String, Boolean>,
+    episodeResume: Map<String, EpisodeResume>,
     onBack: () -> Unit,
     onHome: () -> Unit,
     onPlay: (resume: Boolean) -> Unit,
@@ -223,6 +238,7 @@ private fun ReadyContent(
     onItemNavigate: ((String) -> Unit)? = null,
     onPersonNavigate: ((String) -> Unit)? = null,
     onEpisodePlay: ((String) -> Unit)? = null,
+    onEpisodeAddToList: ((String) -> Unit)? = null,
 ) {
     val item = ready.item
     val uriHandler = LocalUriHandler.current
@@ -376,9 +392,11 @@ private fun ReadyContent(
                         baseUrl = ready.baseUrl,
                         streamToken = ready.streamToken,
                         episodeWatched = episodeWatched,
+                        episodeResume = episodeResume,
                         focusEpisodeId = ready.focusEpisodeId,
                         onEpisodePlay = { id -> onEpisodePlay?.invoke(id) },
                         onToggleEpisodeWatched = onToggleEpisodeWatched,
+                        onEpisodeAddToList = { id -> onEpisodeAddToList?.invoke(id) },
                     )
                 }
                 if (ready.similar.isNotEmpty()) {
@@ -851,11 +869,13 @@ private fun EpisodesSection(
     baseUrl: String,
     streamToken: String,
     episodeWatched: Map<String, Boolean>,
+    episodeResume: Map<String, EpisodeResume>,
     /** When set, the season containing this episode is auto-expanded and the
      *  row is scrolled into view + highlighted (episode-detail redirect). */
     focusEpisodeId: String?,
     onEpisodePlay: (String) -> Unit,
     onToggleEpisodeWatched: (episodeId: String, currentlyWatched: Boolean) -> Unit,
+    onEpisodeAddToList: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -871,10 +891,12 @@ private fun EpisodesSection(
                 baseUrl = baseUrl,
                 streamToken = streamToken,
                 episodeWatched = episodeWatched,
+                episodeResume = episodeResume,
                 focusEpisodeId = if (containsFocus) focusEpisodeId else null,
                 initiallyExpanded = containsFocus,
                 onEpisodePlay = onEpisodePlay,
                 onToggleEpisodeWatched = onToggleEpisodeWatched,
+                onEpisodeAddToList = onEpisodeAddToList,
             )
         }
     }
@@ -886,10 +908,12 @@ private fun SeasonRow(
     baseUrl: String,
     streamToken: String,
     episodeWatched: Map<String, Boolean>,
+    episodeResume: Map<String, EpisodeResume>,
     focusEpisodeId: String?,
     initiallyExpanded: Boolean,
     onEpisodePlay: (String) -> Unit,
     onToggleEpisodeWatched: (episodeId: String, currentlyWatched: Boolean) -> Unit,
+    onEpisodeAddToList: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
     Column(
@@ -948,9 +972,11 @@ private fun SeasonRow(
                         baseUrl = baseUrl,
                         streamToken = streamToken,
                         watched = epWatched,
+                        resume = episodeResume[ep.id],
                         focused = ep.id == focusEpisodeId,
                         onClick = { onEpisodePlay(ep.id) },
                         onToggleWatched = { onToggleEpisodeWatched(ep.id, epWatched) },
+                        onAddToList = { onEpisodeAddToList(ep.id) },
                     )
                 }
             }
@@ -965,12 +991,25 @@ private fun EpisodeRow(
     baseUrl: String,
     streamToken: String,
     watched: Boolean,
+    /** Non-null when the continue-watching feed has this episode in
+     *  progress — drives the thumbnail progress bar + "Resume" meta line.
+     *  The row's plain tap is unchanged (the player auto-resumes). */
+    resume: EpisodeResume? = null,
     /** True when this row is the redirect target — highlighted (ChinoAccent
      *  ring + tint) and scrolled into view once on first composition. */
     focused: Boolean = false,
     onClick: () -> Unit,
     onToggleWatched: () -> Unit,
+    onAddToList: () -> Unit = {},
 ) {
+    // Effective resume duration: the continue-watching feed's duration when
+    // it stamped one, else the episode's catalogue runtime (durationMs).
+    // Null when neither exists — then the row shows a plain "Resume" line
+    // and no bar (nothing to compute a fraction against).
+    val effectiveDurationSec: Int? = resume?.let { r ->
+        if (r.durationSec > 0) r.durationSec
+        else episode.durationMs?.let { (it / 1000L).toInt() }?.takeIf { it > 0 }
+    }
     // Scroll the redirected episode into view within the detail's outer
     // verticalScroll. Fires once after the row lands in composition.
     val bringIntoView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
@@ -1031,6 +1070,51 @@ private fun EpisodeRow(
                     modifier = Modifier.size(14.dp),
                 )
             }
+            // Per-episode add-to-list "+" chip (bottom-end, mirroring the
+            // watched pip's styling). Opens the add-to-list picker targeting
+            // THIS episode; the tap is consumed here so it doesn't also fire
+            // the row's open-player click.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .size(24.dp)
+                    .clip(RectangleShape)
+                    .background(Color(0x99000000))
+                    .clickable(onClick = onAddToList),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Lucide.Plus,
+                    contentDescription = "Add episode to list",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+            // In-progress rows: thin accent progress bar along the bottom of
+            // the thumbnail (same idiom as the Continue Watching card
+            // overlay). Canonical cross-client styling: 4dp, ChinoBorder
+            // track, accent fill. Only rendered when an effective duration
+            // exists to compute a fraction against.
+            if (resume != null && effectiveDurationSec != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(ChinoBorder),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(
+                                (resume.positionSec.toFloat() / effectiveDurationSec.toFloat())
+                                    .coerceIn(0f, 1f),
+                            )
+                            .height(4.dp)
+                            .background(ChinoCloudBlue),
+                    )
+                }
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
             val epNum = listOfNotNull(
@@ -1058,6 +1142,22 @@ private fun EpisodeRow(
                 if (epRuntimeMin > 0) {
                     Text(text = "${epRuntimeMin}m", color = ChinoMuted, fontSize = 12.sp)
                 }
+            }
+            // Subtle resume meta line for in-progress rows. Click behaviour
+            // is unchanged — the row tap opens the player, which auto-resumes.
+            // With a known (or runtime-fallback) duration: "Resume · Xm left"
+            // (CEIL of remaining, floored at 1m); without one, a plain
+            // "Resume" — there's nothing to compute remaining against.
+            if (resume != null) {
+                val remainingMin = effectiveDurationSec?.let { dur ->
+                    ((dur - resume.positionSec + 59) / 60).coerceAtLeast(1)
+                }
+                Text(
+                    text = if (remainingMin != null) "Resume · ${remainingMin}m left" else "Resume",
+                    color = ChinoCloudBlue,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                )
             }
             episode.overview?.takeIf { it.isNotBlank() }?.let {
                 Text(
