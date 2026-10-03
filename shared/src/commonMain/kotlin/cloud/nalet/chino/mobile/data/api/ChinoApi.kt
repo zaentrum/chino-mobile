@@ -228,8 +228,12 @@ class ChinoApi(private val http: HttpClient) {
     suspend fun seriesEpisodes(id: String): SeriesEpisodes =
         http.get("v1/series/$id/episodes").body()
 
-    suspend fun nextEpisode(id: String): NextEpisode =
-        http.get("v1/series/$id/next-episode").body()
+    /** The episode after [after] (or after the caller's latest-watched one,
+     *  else the first). `next` is null at the end of the series. */
+    suspend fun nextEpisode(id: String, after: String? = null): NextEpisodeResponse =
+        http.get("v1/series/$id/next-episode") {
+            after?.let { parameter("after", it) }
+        }.body()
 
     /** "More like this" — chino-api proxies katalog's similarity search.
      *  Empty list when chino-api can't find recommendations. */
@@ -342,12 +346,16 @@ data class SeriesEpisodes(
     val seasons: List<Season> = emptyList(),
 )
 
+/** GET /v1/series/{id}/next-episode: `{ next, anchor }`, or `{ next: null,
+ *  reason: "end_of_series" }`. The episode is a full catalogue item under
+ *  `next`, not spread over the top level. */
 @Serializable
-data class NextEpisode(
-    val id: String? = null,
-    val title: String? = null,
-    @SerialName("season_number") val seasonNumber: Int? = null,
-    @SerialName("episode_number") val episodeNumber: Int? = null,
+data class NextEpisodeResponse(
+    val next: Item? = null,
+    /** The episode `next` follows, when there was one to follow. */
+    val anchor: String? = null,
+    /** Why there is no `next` ("end_of_series"). */
+    val reason: String? = null,
 )
 
 @Serializable
@@ -366,7 +374,10 @@ data class SegmentsResponse(
 @Serializable
 data class SidecarSubtitle(
     val id: String,
-    val label: String,
+    // chino-api omits an empty label (`label,omitempty`). Required here, one
+    // unlabelled file failed the whole /subtitles response, and the player
+    // then mounted none of the item's sidecar subtitles.
+    val label: String? = null,
     val lang: String,
     val url: String,
     val default: Boolean? = null,
@@ -431,13 +442,19 @@ data class PlayInfo(
 )
 
 /** One row of the People (cast & crew) search results. `credits` is the
- *  number of titles this person is credited on — rendered as "· N titles".
- *  Mirrors chino-web's PersonSummary field-for-field. */
+ *  number of titles this person is credited on — rendered as "· N titles"
+ *  (chino-api leaves it out when 0). Mirrors chino-web's PersonSummary
+ *  field-for-field. */
 @Serializable
 data class Person(
     val id: String,
     val name: String,
     val credits: Int = 0,
+    /** The catalog holds a portrait of them, at [profileUrl]. */
+    @SerialName("has_profile") val hasProfile: Boolean = false,
+    /** chino-api's portrait proxy, "/api/v1/people/{id}/profile" — set only
+     *  with [hasProfile]; loads like a poster ([artworkUrl]). */
+    @SerialName("profile_url") val profileUrl: String? = null,
 )
 
 @Serializable
@@ -446,13 +463,33 @@ data class PeopleResponse(
     val total: Int = 0,
 )
 
-/** GET /v1/people/{id}: the person's name + their filmography as standard
- *  catalogue items (poster/backdrop/watched_at). Mirrors chino-web's
- *  PersonDetail. */
+/**
+ * GET /v1/people/{id}: a person, what the catalog knows about them (every
+ * optional field is omitted when unknown) and their filmography — one card
+ * per title, newest first, each with the person's [Item.roles] on it.
+ * Mirrors chino-web's PersonDetail and chino-api's katalog.PersonDetail.
+ */
 @Serializable
 data class PersonDetail(
     val id: String,
     val name: String,
+    @SerialName("has_profile") val hasProfile: Boolean = false,
+    @SerialName("profile_url") val profileUrl: String? = null,
+    @SerialName("sort_name") val sortName: String? = null,
+    @SerialName("also_known_as") val alsoKnownAs: List<String> = emptyList(),
+    /** YYYY-MM-DD ([parseCatalogDate]). */
+    @SerialName("birth_date") val birthDate: String? = null,
+    @SerialName("death_date") val deathDate: String? = null,
+    val birthplace: String? = null,
+    /** "Acting", "Directing", … as the catalog names it. */
+    @SerialName("known_for_department") val knownForDepartment: String? = null,
+    /** One text, in [biographyLang]: the first of the request's
+     *  Accept-Language the catalog has it in, else English, else any. */
+    val biography: String? = null,
+    /** A primary language subtag ("en"). */
+    @SerialName("biography_lang") val biographyLang: String? = null,
+    @SerialName("tmdb_person_id") val tmdbPersonId: String? = null,
+    @SerialName("imdb_id") val imdbId: String? = null,
     val items: List<Item> = emptyList(),
 )
 

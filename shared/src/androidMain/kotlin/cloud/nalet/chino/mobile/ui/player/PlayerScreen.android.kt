@@ -596,7 +596,7 @@ private fun PlaybackSurface(
             MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(sub.url))
                 .setMimeType(mime)
                 .setLanguage(sub.lang.takeIf { it.isNotBlank() })
-                .setLabel(sub.label.takeIf { it.isNotBlank() })
+                .setLabel(sub.label?.takeIf { it.isNotBlank() })
                 .setSelectionFlags(if (sub.default == true) C.SELECTION_FLAG_DEFAULT else 0)
                 .build()
         }

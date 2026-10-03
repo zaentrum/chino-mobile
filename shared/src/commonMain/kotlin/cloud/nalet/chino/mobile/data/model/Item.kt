@@ -19,7 +19,11 @@ data class Item(
      * Kotlin property is named `kind` so call sites read naturally.
      */
     @SerialName("type") val kind: String? = null,
-    @SerialName("artwork_url") val artworkUrl: String? = null,
+    // chino-api synthesises both on every item ("/api/v1/items/{id}/poster",
+    // its artwork proxy); there is no `artwork_url`. Server-relative — resolve
+    // with [cloud.nalet.chino.mobile.data.api.artworkUrl] before loading.
+    @SerialName("poster_url") val posterUrl: String? = null,
+    @SerialName("backdrop_url") val backdropUrl: String? = null,
     val year: Int? = null,
     // chino-api emits the long synopsis as JSON field `description` (see
     // chino-api/internal/katalog/client.go:75 `Description string
@@ -56,6 +60,10 @@ data class Item(
     // non-null + count>0, Detail renders the "Analyzed" footer column
     // listing which segments are present (web: DetailPage.tsx L269-278).
     val segments: SegSummary? = null,
+    /** On a person's filmography (GET /v1/people/{id}) only: that person's
+     *  roles on this title, in the catalog's credit order (["actor",
+     *  "director"]). Named by [formatRoles]. */
+    val roles: List<String> = emptyList(),
 )
 
 @Serializable
@@ -75,21 +83,38 @@ data class SegSummary(
     val count: Int = 0,
 )
 
+/**
+ * One credit, as chino-api passes katalog-api's cast through: role by role
+ * (actor, creator, director, writer, producer, composer, cinematographer,
+ * editor, then any other role), billing order within a role, at most 20
+ * actors and 10 people of every other role. Every optional field is omitted
+ * when unknown. [groupCredits] turns the list into the detail page's blocks.
+ */
 @Serializable
 data class CastMember(
     val name: String,
-    /** "director", "actor", or null. */
+    /** An open token: actor, creator, director, writer, producer, composer,
+     *  cinematographer, editor, or any other ([roleOf] — none is "actor"). */
     val role: String? = null,
     // Stable katalog person id. chino-api now stamps `person_id` on each cast
     // entry so the name can deep-link to the Person/Filmography surface. Null on
     // older payloads (or unmatched credits) — the UI skips the link then.
     @SerialName("person_id") val personId: String? = null,
+    /** The job within the role ("Screenplay"). */
+    val job: String? = null,
+    /** The part an actor plays. */
+    val character: String? = null,
+    /** Billing order within the role, 0 first. */
+    val order: Int? = null,
+    /** How many episodes of a series the credit covers. */
+    @SerialName("episode_count") val episodeCount: Int? = null,
 )
 
 @Serializable
 data class Trailer(
     val url: String,
     val site: String? = null,
+    @SerialName("external_id") val externalId: String? = null,
     val title: String? = null,
 )
 
@@ -101,9 +126,9 @@ data class ItemsPage(
     val items: List<Item> = emptyList(),
 )
 
+/** GET /v1/me echoes the caller's OIDC subject and nothing else; the
+ *  account's name and email come from the IdP's userinfo, not from here. */
 @Serializable
 data class Me(
     val sub: String,
-    val email: String? = null,
-    val name: String? = null,
 )
