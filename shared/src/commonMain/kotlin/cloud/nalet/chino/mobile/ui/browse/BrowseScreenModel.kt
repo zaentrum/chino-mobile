@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Browse-screen UI state: a paged grid of items for a given type
  *  ("movie" or "series") with chino-web-style filter chips. */
@@ -79,7 +80,7 @@ class BrowseScreenModel(
         val offset = s.paged.nextOffset
         _state.update { it.copy(loading = true) }
         loadJob = screenModelScope.launch {
-            val page = runCatching { fetchPage(filter, offset) }
+            val page = attempt { fetchPage(filter, offset) }
             _state.update { current ->
                 // Only a page of the filter on screen may land (reload()
                 // cancels this job, but never trust a late resume).
@@ -141,18 +142,34 @@ class BrowseScreenModel(
             it.copy(filter = q, paged = Paged(), loading = true, loadMoreFailed = false, error = null)
         }
         loadJob = screenModelScope.launch {
-            val page = runCatching { fetchPage(q, offset = 0) }
+            val page = attempt { fetchPage(q, offset = 0) }
             _state.update { current ->
                 if (current.filter != q) return@update current
                 page.fold(
                     onSuccess = { rows ->
-                        current.copy(paged = Paged<Item>().append(rows, pageSize, Item::id), loading = false)
+                        current.copy(
+                            paged = Paged<Item>().append(rows, pageSize, Item::id),
+                            loading = false,
+                            error = null,
+                        )
                     },
                     onFailure = { e -> current.copy(loading = false, error = e.catalogueMessage()) },
                 )
             }
         }
     }
+
+    /** runCatching that lets cancellation through: a request cancelled by a
+     *  newer filter or a second Retry must end quietly, not land as an error
+     *  over the page that replaced it. */
+    private suspend fun <T> attempt(block: suspend () -> T): Result<T> =
+        try {
+            Result.success(block())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
 
     private suspend fun fetchPage(q: BrowseQuery, offset: Int): List<Item> =
         container.chinoApi.listItems(
