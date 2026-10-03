@@ -42,15 +42,14 @@ import kotlin.coroutines.resumeWithException
  * The endpoints, client id and token exchange are supplied as lambdas resolved
  * at sign-in time (not construction) so the neutral self-host client reads the
  * server the user connected to via Add-Server, not a build-time default. The
- * [redirectScheme] is the app's OWN scheme (`cloud.nalet.chino`, `+.debug` on a
- * debug build) which the operator registers on their OIDC client — we never
- * take a redirect target from the server.
+ * redirect is the app's own [OAuthRedirect.URI] (`cloud.nalet.chino:/oauth/callback`,
+ * Debug and Release alike), which the operator registers on their OIDC client —
+ * we never take a redirect target from the server.
  */
 @OptIn(ExperimentalForeignApi::class)
 class IosSignInLauncher(
     private val authEndpoint: () -> String,
     private val clientId: () -> String,
-    private val redirectScheme: String,
     private val exchange: suspend (code: String, verifier: String, redirectUri: String) -> Tokens,
 ) : SignInLauncher {
 
@@ -68,7 +67,7 @@ class IosSignInLauncher(
         val verifier = randomUrlSafe(64)
         val challenge = s256Challenge(verifier)
         val state = randomUrlSafe(24)
-        val redirectUri = "$redirectScheme:/oauth/callback"
+        val redirectUri = OAuthRedirect.URI
         val authorizeUrl = buildAuthorizeUrl(
             base = authEndpoint(),
             clientId = clientId(),
@@ -116,7 +115,7 @@ class IosSignInLauncher(
         suspendCancellableCoroutine { cont ->
             val s = ASWebAuthenticationSession(
                 uRL = NSURL(string = url),
-                callbackURLScheme = redirectScheme,
+                callbackURLScheme = OAuthRedirect.SCHEME,
             ) { callbackURL, error ->
                 session = null
                 when {

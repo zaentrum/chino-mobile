@@ -7,6 +7,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import cloud.nalet.chino.mobile.AppConfig
 import cloud.nalet.chino.mobile.currentTimeMillis
+import cloud.nalet.chino.mobile.data.auth.OAuthRedirect
 import cloud.nalet.chino.mobile.data.auth.SignInLauncher
 import cloud.nalet.chino.mobile.data.auth.SignInResult
 import cloud.nalet.chino.mobile.data.auth.Tokens
@@ -22,9 +23,9 @@ import net.openid.appauth.ResponseTypeValues
  * AppAuth-Android-driven sign-in. Mirrors what chino-web does with
  * react-oidc-context: opens Keycloak's authorize endpoint in a Chrome Custom
  * Tab, captures the redirect via the AppAuth RedirectUriReceiverActivity
- * (registered by the appAuthRedirectScheme manifestPlaceholder in
- * androidApp/build.gradle.kts), exchanges the code for tokens, returns
- * them to the suspending caller.
+ * (registered for [OAuthRedirect.SCHEME] by the appAuthRedirectScheme
+ * manifestPlaceholder in androidApp/build.gradle.kts), exchanges the code for
+ * tokens, returns them to the suspending caller.
  *
  * Wired to the activity's ActivityResultLauncher in [installFor] so the
  * suspending [signIn] call can await the Chrome Custom Tab result without
@@ -135,10 +136,10 @@ class AppAuthSignInLauncher private constructor(
          *  old hardcoded behaviour. The client id is [config.oidcClientId],
          *  which AppContainer has already resolved from the connected server.
          *
-         *  The redirect URI ALWAYS stays the app's OWN scheme
-         *  ([config.redirectScheme] / the manifest placeholder); we never take
-         *  a redirect from the server — the operator registers the app's scheme
-         *  on their OIDC client. */
+         *  The redirect URI is ALWAYS the app's own, [OAuthRedirect.URI]
+         *  (`cloud.nalet.chino:/oauth/callback`, every build type) — never one
+         *  taken from the server. The operator registers exactly that URI on
+         *  their OIDC client; the manifest placeholder routes it back here. */
         fun installFor(
             activity: ComponentActivity,
             config: AppConfig,
@@ -158,7 +159,7 @@ class AppAuthSignInLauncher private constructor(
                 service = AuthorizationService(activity),
                 serviceConfig = serviceConfig,
                 clientId = config.oidcClientId,
-                redirectUri = "${config.redirectScheme.ifBlank { activity.applicationContext.packageName }}:/oauth/callback",
+                redirectUri = OAuthRedirect.URI,
             )
             launcher.registerLauncher()
             return launcher

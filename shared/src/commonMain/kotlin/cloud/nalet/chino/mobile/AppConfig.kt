@@ -23,10 +23,8 @@ data class AppConfig(
     // [apiBaseUrl] (the internal non-UI fallback). Defaults empty so a host
     // platform with no value (or older callers) is honestly neutral.
     val serverPreset: String = "",
-    // OIDC redirect scheme (e.g. "cloud.nalet.chino.mobile.beta.debug"). Must be
-    // registered on the OIDC client; the host builds it per flavor/build-type.
-    // Defaults empty so the launcher falls back to the package name.
-    val redirectScheme: String = "",
+    // No redirect URI here: it is not per build. Every build signs in with
+    // data.auth.OAuthRedirect.URI, the one URI the OIDC client registers.
 ) {
     enum class Flavor { BETA, PROD }
 
@@ -36,8 +34,8 @@ data class AppConfig(
      * Overlay the persisted, discovered [ServerConfig] on top of the build-
      * flavor defaults. The server the user connected to wins for everything
      * the neutral client must NOT hardcode — apiBaseUrl, OIDC issuer, OIDC
-     * client id. [redirectScheme], [flavor] and [displayName] stay the
-     * build's own (the redirect scheme is the app's OWN scheme the operator
+     * client id. [flavor] and [displayName] stay the build's own, as does the
+     * redirect URI (OAuthRedirect — the app's own, which the operator
      * registers on their OIDC client; we never take a redirect from the
      * server).
      *

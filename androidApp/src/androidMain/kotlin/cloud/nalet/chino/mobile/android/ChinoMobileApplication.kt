@@ -90,11 +90,8 @@ class ChinoMobileApplication : Application() {
             // neutral store build ships no pre-typed operator URL). Separate from
             // API_BASE_URL, which stays the internal non-UI fallback.
             serverPreset = BuildConfig.SERVER_PRESET,
-            // Redirect scheme = flavor base + the runtime ".debug" suffix (debug
-            // builds carry .debug on the applicationId). Kept in sync with the
-            // appAuthRedirectScheme manifest placeholder.
-            redirectScheme = BuildConfig.OIDC_REDIRECT_BASE +
-                if (BuildConfig.APPLICATION_ID.endsWith(".debug")) ".debug" else "",
+            // No redirect here: every build signs in with the one
+            // OAuthRedirect.URI (cloud.nalet.chino:/oauth/callback).
         )
         return AppContainer(
             // Build-flavor defaults only — the live server (apiBaseUrl + OIDC

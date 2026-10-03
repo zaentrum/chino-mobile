@@ -78,8 +78,9 @@ class AppContainer(
     /**
      * The effective app config: the build-flavor defaults overlaid with the
      * persisted (discovered) [ServerConfig] when present. apiBaseUrl + OIDC
-     * issuer + OIDC client id come from the connected server; the AppAuth
-     * redirectScheme + flavor + displayName stay the build's own. Resolved
+     * issuer + OIDC client id come from the connected server; flavor +
+     * displayName stay the build's own (and the redirect URI is the app's
+     * fixed OAuthRedirect.URI). Resolved
      * once off the main thread (currentBlocking mirrors AccountStore's
      * snapshotBlocking); falls back to [buildConfig] when nothing is stored
      * yet (purely defensive — the boot gate routes fresh installs to

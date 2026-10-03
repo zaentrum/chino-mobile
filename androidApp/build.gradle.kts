@@ -12,11 +12,13 @@ plugins {
 val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
 // Release signing: CI decodes a base64 upload keystore to SIGNING_KEYSTORE_FILE.
 val releaseKeystore = System.getenv("SIGNING_KEYSTORE_FILE")?.takeIf { it.isNotBlank() && file(it).exists() }
-// OAuth redirect scheme (the `chino` Keycloak client's registered redirect URI).
-// This is a SEPARATE identifier from the published app id — it stays
-// cloud.nalet.chino (what the Keycloak client knows) even though the app id is
-// io.github.zaentrum.chino. Debug builds append ".debug" (also registered).
-val redirectBase = "cloud.nalet.chino"
+// OAuth redirect scheme. The app signs in with ONE redirect URI on every build
+// type, debug included: cloud.nalet.chino:/oauth/callback — exactly what the
+// operator's OIDC client registers (README, "Sign-in"). A SEPARATE identifier
+// from the published app id: it stays cloud.nalet.chino although the app id
+// is io.github.zaentrum.chino. Must equal shared's OAuthRedirect.SCHEME; the
+// appAuthRedirectScheme placeholder below routes the callback to AppAuth.
+val oauthRedirectScheme = "cloud.nalet.chino"
 
 // Neutral self-host server defaults. The client resolves its live server (API
 // base + OIDC issuer/client) from the persisted ServerConfig set via the in-app
@@ -105,11 +107,10 @@ android {
         buildConfigField("String", "DISPLAY_NAME", "\"Chino\"")
         // No flavors anymore; kept as a stable tag for telemetry / bug reports.
         buildConfigField("String", "FLAVOR_NAME", "\"prod\"")
-        // OAuth redirect scheme (separate from app id). Debug builds use
-        // base+".debug"; release is overridden to the bare base in
-        // androidComponents below. Both are registered on the Keycloak client.
-        buildConfigField("String", "OIDC_REDIRECT_BASE", "\"$redirectBase\"")
-        manifestPlaceholders["appAuthRedirectScheme"] = "$redirectBase.debug"
+        // The same redirect scheme for every variant (see oauthRedirectScheme).
+        // A debug and a release build installed side by side therefore both
+        // answer it, and Android asks which app finishes the sign-in.
+        manifestPlaceholders["appAuthRedirectScheme"] = oauthRedirectScheme
     }
 
     signingConfigs {
@@ -179,16 +180,5 @@ android {
             "/META-INF/{AL2.0,LGPL2.1}",
             "/META-INF/INDEX.LIST",
         )
-    }
-}
-
-androidComponents {
-    onVariants { variant ->
-        // Release builds have no ".debug" suffix, so the RedirectUriReceiver
-        // scheme is the bare redirect base; debug keeps base+".debug" (the
-        // defaultConfig placeholder). Both are registered on the Keycloak client.
-        if (variant.buildType == "release") {
-            variant.manifestPlaceholders.put("appAuthRedirectScheme", redirectBase)
-        }
     }
 }
