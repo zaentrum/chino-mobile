@@ -145,11 +145,19 @@ fun BrowseSection(
 
         when {
             state.error != null -> item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(
-                    text = "Failed to load: ${state.error}",
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 14.sp,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Failed to load: ${state.error}",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 14.sp,
+                    )
+                    Text(
+                        text = "Tap to retry.",
+                        color = ChinoCloudBlue,
+                        fontSize = 13.sp,
+                        modifier = Modifier.clickable(onClick = model::retry).padding(vertical = 4.dp),
+                    )
+                }
             }
             state.items.isEmpty() && state.loading -> item(span = { GridItemSpan(maxLineSpan) }) {
                 Box(

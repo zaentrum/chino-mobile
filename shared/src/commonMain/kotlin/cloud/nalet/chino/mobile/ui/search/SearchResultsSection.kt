@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.Person
+import cloud.nalet.chino.mobile.data.api.catalogueMessage
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.person.InitialsAvatar
 import cloud.nalet.chino.mobile.ui.person.creditLabel
@@ -112,7 +113,7 @@ fun SearchResultsSection(
             val series = container.chinoApi.listItems(q = query, type = "series", limit = 40).items
             // Server already ranks each list; render in arrival order, no re-sort.
             SearchState.Ready(movies + series)
-        }.getOrElse { SearchState.Error(it.message ?: it::class.simpleName.orEmpty()) }
+        }.getOrElse { SearchState.Error(it.catalogueMessage()) }
     }
 
     val baseUrl = container.config.apiBaseUrl.trimEnd('/')

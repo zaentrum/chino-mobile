@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.browse
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
+import cloud.nalet.chino.mobile.data.api.catalogueMessage
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.paging.Paged
 import kotlinx.coroutines.Job
@@ -101,6 +102,9 @@ class BrowseScreenModel(
         loadMore()
     }
 
+    /** Retry after the first page failed: the same filter, from the start. */
+    fun retry() = reload(_state.value.filter)
+
     /**
      * #188: toggle the fully-watched flag for a grid item from its card
      * overflow menu. Reuses the SAME watched endpoints the detail-page eye
@@ -144,9 +148,7 @@ class BrowseScreenModel(
                     onSuccess = { rows ->
                         current.copy(paged = Paged<Item>().append(rows, pageSize, Item::id), loading = false)
                     },
-                    onFailure = { e ->
-                        current.copy(loading = false, error = e.message ?: e::class.simpleName.orEmpty())
-                    },
+                    onFailure = { e -> current.copy(loading = false, error = e.catalogueMessage()) },
                 )
             }
         }

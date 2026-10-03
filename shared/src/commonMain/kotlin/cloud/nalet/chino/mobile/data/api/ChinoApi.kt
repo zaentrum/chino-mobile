@@ -33,7 +33,12 @@ class ChinoApi(private val http: HttpClient) {
     /** GET /v1/items. chino-api pages with `limit` (default 50) + `offset`
      *  and answers `{ items }` — no cursor, no total; a page shorter than
      *  [limit] is the last one ([cloud.nalet.chino.mobile.data.paging.Paged]).
-     *  An [offset] of 0 is left off, as chino-web leaves it. */
+     *  An [offset] of 0 is left off, as chino-web leaves it.
+     *
+     *  A non-2xx answer throws [ApiStatusException]: chino-api answers 502
+     *  `{ error }` when the catalog fails, and decoded as a page that error
+     *  would read as an empty — so final — page. Checked after the Auth
+     *  plugin's refresh-and-retry, so a renewed token still gets through. */
     suspend fun listItems(
         limit: Int? = null,
         offset: Int? = null,
@@ -59,7 +64,7 @@ class ChinoApi(private val http: HttpClient) {
         // out and the rail backfills from later pages. Browse + Search leave
         // this false so watched titles stay findable for a rewatch.
         if (unwatched) parameter("unwatched", "true")
-    }.body()
+    }.successBody("v1/items")
 
     suspend fun listGenres(): GenresResponse = http.get("v1/genres").body()
 

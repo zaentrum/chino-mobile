@@ -2,9 +2,11 @@ package cloud.nalet.chino.mobile.data.api
 
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.paging.Paged
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -56,6 +58,35 @@ class ListItemsPagingTest {
 
         assertEquals(96, paged.items.size)
         assertEquals(listOf(null, "48", "96"), server.requests.map { it.url.parameters["offset"] })
+    }
+
+    @Test
+    fun aFailedPageIsAnErrorNotTheEndOfTheCatalogue() = runTest {
+        // router.go listItems: katalog failed → 502 { error, detail }. Read
+        // as a page it was empty, and an empty page is the last one.
+        val server = FakeServer {
+            respondJson(
+                """{"product":"chino","error":"catalog unavailable","detail":"katalog request: timeout"}""",
+                HttpStatusCode.BadGateway,
+            )
+        }
+
+        val failure = assertFailsWith<ApiStatusException> {
+            server.api.listItems(limit = 48, offset = 48, type = "movie")
+        }
+
+        assertEquals(502, failure.status)
+        assertEquals("The catalogue is unavailable right now (HTTP 502).", failure.catalogueMessage())
+    }
+
+    @Test
+    fun aFailureReadsAsSomethingToActOn() {
+        assertEquals(
+            "This server no longer accepts your sign-in. Sign in again.",
+            ApiStatusException(401, "v1/items").catalogueMessage(),
+        )
+        assertEquals("The server answered HTTP 400.", ApiStatusException(400, "v1/items").catalogueMessage())
+        assertEquals("timeout", RuntimeException("timeout").catalogueMessage())
     }
 
     @Test
