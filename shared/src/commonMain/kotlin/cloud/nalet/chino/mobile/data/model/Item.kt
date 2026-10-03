@@ -93,10 +93,12 @@ data class Trailer(
     val title: String? = null,
 )
 
+/** The `{ items }` envelope of chino-api's item lists (/v1/items,
+ *  /v1/items/{id}/similar, /v1/me/watched). There is no page token: lists
+ *  page by `offset` ([cloud.nalet.chino.mobile.data.paging.Paged]). */
 @Serializable
 data class ItemsPage(
     val items: List<Item> = emptyList(),
-    @SerialName("next_page_token") val nextPageToken: String? = null,
 )
 
 @Serializable

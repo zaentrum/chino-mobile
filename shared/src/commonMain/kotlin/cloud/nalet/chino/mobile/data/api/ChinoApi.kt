@@ -30,9 +30,13 @@ import kotlinx.serialization.json.Json
  * favour of the generated client.
  */
 class ChinoApi(private val http: HttpClient) {
+    /** GET /v1/items. chino-api pages with `limit` (default 50) + `offset`
+     *  and answers `{ items }` — no cursor, no total; a page shorter than
+     *  [limit] is the last one ([cloud.nalet.chino.mobile.data.paging.Paged]).
+     *  An [offset] of 0 is left off, as chino-web leaves it. */
     suspend fun listItems(
-        pageToken: String? = null,
         limit: Int? = null,
+        offset: Int? = null,
         q: String? = null,
         type: String? = null,
         genre: String? = null,
@@ -42,8 +46,8 @@ class ChinoApi(private val http: HttpClient) {
         sort: String? = null,
         unwatched: Boolean = false,
     ): ItemsPage = http.get("v1/items") {
-        pageToken?.let { parameter("page_token", it) }
         limit?.let { parameter("limit", it) }
+        offset?.takeIf { it > 0 }?.let { parameter("offset", it) }
         q?.let { parameter("q", it) }
         type?.let { parameter("type", it) }
         genre?.let { parameter("genre", it) }

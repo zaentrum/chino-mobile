@@ -16,19 +16,22 @@ import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
+/**
+ * How every client decodes chino-api's JSON. ignoreUnknownKeys: a field the
+ * server adds never breaks an older app. coerceInputValues: the server sends
+ * `"qualities": null` (and can null other defaulted fields) for remux items;
+ * without coercion kotlinx throws "Expected '[' but had 'n'" and the whole
+ * PlayInfo (and similar) responses fail to deserialize — coercion maps a null
+ * onto the property's default (emptyList()) instead.
+ */
+internal val ChinoJson: Json = Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true }
+
 object HttpClientFactory {
     /** Authenticated client used for every chino-api call. Auth plugin reads
      *  tokens through [TokenManager] which is multi-account aware — switching
      *  the active account in AccountStore propagates here without rewiring. */
     fun create(config: AppConfig, tokenManager: TokenManager): HttpClient = HttpClient {
-        install(ContentNegotiation) {
-            // coerceInputValues: the server sends `"qualities": null` (and can
-            // null other defaulted fields) for remux items; without coercion
-            // kotlinx throws "Expected '[' but had 'n'" and the whole PlayInfo
-            // (and similar) responses fail to deserialize. Coercion maps a null
-            // onto the property's default (emptyList()) instead of crashing.
-            json(Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true })
-        }
+        install(ContentNegotiation) { json(ChinoJson) }
         install(Logging) {
             level = if (config.isBeta) LogLevel.INFO else LogLevel.NONE
         }
@@ -65,9 +68,7 @@ object HttpClientFactory {
      *  .well-known docs; non-2xx responses are surfaced to the caller (the
      *  probe maps them onto its sealed failure kinds). */
     fun createProbe(): HttpClient = HttpClient {
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true })
-        }
+        install(ContentNegotiation) { json(ChinoJson) }
         install(Logging) { level = LogLevel.INFO }
         // Bound the first-run probe so a wrong host/port (firewalled IP, typo)
         // fails the Add-Server attempt in seconds instead of hanging on the
@@ -87,14 +88,7 @@ object HttpClientFactory {
      *  Bearer header to the unauthenticated token-exchange call, which
      *  Keycloak rejects with `unauthorized_client`. */
     fun createUnauthenticated(config: AppConfig): HttpClient = HttpClient {
-        install(ContentNegotiation) {
-            // coerceInputValues: the server sends `"qualities": null` (and can
-            // null other defaulted fields) for remux items; without coercion
-            // kotlinx throws "Expected '[' but had 'n'" and the whole PlayInfo
-            // (and similar) responses fail to deserialize. Coercion maps a null
-            // onto the property's default (emptyList()) instead of crashing.
-            json(Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true })
-        }
+        install(ContentNegotiation) { json(ChinoJson) }
         install(Logging) {
             level = if (config.isBeta) LogLevel.INFO else LogLevel.NONE
         }

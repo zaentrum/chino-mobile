@@ -98,7 +98,7 @@ fun BrowseSection(
             val total = info.totalItemsCount
             if (total == 0) false else {
                 val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-                last >= total - 12 && state.nextPageToken != null && !state.loading
+                last >= total - 12 && state.canLoadMore
             }
         }
     }
@@ -185,7 +185,18 @@ fun BrowseSection(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (state.nextPageToken != null) {
+                        if (state.loadMoreFailed) {
+                            // A later page failed: say so and let the user ask
+                            // again, rather than re-requesting on every scroll.
+                            Text(
+                                text = "Couldn't load more titles. Tap to retry.",
+                                color = ChinoCloudBlue,
+                                fontSize = 13.sp,
+                                modifier = Modifier
+                                    .clickable(onClick = model::retryLoadMore)
+                                    .padding(8.dp),
+                            )
+                        } else if (state.hasMore) {
                             CircularProgressIndicator(color = ChinoCloudBlue)
                         } else {
                             Text(
