@@ -68,6 +68,10 @@ private var _chevronRight: ImageVector? = null
 public val Lucide.ChevronRight: ImageVector
     get() = _chevronRight ?: lucide("ChevronRight", listOf("m9 18 6-6-6-6")).also { _chevronRight = it }
 
+private var _chevronUp: ImageVector? = null
+public val Lucide.ChevronUp: ImageVector
+    get() = _chevronUp ?: lucide("ChevronUp", listOf("m18 15-6-6-6 6")).also { _chevronUp = it }
+
 private var _ellipsisVertical: ImageVector? = null
 public val Lucide.EllipsisVertical: ImageVector
     get() = _ellipsisVertical ?: lucide("EllipsisVertical", listOf("M11,12 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0", "M11,5 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0", "M11,19 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0")).also { _ellipsisVertical = it }

@@ -95,8 +95,9 @@ import com.composables.icons.lucide.Star
  * Item detail page. Mirrors chino-web's DetailPage.tsx: full-bleed backdrop
  * hero, poster + content row overlapping the backdrop, title +
  * year • runtime • rating • type chip meta row, Resume/Start over +
- * Watchlist/Watched/Like circular toggles, overview, and a Subtitles /
- * Analyzed footer grid.
+ * Watchlist/Watched/Like circular toggles, overview, and the meta strip
+ * ([MetaStrip]): Starring with characters, the crew by role, Subtitles /
+ * Analyzed.
  */
 class DetailScreen(private val itemId: String) : Screen {
     override val key: ScreenKey = uniqueScreenKey
@@ -345,9 +346,9 @@ private fun ReadyContent(
                                 lineHeight = 24.sp,
                             )
                         }
-                        StarringRow(item, onPersonNavigate)
-                        DirectorsRow(item, onPersonNavigate)
-                        FooterGrid(item)
+                        // Starring (billing order, with characters), the crew
+                        // by role, Subtitles / Analyzed — chino-web's strip.
+                        MetaStrip(item, onPersonNavigate)
                     }
                 }
                 if (isWideDetail) {
@@ -705,46 +706,6 @@ private fun WatchlistButton(
     }
 }
 
-/** Subtitles / Analyzed two-column footer. Each column only renders when
- *  the underlying data is non-empty, matching web's null-guards. */
-@Composable
-private fun FooterGrid(item: Item) {
-    val subtitleLabel = item.subtitles
-        .mapNotNull { it.label?.takeIf { l -> l.isNotBlank() } ?: it.lang.takeIf { it.isNotBlank() } }
-        .distinct()
-        .joinToString(", ")
-        .takeIf { it.isNotBlank() }
-    val analyzedLabel = item.segments?.takeIf { it.count > 0 }?.let { seg ->
-        listOfNotNull(
-            "Intro".takeIf { seg.hasIntro },
-            "Credits".takeIf { seg.hasCredits },
-            "Recap".takeIf { seg.hasRecap },
-        ).joinToString(" · ").ifEmpty { "Segments available" }
-    }
-    if (subtitleLabel == null && analyzedLabel == null) return
-    Row(
-        modifier = Modifier.padding(top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(32.dp),
-    ) {
-        subtitleLabel?.let { FooterColumn("Subtitles", it) }
-        analyzedLabel?.let { FooterColumn("Analyzed", it) }
-    }
-}
-
-@Composable
-private fun FooterColumn(header: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(text = header, color = ChinoMuted, fontSize = 14.sp)
-        Text(
-            text = value,
-            color = ChinoFg2,
-            fontSize = 14.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
 private fun fmtDur(s: Int): String {
     if (s < 0) return "0:00"
     val h = s / 3600
@@ -784,20 +745,6 @@ private fun GenreChips(genres: List<String>) {
     }
 }
 
-/** "Starring" section — cast names. Each name with a person_id is a tap
- *  target → the Person / Filmography surface; names without an id render as
- *  plain text. Web: DetailPage.tsx L249-253. Shown above the
- *  Subtitles/Analyzed footer. */
-@Composable
-private fun StarringRow(item: Item, onPersonNavigate: ((String) -> Unit)?) {
-    val actors = item.cast.filter { it.role == null || it.role.equals("actor", true) }
-    if (actors.isEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(text = "Starring", color = ChinoMuted, fontSize = 13.sp)
-        CastNameFlow(names = actors.take(8), onPersonNavigate = onPersonNavigate)
-    }
-}
-
 /** Prefer the most-likely "Official Trailer" YouTube entry; fall back to
  *  the first. Mirrors chino-web's pickTrailer (DetailPage.tsx) and the TV
  *  client. Returns the resolved trailer URL, or null when none exists. */
@@ -811,53 +758,6 @@ private fun pickTrailer(trailers: List<Trailer>): String? {
     } ?: pool.firstOrNull { it.title.orEmpty().contains("trailer", ignoreCase = true) }
         ?: pool.first()
     return picked.url
-}
-
-/** "Director(s)" section — cast entries whose role is "director"
- *  (case-insensitive). Each name with a person_id deep-links to the Person
- *  surface. Label pluralises with the count. Web/TV parity. Rendered only
- *  when at least one director is present. */
-@Composable
-private fun DirectorsRow(item: Item, onPersonNavigate: ((String) -> Unit)?) {
-    val directors = item.cast.filter { it.role.equals("director", true) }
-    if (directors.isEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = if (directors.size > 1) "Directors" else "Director",
-            color = ChinoMuted,
-            fontSize = 13.sp,
-        )
-        CastNameFlow(names = directors, onPersonNavigate = onPersonNavigate)
-    }
-}
-
-/** Comma-separated cast names where each entry is individually tappable when
- *  it carries a person_id. A trailing comma is appended to every name except
- *  the last so the row reads like the old "A, B, C" join. Names without an
- *  id (or when navigation isn't wired) render as inert text. */
-@Composable
-private fun CastNameFlow(
-    names: List<cloud.nalet.chino.mobile.data.model.CastMember>,
-    onPersonNavigate: ((String) -> Unit)?,
-) {
-    FlowRow(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-        names.forEachIndexed { index, member ->
-            val label = member.name + if (index < names.lastIndex) ", " else ""
-            val pid = member.personId
-            val tappable = pid != null && onPersonNavigate != null
-            Text(
-                text = label,
-                color = if (tappable) ChinoCloudBlue else ChinoFg2,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                modifier = if (tappable) {
-                    Modifier.clickable { onPersonNavigate!!(pid!!) }
-                } else {
-                    Modifier
-                },
-            )
-        }
-    }
 }
 
 /** Episodes accordion — one collapsible row per season, expanded into

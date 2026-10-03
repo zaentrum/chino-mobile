@@ -15,7 +15,7 @@ ICONS = {
  "User":"user","Volume2":"volume-2","VolumeX":"volume-x","X":"x","Youtube":"youtube","Zap":"zap",
  "Captions":"captions","ChevronLeft":"chevron-left","Gauge":"gauge","Minimize":"minimize",
  "Pause":"pause","RotateCcw":"rotate-ccw","RotateCw":"rotate-cw","Settings2":"settings-2",
- "SkipForward":"skip-forward",
+ "SkipForward":"skip-forward","ChevronUp":"chevron-up",
 }
 BASE="https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/{}.svg"
 
