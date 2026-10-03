@@ -32,9 +32,10 @@ internal object CodecCaps {
     val queryParam: String by lazy {
         val infos = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
         val video = VIDEO_MIMES.mapNotNull { (token, mime) -> videoCaps(infos, token, mime) }
-        val audio = AUDIO_MIMES.filter { (_, mime) -> infos.any { !it.isEncoder && it.supportsType(mime) } }
-            .map { (token, _) -> token }
-        CodecCapsQuery.build(video, audio)
+        // Every MIME type some decoder takes; CodecCapsQuery picks the audio
+        // tokens from them (AC-3 / E-AC-3 only with a Dolby decoder).
+        val decoderMimes = infos.filter { !it.isEncoder }.flatMap { it.supportedTypes.asList() }
+        CodecCapsQuery.build(video, CodecCapsQuery.audioTokensFor(decoderMimes))
     }
 }
 
@@ -44,16 +45,6 @@ private val VIDEO_MIMES = listOf(
     "avc" to "video/avc",
     "hvc" to "video/hevc",
     "av1" to "video/av01",
-)
-
-/** Token -> mime for [CodecCapsQuery.AUDIO_TOKENS]. A decoder of any kind
- *  counts: audio decodes cheaply in software. */
-private val AUDIO_MIMES = listOf(
-    "aac" to "audio/mp4a-latm",
-    "mp3" to "audio/mpeg",
-    "opus" to "audio/opus",
-    "ac3" to "audio/ac3",
-    "eac3" to "audio/eac3",
 )
 
 /** The codec's caps when any decoder takes [mime] — with the tallest frame a

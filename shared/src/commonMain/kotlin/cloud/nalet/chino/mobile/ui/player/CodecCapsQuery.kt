@@ -29,6 +29,27 @@ object CodecCapsQuery {
      */
     val AUDIO_TOKENS: List<String> = listOf("aac", "mp3", "opus", "ac3", "eac3")
 
+    /** The decoder MIME type (MediaCodec's) behind each [AUDIO_TOKENS] entry. */
+    val AUDIO_DECODER_MIMES: Map<String, String> = mapOf(
+        "aac" to "audio/mp4a-latm",
+        "mp3" to "audio/mpeg",
+        "opus" to "audio/opus",
+        "ac3" to "audio/ac3",
+        "eac3" to "audio/eac3",
+    )
+
+    /**
+     * The audio tokens for a device whose decoders take [decoderMimes]: a
+     * token when some decoder takes its MIME type, hardware or software —
+     * audio decodes cheaply. So AC-3 / E-AC-3 only where the device ships a
+     * Dolby decoder; passing the bitstream through to a receiver is not
+     * counted, and without a decoder the server's stereo AAC is the answer.
+     */
+    fun audioTokensFor(decoderMimes: Collection<String>): Set<String> {
+        val mimes = decoderMimes.mapTo(HashSet()) { it.lowercase() }
+        return AUDIO_DECODER_MIMES.filterValues { it in mimes }.keys
+    }
+
     /** Video tokens in the order given, then the known [audio] tokens in
      *  [AUDIO_TOKENS] order; comma-separated, "" for nothing at all. */
     fun build(video: List<VideoDecoderCaps>, audio: Collection<String>): String =

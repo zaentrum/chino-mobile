@@ -1,0 +1,44 @@
+package cloud.nalet.chino.mobile.ui.player
+
+import platform.AVFoundation.AVURLAsset
+import platform.CoreMedia.kCMVideoCodecType_AV1
+import platform.CoreMedia.kCMVideoCodecType_HEVC
+import platform.VideoToolbox.VTIsHardwareDecodeSupported
+
+/**
+ * The iOS `?caps=` value for chino-stream ([CodecCapsQuery]), worked out once
+ * from what the platform plays natively — what the AVPlayer-based player will
+ * put on its master URL, and what Zap's prewarm sends today.
+ *
+ * Video: `avc` always (every device iOS 15 runs on decodes H.264 in
+ * hardware); `hvc` and `av1` when VideoToolbox reports a hardware decoder.
+ * No API reports a decoder's height ceiling, so the tokens go bare.
+ *
+ * Audio: `aac` and `mp3` always — AVFoundation decodes both on every device.
+ * `ac3` / `eac3` only when AVFoundation itself says it plays AC-3 / E-AC-3 in
+ * MP4 (`AVURLAsset.isPlayableExtendedMIMEType`), so a device that cannot
+ * decode Dolby audio never claims it. `opus` stays out: AVFoundation's answer
+ * covers MP4 files, and whether AVPlayer plays Opus copied into chino-stream's
+ * HLS segments is untried — the server's AAC always plays. `vorbis` and
+ * `aacmc` stay out as on Android.
+ */
+internal object CodecCaps {
+    val queryParam: String by lazy { CodecCapsQuery.build(videoCaps(), audioTokens()) }
+}
+
+private fun videoCaps(): List<VideoDecoderCaps> = buildList {
+    add(VideoDecoderCaps("avc"))
+    if (VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC)) add(VideoDecoderCaps("hvc"))
+    if (VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)) add(VideoDecoderCaps("av1"))
+}
+
+private fun audioTokens(): Set<String> = buildSet {
+    add("aac")
+    add("mp3")
+    if (playsInMp4("ac-3")) add("ac3")
+    if (playsInMp4("ec-3")) add("eac3")
+}
+
+/** AVFoundation's own answer for an MP4 audio track in [codec] (RFC 6381). */
+private fun playsInMp4(codec: String): Boolean =
+    AVURLAsset.isPlayableExtendedMIMEType("audio/mp4; codecs=\"$codec\"")

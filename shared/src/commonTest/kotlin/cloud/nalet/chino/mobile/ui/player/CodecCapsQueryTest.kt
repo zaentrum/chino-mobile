@@ -44,6 +44,50 @@ class CodecCapsQueryTest {
         assertEquals("", CodecCapsQuery.build(emptyList(), emptySet()))
     }
 
+    /** A phone's decoder MIME types (MediaCodecList) without a Dolby decoder. */
+    private val phoneDecoders = listOf(
+        "video/avc", "video/hevc", "audio/mp4a-latm", "audio/mpeg", "audio/opus",
+        "audio/vorbis", "audio/flac", "audio/raw", "audio/3gpp",
+    )
+
+    @Test
+    fun noDolbyDecoderNoAc3OrEac3() {
+        assertEquals(setOf("aac", "mp3", "opus"), CodecCapsQuery.audioTokensFor(phoneDecoders))
+    }
+
+    @Test
+    fun aDolbyDecoderAddsAc3AndEac3() {
+        assertEquals(
+            setOf("aac", "mp3", "opus", "ac3", "eac3"),
+            CodecCapsQuery.audioTokensFor(phoneDecoders + "audio/ac3" + "audio/eac3"),
+        )
+        // E-AC-3 alone (a decoder for one Dolby format) claims only that one.
+        assertEquals(setOf("eac3"), CodecCapsQuery.audioTokensFor(listOf("audio/eac3")))
+    }
+
+    @Test
+    fun vorbisAndMultichannelAacAreNeverSent() {
+        val tokens = CodecCapsQuery.audioTokensFor(phoneDecoders)
+
+        assertTrue("vorbis" !in tokens)
+        assertTrue("aacmc" !in CodecCapsQuery.AUDIO_TOKENS)
+    }
+
+    @Test
+    fun mimeTypesMatchInAnyCase() {
+        assertEquals(setOf("aac", "ac3"), CodecCapsQuery.audioTokensFor(listOf("AUDIO/MP4A-LATM", "audio/AC3")))
+    }
+
+    @Test
+    fun aPhoneEndToEnd() {
+        val caps = CodecCapsQuery.build(
+            video = listOf(VideoDecoderCaps("avc", 1080), VideoDecoderCaps("hvc", 2160)),
+            audio = CodecCapsQuery.audioTokensFor(phoneDecoders),
+        )
+
+        assertEquals("avc:1080,hvc:2160,aac,mp3,opus", caps)
+    }
+
     @Test
     fun everyAudioTokenIsOneParseCapsKnows() {
         // chino-stream internal/play/ffprobe.go ParseCaps' audio cases.
