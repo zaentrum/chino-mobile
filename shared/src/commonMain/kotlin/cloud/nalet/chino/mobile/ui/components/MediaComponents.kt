@@ -75,6 +75,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cloud.nalet.chino.mobile.data.model.Item
@@ -651,6 +652,11 @@ fun MediaCard(
     // card surfaces, not just Continue Watching — so wiring this is what makes
     // the ⋮ / long-press menu appear on rails that don't dismiss.
     onToggleWatched: (() -> Unit)? = null,
+    // A line under the year/rating naming someone's credit on the title — a
+    // person's roles on a filmography card ("Director · Writer"). chino-web
+    // MediaCard's `credit`. Two lines are held whatever it says, so a grid
+    // row of filmography cards stays one height.
+    credit: String? = null,
 ) {
     // Either action wires the overflow affordance. When ONLY the watched
     // toggle is wired (Home rails / Browse grid), the menu still appears.
@@ -670,7 +676,8 @@ fun MediaCard(
             // Width is responsive (caller passes ~128dp on a phone, 208dp on a
             // tablet/wide). Height wraps: 2:3 poster + info block, so cards stay
             // uniform (title/meta are single-line) and scale with the width.
-            .width(cardWidth)
+            // Dp.Unspecified fills the cell instead (a fixed-column grid).
+            .then(if (cardWidth.isSpecified) Modifier.width(cardWidth) else Modifier.fillMaxWidth())
             .clip(RectangleShape)
             .background(ChinoSurface)
             .let { base ->
@@ -899,7 +906,21 @@ fun MediaCard(
                             )
                         }
                     }
+                } else if (credit != null) {
+                    // Hold the meta line's height so the credit lines align.
+                    Box(modifier = Modifier.height(20.dp))
                 }
+            }
+            if (credit != null) {
+                Text(
+                    text = credit,
+                    color = ChinoMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    minLines = 2,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
             }
         }
     }

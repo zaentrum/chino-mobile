@@ -55,10 +55,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.Person
+import cloud.nalet.chino.mobile.data.api.artworkUrl
 import cloud.nalet.chino.mobile.data.api.catalogueMessage
 import cloud.nalet.chino.mobile.data.model.Item
-import cloud.nalet.chino.mobile.ui.person.InitialsAvatar
-import cloud.nalet.chino.mobile.ui.person.creditLabel
+import cloud.nalet.chino.mobile.ui.person.PersonAvatar
+import cloud.nalet.chino.mobile.ui.person.titleCount
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Lucide
 import kotlinx.coroutines.delay
@@ -79,8 +80,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * 250 ms so typing doesn't fire a request per keystroke.
  *
  * A "Cast & crew" people section (GET /v1/people?q=…, same debounce) renders
- * above the title grid: name + "· N titles" + an initials avatar. Tapping a
- * person opens the Person / Filmography surface.
+ * above the title grid: name + "· N titles" + their portrait (initials without
+ * one). Tapping a person opens the Person / Filmography surface.
  */
 @Composable
 fun SearchResultsSection(
@@ -130,7 +131,13 @@ fun SearchResultsSection(
         // people search returned nothing.
         if (people.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                PeopleSection(people = people, onPersonClick = onPersonSelected)
+                PeopleSection(
+                    people = people,
+                    portraitUrl = { person ->
+                        if (person.hasProfile) artworkUrl(baseUrl, person.profileUrl, token) else null
+                    },
+                    onPersonClick = onPersonSelected,
+                )
             }
         }
 
@@ -191,10 +198,14 @@ private sealed interface SearchState {
 }
 
 /** "Cast & crew" — matching people, rendered above the title grid. Each row
- *  is an initials avatar + name + "· N titles", tappable to the Person
- *  surface. Server order is rendered as-is. */
+ *  is the person's portrait (initials without one) + name + "· N titles",
+ *  tappable to the Person surface. Server order is rendered as-is. */
 @Composable
-private fun PeopleSection(people: List<Person>, onPersonClick: (Person) -> Unit) {
+private fun PeopleSection(
+    people: List<Person>,
+    portraitUrl: (Person) -> String?,
+    onPersonClick: (Person) -> Unit,
+) {
     Column(
         modifier = Modifier.padding(bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -206,13 +217,13 @@ private fun PeopleSection(people: List<Person>, onPersonClick: (Person) -> Unit)
             fontWeight = FontWeight.SemiBold,
         )
         people.forEach { person ->
-            PersonRow(person = person, onClick = { onPersonClick(person) })
+            PersonRow(person = person, portraitUrl = portraitUrl(person), onClick = { onPersonClick(person) })
         }
     }
 }
 
 @Composable
-private fun PersonRow(person: Person, onClick: () -> Unit) {
+private fun PersonRow(person: Person, portraitUrl: String?, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -222,7 +233,7 @@ private fun PersonRow(person: Person, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        InitialsAvatar(name = person.name, size = 40.dp)
+        PersonAvatar(name = person.name, portraitUrl = portraitUrl, width = 40.dp)
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = person.name,
@@ -233,7 +244,7 @@ private fun PersonRow(person: Person, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = creditLabel(person.credits),
+                text = "· ${titleCount(person.credits)}",
                 color = ChinoMuted,
                 fontSize = 12.sp,
             )

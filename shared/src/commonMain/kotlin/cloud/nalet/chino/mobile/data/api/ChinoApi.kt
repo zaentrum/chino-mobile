@@ -10,6 +10,7 @@ import io.ktor.client.request.delete
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
@@ -18,6 +19,7 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
@@ -79,14 +81,20 @@ class ChinoApi(private val http: HttpClient) {
             limit?.let { parameter("limit", it) }
         }.body()
 
-    /** A single person's header + filmography. The items carry the standard
-     *  poster/backdrop + watched_at so the existing MediaCard renders them.
-     *  GET /v1/people/{id}?limit= → 404 when the id is unknown (surfaces as a
-     *  thrown Ktor exception the caller maps to a "not found" state). */
-    suspend fun getPerson(id: String, limit: Int? = null): PersonDetail =
-        http.get("v1/people/$id") {
+    /** A person, their details and their filmography (items carry the
+     *  standard poster/backdrop + watched_at, and the person's roles), or null
+     *  for a 404 — no such person. GET /v1/people/{id}?limit= (default 100,
+     *  max 200). [acceptLanguage] picks the biography's language: chino-api
+     *  passes the header on to the catalog, which falls back to English.
+     *  Any other non-2xx throws [ApiStatusException]. */
+    suspend fun getPerson(id: String, limit: Int? = null, acceptLanguage: String? = null): PersonDetail? {
+        val response = http.get("v1/people/$id") {
             limit?.let { parameter("limit", it) }
-        }.body()
+            acceptLanguage?.takeIf { it.isNotBlank() }?.let { header(HttpHeaders.AcceptLanguage, it) }
+        }
+        if (response.status == HttpStatusCode.NotFound) return null
+        return response.successBody("v1/people")
+    }
 
     /** Full Item objects the current user has watched end-to-end (each carries
      *  watched_at). Zap dedups its candidate pool against these ids. Mirrors
