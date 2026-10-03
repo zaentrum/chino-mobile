@@ -62,8 +62,10 @@ jobs:
           fi
           echo "OK: no acquisition vocabulary"
 
-  # Builds installable debug APKs for both flavors on every push. iOS is not
-  # built here (the App Store path needs a macOS runner + signing).
+  # Runs the shared unit tests (commonTest on the JVM) and builds the
+  # installable debug APK on every push. iOS is not built here (the App Store
+  # path needs a macOS runner + signing); its tests run locally with
+  # :shared:iosSimulatorArm64Test.
   android-build:
     runs-on: ubuntu-latest
     steps:
@@ -82,6 +84,13 @@ jobs:
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - name: Shared unit tests
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2048m"
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :shared:testDebugUnitTest
 
       - name: Build debug APK
         env:
