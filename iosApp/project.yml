@@ -54,6 +54,8 @@ targets:
         ChinoApiBaseUrl: "$(CHINO_API_BASE_URL)"
         ChinoOidcIssuer: "$(CHINO_OIDC_ISSUER)"
         ChinoOidcClientId: "$(CHINO_OIDC_CLIENT_ID)"
+        # The player: sound in the background and in picture in picture.
+        UIBackgroundModes: [audio]
         # Films turn to landscape; the rest of the app turns with the phone
         # (as on Android).
         UISupportedInterfaceOrientations:
