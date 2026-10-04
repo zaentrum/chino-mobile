@@ -220,6 +220,17 @@ secret) for the app. Its id is what the server advertises as
 - An audience mapper that puts the API's audience (`oidcAudience` in
   `/api/config`) into the access token's `aud`, so the backend accepts it.
 
+### Delete Account
+
+Settings → Account → **Delete Account** deletes the signed-in account on the
+server — its watch progress, lists, likes and watch history there, and the
+sign-in itself — with `DELETE /api/v1/me` and the account's bearer, after a
+destructive dialog that says so. Only a `200` signs the account out on the
+device (to the account picker, or to sign-in when it was the last one); a
+`409` shows the server's reason, a `501` that deleting isn't available on that
+server, any other answer to try again later. A server deletes accounts only
+when its account deletion is set up (chino-api's `ACCOUNT_DELETION_TOKEN`).
+
 ## CI/CD
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
