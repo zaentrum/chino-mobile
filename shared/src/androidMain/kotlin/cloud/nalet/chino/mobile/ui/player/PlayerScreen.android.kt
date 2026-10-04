@@ -122,6 +122,7 @@ import com.composables.icons.lucide.Volume2
 import com.composables.icons.lucide.VolumeX
 import com.composables.icons.lucide.X
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -257,6 +258,11 @@ actual class PlayerScreen actual constructor(
                     startOver = fromStart,
                     handoffSec = if (handoff) resumeSec else -1,
                 )
+                // The Settings languages as playback starts, and the audio
+                // /play/info says plays first with them (chino-web's pick):
+                // what the default subtitle rule reads, as on iOS.
+                val settings = container.settings.flow.first()
+                val firstAudio = preferredAudioTrack(info?.audioTracks.orEmpty(), settings.preferredAudioLang)
                 ready = PlayState(
                     itemId = itemId,
                     base = base,
@@ -266,6 +272,9 @@ actual class PlayerScreen actual constructor(
                     qualities = info?.qualities ?: emptyList(),
                     resumeMs = resumeStartSec(resume) * 1000L,
                     writable = mayWriteProgress(resume),
+                    audioPref = settings.preferredAudioLang,
+                    subtitlePref = settings.preferredSubLang,
+                    firstAudioLang = firstAudio?.language,
                     title = composePlayerTitle(item, seriesTitle),
                     info = info,
                     segments = segs,
@@ -321,6 +330,13 @@ private data class PlayState(
     val resumeMs: Long,
     /** Whether this session may write its position ([mayWriteProgress]). */
     val writable: Boolean,
+    /** Settings' audio language ("orig" = the title's own) as playback started. */
+    val audioPref: String,
+    /** Settings' subtitle language, or "off". */
+    val subtitlePref: String,
+    /** The language of the audio that plays first ([preferredAudioTrack]);
+     *  null when /play/info lists none. */
+    val firstAudioLang: String?,
     val title: String,
     val info: PlayInfo?,
     val segments: List<Segment>,
@@ -357,10 +373,22 @@ private data class SubtitleTrack(
     val id: String,
     val label: String,
     val language: String?,
+    /** Names the track across rebuilt players (a quality switch): a sidecar's
+     *  `sidecar:<id>`, else the format's id, else its language and label. */
+    val key: String,
+    /** A forced track (FORCED=YES, or a label that says so): the default rule
+     *  takes a full one before it. */
+    val forced: Boolean,
     val selected: Boolean,
     val group: Tracks.Group,
     val trackIndex: Int,
 )
+
+/** Format id prefix of the side-loaded sidecars, so a track tells which it is. */
+private const val SIDECAR_ID_PREFIX = "sidecar:"
+
+/** [SubtitleTrack.key] of "no subtitles". */
+private const val SUBTITLES_OFF = ""
 
 private fun collectAudioTracks(tracks: Tracks): List<AudioTrack> =
     tracks.groups
@@ -405,6 +433,9 @@ private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
                     id = "${g.mediaTrackGroup.id}#$i",
                     label = label,
                     language = fmt.language,
+                    key = fmt.id ?: "${fmt.language.orEmpty()}:${fmt.label.orEmpty()}",
+                    forced = (fmt.selectionFlags and C.SELECTION_FLAG_FORCED) != 0 ||
+                        label.contains("forced", ignoreCase = true),
                     selected = g.isTrackSelected(i),
                     group = g,
                     trackIndex = i,
@@ -609,11 +640,13 @@ private fun PlaybackSurface(
                 "srt", "subrip" -> MimeTypes.APPLICATION_SUBRIP
                 else -> MimeTypes.TEXT_VTT
             }
+            // No selection flags: a file's default flag counts for nothing
+            // (the default subtitle rule decides, below).
             MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(sub.url))
+                .setId(SIDECAR_ID_PREFIX + sub.id)
                 .setMimeType(mime)
                 .setLanguage(sub.lang.takeIf { it.isNotBlank() })
                 .setLabel(sub.label?.takeIf { it.isNotBlank() })
-                .setSelectionFlags(if (sub.default == true) C.SELECTION_FLAG_DEFAULT else 0)
                 .build()
         }
         // A 404 on the manifest (.m3u8) means chino-stream has no playback
@@ -708,6 +741,22 @@ private fun PlaybackSurface(
         val seekTarget = if (pendingResumeMs >= 0) pendingResumeMs else state.resumeMs
         guard.expectSeek(seekTarget / 1000.0)
         ExoPlayer.Builder(context, renderersFactory).build().also {
+            // The preferred audio language (Settings; "orig" leaves the
+            // title's own) — Media3 picks the closest matching track, as
+            // chino-androidtv and chino-web's auto-pick do. Subtitles start
+            // off; once the tracks are known the viewer's pick, else the
+            // default rule, turns one on (onTracksChanged). A track's
+            // DEFAULT flag never selects it by itself.
+            it.trackSelectionParameters = it.trackSelectionParameters.buildUpon()
+                .apply {
+                    val audioPref = state.audioPref
+                    if (audioPref.isNotBlank() && !audioPref.equals("orig", ignoreCase = true)) {
+                        setPreferredAudioLanguage(audioPref)
+                    }
+                }
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .build()
             it.setMediaSource(mediaSource)
             it.prepare()
             if (seekTarget > 0) it.seekTo(seekTarget)
@@ -757,13 +806,35 @@ private fun PlaybackSurface(
     var audioTracks by remember { mutableStateOf<List<AudioTrack>>(emptyList()) }
     var subtitleTracks by remember { mutableStateOf<List<SubtitleTrack>>(emptyList()) }
     var subtitlesEnabled by remember { mutableStateOf(false) }
+    // The subtitle this screen shows, by [SubtitleTrack.key] ([SUBTITLES_OFF]
+    // for none); null until the default rule has decided. Kept across a
+    // rebuilt player, so a quality switch keeps what was on.
+    var subtitleKey by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
+        var subtitlesSet = false
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(p: Boolean) { isPlaying = p }
             override fun onTracksChanged(t: Tracks) {
                 audioTracks = collectAudioTracks(t)
                 subtitleTracks = collectSubtitleTracks(t)
                 subtitlesEnabled = subtitleTracks.any { it.selected }
+                // Once per player, when its tracks are known: the viewer's
+                // pick, else the default rule (Languages.kt) — off unless the
+                // audio is in a language the viewer has not said they follow;
+                // a full track before a forced one.
+                if (!subtitlesSet && !t.isEmpty) {
+                    subtitlesSet = true
+                    val key = subtitleKey ?: defaultSubtitleTrack(
+                        tracks = subtitleTracks,
+                        lang = { it.language },
+                        forced = { it.forced },
+                        audioLang = state.firstAudioLang ?: audioTracks.firstOrNull { it.selected }?.language,
+                        subtitlePref = state.subtitlePref,
+                        audioPref = state.audioPref,
+                    )?.key ?: SUBTITLES_OFF
+                    subtitleKey = key
+                    applySubtitleSelection(player, subtitleTracks.firstOrNull { it.key == key })
+                }
             }
             override fun onPlayerError(e: androidx.media3.common.PlaybackException) {
                 // Auto bug report — fire-and-forget + silent (BugReporter
@@ -881,42 +952,6 @@ private fun PlaybackSurface(
     val settings by container.settings.flow.collectAsState(
         initial = cloud.nalet.chino.mobile.data.AppSettings(),
     )
-
-    // Once-per-player guard so the preferred-language auto-apply doesn't
-    // stomp a manual track pick. A manual switch (onSelectAudio /
-    // onSelectSubtitle below) flips these, and applyPreferredLanguages
-    // re-keys on `player` so a quality switch / episode change re-applies
-    // the saved preference on the fresh instance (manual picks are
-    // session-only by design — they don't survive a rebuild).
-    var userPickedAudio by remember(player) { mutableStateOf(false) }
-    var userPickedSub by remember(player) { mutableStateOf(false) }
-
-    // Auto-apply the user's preferred AUDIO + SUBTITLE language on first
-    // load — mirrors chino-androidtv's setPreferredTextLanguage /
-    // setPreferredAudioLanguage and chino-web's auto-pick on load. We feed
-    // ExoPlayer's preferred*Language so its automatic track selector picks
-    // the closest matching track (track.language is an ISO code; Media3
-    // fuzzy-matches 2-/3-letter forms). Skipped once the user has manually
-    // switched that track type this session. Audio "orig" leaves the
-    // source default; subtitle "off"/blank disables the text type.
-    LaunchedEffect(player, settings.preferredAudioLang, settings.preferredSubLang) {
-        val audioPref = settings.preferredAudioLang
-        val subPref = settings.preferredSubLang
-        val params = player.trackSelectionParameters.buildUpon()
-        if (!userPickedAudio && audioPref.isNotBlank() && !audioPref.equals("orig", ignoreCase = true)) {
-            params.setPreferredAudioLanguage(audioPref)
-        }
-        if (!userPickedSub) {
-            if (subPref.isBlank() || subPref.equals("off", ignoreCase = true)) {
-                params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                params.clearOverridesOfType(C.TRACK_TYPE_TEXT)
-            } else {
-                params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                params.setPreferredTextLanguage(subPref)
-            }
-        }
-        player.trackSelectionParameters = params.build()
-    }
 
     // Active segment under the *played* head (not the scrub preview) —
     // the credits gate must follow real playback, otherwise scrubbing into
@@ -1176,8 +1211,13 @@ private fun PlaybackSurface(
                     }
                     noteInteraction()
                 },
-                onSelectAudio = { t -> userPickedAudio = true; applyAudioSelection(player, t); openPopover = OpenPopover.NONE; noteInteraction() },
-                onSelectSubtitle = { t -> userPickedSub = true; applySubtitleSelection(player, t); openPopover = OpenPopover.NONE; noteInteraction() },
+                onSelectAudio = { t -> applyAudioSelection(player, t); openPopover = OpenPopover.NONE; noteInteraction() },
+                onSelectSubtitle = { t ->
+                    subtitleKey = t?.key ?: SUBTITLES_OFF
+                    applySubtitleSelection(player, t)
+                    openPopover = OpenPopover.NONE
+                    noteInteraction()
+                },
                 onTogglePopover = { p ->
                     openPopover = if (openPopover == p) OpenPopover.NONE else p
                     noteInteraction()
