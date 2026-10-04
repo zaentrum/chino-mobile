@@ -79,7 +79,6 @@ import cloud.nalet.chino.mobile.ui.components.Avatar
 import cloud.nalet.chino.mobile.ui.detail.DetailScreen
 import cloud.nalet.chino.mobile.ui.home.HomeSection
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
-import cloud.nalet.chino.mobile.ui.search.SearchScreen
 import cloud.nalet.chino.mobile.ui.settings.SettingsSection
 import cloud.nalet.chino.mobile.ui.watchlist.WatchlistScreen
 import cloud.nalet.chino.mobile.ui.zap.InstallZapPrefetcher
