@@ -47,8 +47,8 @@ val LocalAppContainer = staticCompositionLocalOf<AppContainer> {
  * config; `save()` doesn't rebuild them. Mirroring chino-androidtv's
  * process-restart-on-connect, the host recreates the AppContainer + remounts
  * the App so the graph re-reads the just-saved server. Android backs this with
- * Activity.recreate() (+ a fresh AppContainer); iOS is a no-op for now (its
- * sign-in is still the stub).
+ * Activity.recreate() (+ a fresh AppContainer); iOS with a fresh AppContainer
+ * and a remount (MainViewController).
  */
 val LocalAppRestart = staticCompositionLocalOf<() -> Unit> {
     {} // default no-op; Android MainActivity provides the real recreate.
@@ -74,9 +74,9 @@ val LocalAppRestart = staticCompositionLocalOf<() -> Unit> {
 fun App(
     container: AppContainer,
     signInLauncher: SignInLauncher,
-    /** Host hook to rebuild the app graph after a server connect/change.
-     *  Android passes Activity.recreate-with-fresh-container; iOS defaults to
-     *  a no-op (its sign-in is still the stub). */
+    /** Host hook to rebuild the app graph after a server connect/change:
+     *  Android recreates its activity with a fresh container, iOS remounts
+     *  with one. */
     restart: () -> Unit = {},
 ) {
     // Boot snapshot: account state PLUS whether a server is configured,

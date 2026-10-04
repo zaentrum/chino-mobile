@@ -64,12 +64,20 @@ class IosSignInLauncher(
     private var session: ASWebAuthenticationSession? = null
 
     override suspend fun signIn(): SignInResult {
+        val base = authEndpoint()
+        // ASWebAuthenticationSession hands the URL to SafariServices, which
+        // throws an Objective-C exception (aborting the app, as Kotlin cannot
+        // catch it) for anything but http(s) — e.g. an endpoint built from an
+        // empty issuer.
+        if (!base.startsWith("https://") && !base.startsWith("http://")) {
+            return SignInResult.Error("This server's sign-in address is missing. Connect to the server again.")
+        }
         val verifier = randomUrlSafe(64)
         val challenge = s256Challenge(verifier)
         val state = randomUrlSafe(24)
         val redirectUri = OAuthRedirect.URI
         val authorizeUrl = buildAuthorizeUrl(
-            base = authEndpoint(),
+            base = base,
             clientId = clientId(),
             redirectUri = redirectUri,
             challenge = challenge,
