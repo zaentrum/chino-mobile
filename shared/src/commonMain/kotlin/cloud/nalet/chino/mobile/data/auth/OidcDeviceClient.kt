@@ -6,26 +6,22 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.HttpStatusCode
 import io.ktor.http.parameters
-import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * RFC 8628 OAuth 2.0 Device Authorization Grant against Keycloak.
+ * The OIDC token and userinfo calls the app makes itself: the Authorization
+ * Code + PKCE exchange (iOS; Android's AppAuth does its own), the silent
+ * refresh, and the userinfo lookup after a sign-in.
  *
- * Mobile-on-phone is an awkward fit for device flow (the user has a browser
- * right here on the same device), but it works without any platform-specific
- * Custom-Tab / ASWebAuthenticationSession plumbing. The README flags swapping
- * to Authorization Code + PKCE as a v1 follow-up — at that point this class
- * becomes optional and a `PlatformBrowserAuth` (expect class) wraps the
- * platform's in-app browser instead.
+ * The name is historical: this began as an RFC 8628 device-flow client.
+ * Sign-in has since moved to the platform browser (SignInLauncher), and the
+ * device flow went with it.
  */
 class OidcDeviceClient(
     private val http: HttpClient,
-    private val deviceAuthEndpoint: String,
     private val tokenEndpoint: String,
     private val userinfoEndpoint: String,
     private val clientId: String,
@@ -39,61 +35,12 @@ class OidcDeviceClient(
      */
     constructor(http: HttpClient, issuer: String, clientId: String) : this(
         http = http,
-        deviceAuthEndpoint = "$issuer/protocol/openid-connect/auth/device",
         tokenEndpoint = "$issuer/protocol/openid-connect/token",
         userinfoEndpoint = "$issuer/protocol/openid-connect/userinfo",
         clientId = clientId,
     )
 
     private val json = Json { ignoreUnknownKeys = true }
-
-    suspend fun startDeviceAuthorization(scope: String = DEFAULT_SCOPE): DeviceAuthorization {
-        val response = http.submitForm(
-            url = deviceAuthEndpoint,
-            formParameters = parameters {
-                append("client_id", clientId)
-                append("scope", scope)
-            },
-        )
-        if (response.status != HttpStatusCode.OK) {
-            error("Device auth start failed: HTTP ${response.status.value} — ${response.bodyAsText()}")
-        }
-        return json.decodeFromString(DeviceAuthorization.serializer(), response.bodyAsText())
-    }
-
-    suspend fun pollForTokens(auth: DeviceAuthorization): Tokens {
-        var interval = auth.interval.coerceAtLeast(1)
-        while (true) {
-            delay(interval * 1000L)
-            val response = http.submitForm(
-                url = tokenEndpoint,
-                formParameters = parameters {
-                    append("client_id", clientId)
-                    append("grant_type", DEVICE_GRANT)
-                    append("device_code", auth.deviceCode)
-                },
-            )
-            val text = response.bodyAsText()
-            if (response.status == HttpStatusCode.OK) {
-                val tok = json.decodeFromString(TokenResponse.serializer(), text)
-                val nowMs = currentTimeMillis()
-                return Tokens(
-                    accessToken = tok.accessToken,
-                    refreshToken = tok.refreshToken,
-                    expiresAtEpochMillis = nowMs + tok.expiresIn * 1000L,
-                )
-            }
-            val err = runCatching { json.decodeFromString(OauthError.serializer(), text) }.getOrNull()
-            when (err?.error) {
-                "authorization_pending" -> Unit
-                "slow_down" -> interval += 5
-                "expired_token", "access_denied" -> throw DeviceAuthException(err.error)
-                null -> error("Token poll failed: HTTP ${response.status.value} — $text")
-                else -> throw DeviceAuthException(err.error)
-            }
-        }
-        @Suppress("UNREACHABLE_CODE") error("unreachable")
-    }
 
     /**
      * OAuth 2.0 Authorization Code + PKCE token exchange. Trades the `code`
@@ -162,8 +109,8 @@ class OidcDeviceClient(
     }
 
     /** Userinfo lookup — used to populate the Account row after a fresh
-     *  device-flow completion (sub → account id, name → displayName,
-     *  email → gravatar fallback). */
+     *  sign-in (sub → account id, name → displayName, email → gravatar
+     *  fallback). */
     suspend fun fetchUserInfo(accessToken: String): UserInfo? {
         val response = http.get(userinfoEndpoint) {
             header("Authorization", "Bearer $accessToken")
@@ -172,11 +119,6 @@ class OidcDeviceClient(
         return runCatching {
             json.decodeFromString(UserInfo.serializer(), response.bodyAsText())
         }.getOrNull()
-    }
-
-    companion object {
-        private const val DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
-        private const val DEFAULT_SCOPE = "openid profile email offline_access"
     }
 }
 
@@ -201,27 +143,9 @@ data class UserInfo(
 // kotlin.time.Clock isn't stable across all KMP targets yet.
 
 @Serializable
-data class DeviceAuthorization(
-    @SerialName("device_code") val deviceCode: String,
-    @SerialName("user_code") val userCode: String,
-    @SerialName("verification_uri") val verificationUri: String,
-    @SerialName("verification_uri_complete") val verificationUriComplete: String? = null,
-    @SerialName("expires_in") val expiresIn: Int,
-    @SerialName("interval") val interval: Int = 5,
-)
-
-@Serializable
 private data class TokenResponse(
     @SerialName("access_token") val accessToken: String,
     @SerialName("refresh_token") val refreshToken: String? = null,
     @SerialName("expires_in") val expiresIn: Long = 0L,
     @SerialName("token_type") val tokenType: String = "Bearer",
 )
-
-@Serializable
-private data class OauthError(
-    val error: String,
-    @SerialName("error_description") val errorDescription: String? = null,
-)
-
-class DeviceAuthException(val errorCode: String) : RuntimeException("OIDC device-flow error: $errorCode")

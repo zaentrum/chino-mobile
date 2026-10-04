@@ -116,7 +116,7 @@ class AppContainer(
     val accountStore: AccountStore by lazy {
         accountStoreFactory.create().also { store ->
             // One-shot legacy migration. Best-effort: if it fails the user
-            // re-runs the device flow as if first-launch.
+            // signs in again as on first launch.
             appScope.launch {
                 runCatching { store.migrateFromTokenStoreIfPresent(tokenStore) }
             }
@@ -142,8 +142,7 @@ class AppContainer(
         }
     }
 
-    /** Unauthenticated client for Keycloak device-code / token / userinfo
-     *  endpoints. Can't share the authenticated client because the Auth
+    /** Unauthenticated client for the OIDC token / userinfo endpoints. Can't share the authenticated client because the Auth
      *  plugin would attach a Bearer header to the unauthenticated token
      *  exchange, which Keycloak rejects with `unauthorized_client`. */
     private val unauthHttp: HttpClient by lazy { HttpClientFactory.createUnauthenticated(config) }
@@ -158,8 +157,6 @@ class AppContainer(
         if (sc?.tokenEndpoint != null && sc.userinfoEndpoint != null) {
             OidcDeviceClient(
                 http = unauthHttp,
-                deviceAuthEndpoint = sc.deviceAuthEndpoint
-                    ?: "${config.oidcIssuer}/protocol/openid-connect/auth/device",
                 tokenEndpoint = sc.tokenEndpoint,
                 userinfoEndpoint = sc.userinfoEndpoint,
                 clientId = config.oidcClientId,

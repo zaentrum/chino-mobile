@@ -10,7 +10,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
  *
  * AuthScreen calls signIn() on button press and hands the resulting [Tokens]
  * to AuthScreenModel, which then runs [OidcDeviceClient.fetchUserInfo] +
- * [AccountStore.addOrUpdate] just like the old device-flow path did.
+ * [AccountStore.addOrUpdate].
  */
 interface SignInLauncher {
     suspend fun signIn(): SignInResult

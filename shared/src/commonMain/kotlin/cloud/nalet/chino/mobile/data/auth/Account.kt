@@ -5,9 +5,9 @@ import kotlinx.serialization.Serializable
 
 /**
  * A single signed-in OIDC user. `id` is the Keycloak `sub` claim — stable
- * across logins for the same user so re-running the device flow on an
- * existing account updates the tokens in place rather than creating a
- * duplicate row in the picker.
+ * across logins for the same user so signing in again on an existing
+ * account updates the tokens in place rather than creating a duplicate row
+ * in the picker.
  *
  * `email` is also used to derive the gravatar URL (md5 of trimmed lowercase
  * email per https://en.gravatar.com/site/implement/hash/). Empty string

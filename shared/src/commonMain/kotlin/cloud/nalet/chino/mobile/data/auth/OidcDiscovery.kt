@@ -31,10 +31,11 @@ data class OidcEndpoints(
  * we try the RFC 8414 form first and fall back to the appended one.
  *
  * Unlike the TV (which needs device_authorization_endpoint for RFC 8628), the
- * mobile client uses Authorization Code + PKCE via AppAuth, so the
- * authorization_endpoint + token_endpoint are the required pair;
- * device_authorization_endpoint is captured opportunistically (nullable) for
- * the legacy device-flow fallback path.
+ * mobile client uses Authorization Code + PKCE (AppAuth on Android,
+ * ASWebAuthenticationSession on iOS), so the authorization_endpoint +
+ * token_endpoint are the required pair; device_authorization_endpoint is
+ * kept (nullable) only so ServerConfig stays field-for-field with the TV's —
+ * nothing in this app signs in with it.
  */
 class OidcDiscovery(private val http: HttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
