@@ -94,7 +94,7 @@ class BugReporter(
     /**
      * Manual report from the Settings "Report a bug" dialog. Returns the
      * server's response (id + url + duplicate flag) and PROPAGATES failures
-     * (incl. [cloud.nalet.chino.mobile.data.api.FeedbackSubmitException])
+     * (incl. [cloud.nalet.chino.mobile.data.api.ApiStatusException])
      * so the dialog can show an inline error and preserve the input. Not
      * session-throttled — the server's per-user rate limit is the backstop.
      */

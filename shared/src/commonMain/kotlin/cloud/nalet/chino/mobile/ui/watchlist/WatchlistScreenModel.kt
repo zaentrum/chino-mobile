@@ -4,6 +4,7 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.Watchlist
+import cloud.nalet.chino.mobile.data.api.watchlistRefusal
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -162,17 +163,8 @@ class WatchlistScreenModel(
 
     fun clearDialogError() { _dialogError.value = null }
 
-    /** Maps a Ktor non-2xx (the picker dialogs throw on rejection) onto a
-     *  short, plain-language message. Best-effort — the server's exact 409
-     *  reason ("name exists" / "too many lists") is buried in the response
-     *  body the client doesn't decode, so we key off the status text. */
-    private fun friendlyError(t: Throwable): String {
-        val msg = t.message.orEmpty()
-        return when {
-            msg.contains("409") && msg.contains("name", ignoreCase = true) -> "A list with that name already exists."
-            msg.contains("409") -> "You've reached the maximum number of lists."
-            msg.contains("400") -> "Enter a name between 1 and 60 characters."
-            else -> "Couldn't save the list. Try again."
-        }
-    }
+    /** chino-api's reason for refusing a create or rename ("name exists" /
+     *  "too many lists" / a name out of 1..60), else a plain retry hint. */
+    private fun friendlyError(t: Throwable): String =
+        t.watchlistRefusal() ?: "Couldn't save the list. Try again."
 }

@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.api.FeedbackResponse
-import cloud.nalet.chino.mobile.data.api.FeedbackSubmitException
+import cloud.nalet.chino.mobile.data.api.ApiStatusException
 import com.composables.icons.lucide.Bug
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Lucide
@@ -118,7 +118,7 @@ fun BugReportDialog(
                 } catch (e: Exception) {
                     // Manual reports DO surface failures (auto reports never
                     // do) — inline, with the input preserved for a retry.
-                    error = when ((e as? FeedbackSubmitException)?.status) {
+                    error = when ((e as? ApiStatusException)?.status) {
                         429 -> "Too many reports right now — try again in a few minutes."
                         503 -> "Bug reporting isn't set up on this server."
                         else -> "Couldn't send the report. Check your connection and try again."

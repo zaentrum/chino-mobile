@@ -4,6 +4,7 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
+import cloud.nalet.chino.mobile.data.api.watchlistRefusal
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -126,15 +127,9 @@ class DetailScreenModel(
 
     fun clearAddToListError() { _addToListError.value = null }
 
-    private fun friendlyListError(t: Throwable): String {
-        val msg = t.message.orEmpty()
-        return when {
-            msg.contains("409") && msg.contains("name", ignoreCase = true) -> "A list with that name already exists."
-            msg.contains("409") -> "You've reached the maximum number of lists."
-            msg.contains("400") -> "Enter a name between 1 and 60 characters."
-            else -> "Couldn't create the list. Try again."
-        }
-    }
+    /** chino-api's reason for refusing the list, else a plain retry hint. */
+    private fun friendlyListError(t: Throwable): String =
+        t.watchlistRefusal() ?: "Couldn't create the list. Try again."
 
     /** Real watched TOGGLE for the detail item. Mirrors chino-web's
      *  useWatchedToggle: POST to mark, DELETE to un-mark. Flips the local

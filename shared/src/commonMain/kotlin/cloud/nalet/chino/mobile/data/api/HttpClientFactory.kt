@@ -3,6 +3,8 @@ package cloud.nalet.chino.mobile.data.api
 import cloud.nalet.chino.mobile.AppConfig
 import cloud.nalet.chino.mobile.data.auth.TokenManager
 import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
+import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
@@ -12,6 +14,7 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.http.URLBuilder
+import io.ktor.http.isSuccess
 import io.ktor.http.takeFrom
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
@@ -26,36 +29,52 @@ import kotlinx.serialization.json.Json
  */
 internal val ChinoJson: Json = Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true }
 
+/**
+ * How the app talks to chino-api — the app's client and the tests' FakeServer
+ * alike: JSON as chino-api writes it ([ChinoJson]), the bearer from
+ * [accessToken] (and [renewedToken] after a 401), requests relative to
+ * [apiBaseUrl], and every non-2xx answer an [ApiStatusException] with the
+ * server's message. Ktor installs the response check before the Auth plugin
+ * sends, so it sees the answer after a renewed token's retry: a 401 the
+ * renewal fixes is no error.
+ */
+internal fun HttpClientConfig<*>.chinoApiClient(
+    apiBaseUrl: String,
+    accessToken: suspend () -> String?,
+    renewedToken: suspend () -> String?,
+) {
+    install(ContentNegotiation) { json(ChinoJson) }
+    install(Auth) {
+        bearer {
+            // refresh_token is opaque to Ktor's Auth plugin — it never sends
+            // it itself; TokenManager owns refresh entirely via the issuer's
+            // token endpoint. An empty string satisfies BearerTokens.
+            loadTokens { accessToken()?.let { BearerTokens(accessToken = it, refreshToken = "") } }
+            refreshTokens { renewedToken()?.let { BearerTokens(accessToken = it, refreshToken = "") } }
+        }
+    }
+    HttpResponseValidator {
+        validateResponse { response ->
+            if (!response.status.isSuccess()) throw response.apiStatusException()
+        }
+    }
+    defaultRequest {
+        url.takeFrom(URLBuilder().takeFrom(apiBaseUrl))
+    }
+}
+
 object HttpClientFactory {
     /** Authenticated client used for every chino-api call. Auth plugin reads
      *  tokens through [TokenManager] which is multi-account aware — switching
      *  the active account in AccountStore propagates here without rewiring. */
     fun create(config: AppConfig, tokenManager: TokenManager): HttpClient = HttpClient {
-        install(ContentNegotiation) { json(ChinoJson) }
+        chinoApiClient(
+            apiBaseUrl = config.apiBaseUrl,
+            accessToken = { tokenManager.validAccessToken() },
+            renewedToken = { tokenManager.forceRefresh() },
+        )
         install(Logging) {
             level = if (config.isBeta) LogLevel.INFO else LogLevel.NONE
-        }
-        install(Auth) {
-            bearer {
-                loadTokens {
-                    tokenManager.validAccessToken()?.let { token ->
-                        // refresh_token is opaque to Ktor's Auth plugin — it
-                        // never sends it itself; TokenManager owns refresh
-                        // entirely via the Keycloak token endpoint. Pass an
-                        // empty string so the BearerTokens signature is
-                        // satisfied.
-                        BearerTokens(accessToken = token, refreshToken = "")
-                    }
-                }
-                refreshTokens {
-                    tokenManager.forceRefresh()?.let { token ->
-                        BearerTokens(accessToken = token, refreshToken = "")
-                    }
-                }
-            }
-        }
-        defaultRequest {
-            url.takeFrom(URLBuilder().takeFrom(config.apiBaseUrl))
         }
     }
 

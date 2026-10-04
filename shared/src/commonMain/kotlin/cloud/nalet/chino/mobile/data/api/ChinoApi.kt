@@ -21,7 +21,6 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -30,6 +29,10 @@ import kotlinx.serialization.json.Json
  * Mirrors chino-api/internal/http/router.go and chino-androidtv's ChinoApi
  * interface field-for-field. If chino-api gets codegen later, drop this in
  * favour of the generated client.
+ *
+ * Every call throws [ApiStatusException] for a non-2xx answer, with the
+ * server's message: the client checks every answer ([chinoApiClient]), after
+ * the Auth plugin's refresh-and-retry.
  */
 class ChinoApi(private val http: HttpClient) {
     /** GET /v1/items. chino-api pages with `limit` (default 50) + `offset`
@@ -37,10 +40,9 @@ class ChinoApi(private val http: HttpClient) {
      *  [limit] is the last one ([cloud.nalet.chino.mobile.data.paging.Paged]).
      *  An [offset] of 0 is left off, as chino-web leaves it.
      *
-     *  A non-2xx answer throws [ApiStatusException]: chino-api answers 502
-     *  `{ error }` when the catalog fails, and decoded as a page that error
-     *  would read as an empty — so final — page. Checked after the Auth
-     *  plugin's refresh-and-retry, so a renewed token still gets through. */
+     *  chino-api answers 502 `{ error }` when the catalog fails: decoded as a
+     *  page, that error would read as an empty — so final — page; it is an
+     *  [ApiStatusException]. */
     suspend fun listItems(
         limit: Int? = null,
         offset: Int? = null,
@@ -66,7 +68,7 @@ class ChinoApi(private val http: HttpClient) {
         // out and the rail backfills from later pages. Browse + Search leave
         // this false so watched titles stay findable for a rewatch.
         if (unwatched) parameter("unwatched", "true")
-    }.successBody("v1/items")
+    }.body()
 
     suspend fun listGenres(): GenresResponse = http.get("v1/genres").body()
 
@@ -87,13 +89,14 @@ class ChinoApi(private val http: HttpClient) {
      *  max 200). [acceptLanguage] picks the biography's language: chino-api
      *  passes the header on to the catalog, which falls back to English.
      *  Any other non-2xx throws [ApiStatusException]. */
-    suspend fun getPerson(id: String, limit: Int? = null, acceptLanguage: String? = null): PersonDetail? {
-        val response = http.get("v1/people/$id") {
+    suspend fun getPerson(id: String, limit: Int? = null, acceptLanguage: String? = null): PersonDetail? = try {
+        http.get("v1/people/$id") {
             limit?.let { parameter("limit", it) }
             acceptLanguage?.takeIf { it.isNotBlank() }?.let { header(HttpHeaders.AcceptLanguage, it) }
-        }
-        if (response.status == HttpStatusCode.NotFound) return null
-        return response.successBody("v1/people")
+        }.body()
+    } catch (e: ApiStatusException) {
+        if (e.status != HttpStatusCode.NotFound.value) throw e
+        null
     }
 
     /** Full Item objects the current user has watched end-to-end (each carries
@@ -190,8 +193,8 @@ class ChinoApi(private val http: HttpClient) {
 
     /** 201 + the created list. Server validates: trim, 1..60 chars, max 50
      *  lists/user (409 "too many lists"), case-insensitive duplicate name
-     *  (409 "name exists"), empty (400). The caller surfaces a non-2xx as a
-     *  thrown Ktor exception and keeps the dialog open. */
+     *  (409 "name exists"), empty (400). A refusal is an [ApiStatusException]
+     *  with that reason ([watchlistRefusal]); the dialog stays open. */
     suspend fun createWatchlist(name: String): Watchlist =
         http.post("v1/me/watchlists") {
             contentType(ContentType.Application.Json)
@@ -286,15 +289,15 @@ class ChinoApi(private val http: HttpClient) {
      *  ticket on the connected server's issue system and answers 201 (new) / 200 (duplicate, comment
      *  appended). Multipart: "report" JSON part + optional "screenshot"
      *  image part (server rejects > 3 MB). Non-2xx surfaces as
-     *  [FeedbackSubmitException] so BugReporter can swallow auto-report
+     *  [ApiStatusException] so BugReporter can swallow auto-report
      *  failures silently while the manual dialog maps 429/503 onto
      *  plain-language errors. */
     suspend fun submitFeedback(
         report: FeedbackReport,
         screenshot: ByteArray? = null,
         screenshotMime: String = "image/jpeg",
-    ): FeedbackResponse {
-        val resp = http.post("v1/feedback") {
+    ): FeedbackResponse =
+        http.post("v1/feedback") {
             setBody(
                 MultiPartFormDataContent(
                     formData {
@@ -319,10 +322,7 @@ class ChinoApi(private val http: HttpClient) {
                     },
                 ),
             )
-        }
-        if (!resp.status.isSuccess()) throw FeedbackSubmitException(resp.status.value)
-        return resp.body()
-    }
+        }.body()
 }
 
 /** Serializes the feedback "report" part by hand (it's a multipart part, not
@@ -650,9 +650,3 @@ data class FeedbackResponse(
      *  instead of opening a new one (HTTP 201). */
     val duplicate: Boolean = false,
 )
-
-/** Non-2xx from POST /v1/feedback. 429 = per-user rate limit, 503 = the
- *  server has no issue-system integration configured; the manual dialog maps both
- *  onto plain-language messages, auto reports swallow everything. */
-class FeedbackSubmitException(val status: Int) :
-    Exception("feedback submit failed with HTTP $status")
