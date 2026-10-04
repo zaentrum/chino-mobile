@@ -9,6 +9,7 @@ import androidx.compose.ui.window.ComposeUIViewController
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.PlatformServerConfigStoreFactory
 import cloud.nalet.chino.mobile.data.PlatformSettingsStoreFactory
+import cloud.nalet.chino.mobile.data.isLocalDevelopmentHost
 import cloud.nalet.chino.mobile.data.auth.IosSignInLauncher
 import cloud.nalet.chino.mobile.data.auth.PlatformAccountStoreFactory
 import cloud.nalet.chino.mobile.data.auth.PlatformTokenStoreFactory
@@ -104,5 +105,8 @@ private fun buildContainer(
             "app_flavor" to flavor.lowercase(),
             "client" to "chino-mobile-ios",
         ),
+        // https only; plain http to this device alone (App Transport
+        // Security leaves IP-address hosts to the app).
+        allowPlainHttp = ::isLocalDevelopmentHost,
     )
 }

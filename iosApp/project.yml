@@ -54,6 +54,17 @@ targets:
         ChinoApiBaseUrl: "$(CHINO_API_BASE_URL)"
         ChinoOidcIssuer: "$(CHINO_OIDC_ISSUER)"
         ChinoOidcClientId: "$(CHINO_OIDC_CLIENT_ID)"
+        # App Transport Security stays strict: https everywhere, plain http
+        # only to this device for local development. ATS does not apply to
+        # IP-address hosts at all (127.0.0.1 among them), so the app itself
+        # refuses plain http to any host but localhost and 127.0.0.1
+        # (ServerBootstrap + isLocalDevelopmentHost).
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+          NSAllowsLocalNetworking: false
+          NSExceptionDomains:
+            localhost:
+              NSExceptionAllowsInsecureHTTPLoads: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(CHINO_BUNDLE_ID)"
