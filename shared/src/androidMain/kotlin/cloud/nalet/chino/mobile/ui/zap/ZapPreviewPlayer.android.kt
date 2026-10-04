@@ -18,8 +18,12 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 
@@ -87,7 +91,11 @@ actual fun ZapPreviewPlayer(
         // the full player uses.
         val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
-        ExoPlayer.Builder(context, renderersFactory).build().apply {
+        // Start on the master's first variant, the one chino-stream and the
+        // ZapPrefetcher warm (FirstVariantTrackSelection), not Media3's
+        // bandwidth-estimate pick; adapt from there.
+        val trackSelector = DefaultTrackSelector(context, FirstVariantTrackSelectionFactory())
+        ExoPlayer.Builder(context, renderersFactory).setTrackSelector(trackSelector).build().apply {
             // Request audio focus while playing so a Zap card WITH sound pauses
             // other audio (e.g. Spotify) instead of mixing over it, and the
             // player ducks/pauses itself on focus loss (calls, other media).
@@ -109,9 +117,16 @@ actual fun ZapPreviewPlayer(
     }
 
     DisposableEffect(player) {
+        var audioSet = false
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) onEnded()
+            }
+            // Once the tracks are known: the audio the card starts on.
+            override fun onTracksChanged(tracks: Tracks) {
+                if (audioSet || tracks.isEmpty) return
+                audioSet = true
+                selectStartAudio(player, tracks)
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 onError()
@@ -179,6 +194,34 @@ actual fun ZapPreviewPlayer(
             }
         },
     )
+}
+
+/**
+ * The audio a card starts on is the rendition the master's first variant
+ * starts with ([startAudio], ZapStart.kt) — what chino-stream and the
+ * ZapPrefetcher warm. Media3 ranks otherwise: a 5.1 group's DEFAULT above
+ * the stereo group's (more channels), and where a group marks no DEFAULT a
+ * rendition in the device's language above the first. Where it picked
+ * another, the start rendition is set in its place as soon as the tracks
+ * are known.
+ */
+private fun selectStartAudio(player: ExoPlayer, tracks: Tracks) {
+    val start = (player.currentManifest as? HlsManifest)?.multivariantPlaylist?.startAudio() ?: return
+    for (group in tracks.groups) {
+        if (group.type != C.TRACK_TYPE_AUDIO) continue
+        for (i in 0 until group.length) {
+            val format = group.getTrackFormat(i)
+            val isStart = format.id == start.format.id ||
+                (format.label == start.name && format.language == start.format.language)
+            if (!isStart) continue
+            if (!group.isTrackSelected(i)) {
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, i))
+                    .build()
+            }
+            return
+        }
+    }
 }
 
 @Composable

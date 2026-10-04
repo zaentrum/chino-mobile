@@ -26,10 +26,11 @@ data class ZapPrefetchRequest(val itemId: String, val masterUrl: String, val see
 
 /**
  * Client-side background prefetch for upcoming Zap cards. Given a small list of
- * upcoming cards it resolves each card's per-device HLS variant and writes the
- * init segment + the media segments covering the seek window [seekSec, seekSec
- * + WINDOW] into the shared [ZapMediaCache]. When the player swaps to that
- * card those bytes are already on disk, so the swipe begins instantly.
+ * upcoming cards it resolves the per-device HLS variant each card starts on and
+ * the audio rendition it starts with (ZapStart.kt), and writes their init
+ * segments + the media segments covering the seek window [seekSec, seekSec +
+ * WINDOW] into the shared [ZapMediaCache]. When the player swaps to that card
+ * those bytes are already on disk, so the swipe begins instantly.
  *
  * It is deliberately a GOOD CITIZEN:
  *  - bounded fan-out: the caller only ever hands it the next [MAX_AHEAD] cards;
@@ -106,15 +107,25 @@ class ZapPrefetcher(context: Context) {
             // Some servers hand back a media playlist directly (single variant).
             is HlsMediaPlaylist -> cacheMediaPlaylist(top, req.seekSec)
             is HlsMultivariantPlaylist -> {
-                // Pick the per-device variant the player would pick. chino-stream
-                // emits the correctly-capped variant FIRST for the supplied caps,
-                // and default ExoPlayer track selection starts at the first
-                // variant, so the first media-playlist URL is the one to warm.
+                // The variant the card starts on (ZapStart.kt): the master's
+                // first. chino-stream lists first, for the caps the URL
+                // carries (the device's, CodecCaps), the variant a client is
+                // to start on, and the card's player starts there
+                // (FirstVariantTrackSelection) — Media3's own start is its
+                // bandwidth-estimate pick, which this used to assume was the
+                // first.
                 val variantUrl = top.variants.firstOrNull()?.url
                     ?: top.mediaPlaylistUrls.firstOrNull()
                     ?: return
                 val media = fetchPlaylist(variantUrl.toString()) as? HlsMediaPlaylist ?: return
                 cacheMediaPlaylist(media, req.seekSec)
+                // And the audio it starts with, in a rendition of its own on
+                // a package: the DEFAULT one of the first variant's group,
+                // else the group's first — as chino-stream warms it. Other
+                // languages and the 5.1 group are bytes no card plays.
+                val audioUrl = top.startAudio()?.url ?: return
+                val audio = fetchPlaylist(audioUrl.toString()) as? HlsMediaPlaylist ?: return
+                cacheMediaPlaylist(audio, req.seekSec)
             }
             else -> return
         }
@@ -219,3 +230,13 @@ class ZapPrefetcher(context: Context) {
         private const val PREFETCH_UA = "chino-mobile/0.1 (Android; zap-prefetch)"
     }
 }
+
+/** The audio rendition a card starts on in this master ([startAudioRendition],
+ *  read off Media3's parse): what the prefetcher warms and the card plays. */
+internal fun HlsMultivariantPlaylist.startAudio(): HlsMultivariantPlaylist.Rendition? =
+    startAudioRendition(
+        firstVariantGroup = variants.firstOrNull()?.audioGroupId,
+        renditions = audios.filter { it.url != null },
+        group = { it.groupId },
+        isDefault = { (it.format.selectionFlags and androidx.media3.common.C.SELECTION_FLAG_DEFAULT) != 0 },
+    )

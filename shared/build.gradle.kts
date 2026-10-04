@@ -126,4 +126,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    // androidUnitTest runs Media3's plain classes (Format, TrackGroup, the
+    // track selections) on the JVM. They call android.text.TextUtils and
+    // android.util.Log, which the unit-test android.jar only stubs: let the
+    // stubs answer defaults instead of throwing. (commonTest calls none.)
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
