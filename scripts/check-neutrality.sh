@@ -19,6 +19,17 @@
 #      scripts/check-neutrality.sh --self-test   (the patterns only)
 set -uo pipefail
 
+# ── the tools ────────────────────────────────────────────────────────────────
+# Missing, or without POSIX classes, any of these would fail the self-test
+# below as if a pattern had gone blind, and send the reader looking at the
+# patterns. Name the real cause instead — and still fail (exit 2).
+need() { command -v "$1" >/dev/null 2>&1 || { echo "neutrality guard: needs $1 on PATH"; exit 2; }; }
+for tool in grep sed cut tr; do need "$tool"; done
+printf 'a_b\n' | grep -qiE '(^|[^[:alnum:]])b([^[:alnum:]]|$)' 2>/dev/null ||
+  { echo "neutrality guard: needs a grep whose -E reads POSIX classes ([[:alnum:]])"; exit 2; }
+[[ "$(printf 'aB\n' | sed -E 's/([[:lower:]])([[:upper:]])/\1 \2/g' 2>/dev/null)" == "a B" ]] ||
+  { echo "neutrality guard: needs a sed whose -E reads POSIX classes ([[:lower:]])"; exit 2; }
+
 # ── the patterns ─────────────────────────────────────────────────────────────
 # A name counts where what stands on either side of it is not a letter or a
 # digit. \b would not do: it counts "_" as part of a word, so TORRENT_DIR or an
@@ -102,6 +113,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   exit 0
 fi
 
+need git # the scan reads the tracked files from git
 root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 fail=0
 
