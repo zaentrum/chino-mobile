@@ -179,12 +179,14 @@ actual class PlayerScreen actual constructor(
             try {
                 val token = container.streamTokenManager.valid()
                 val base = container.config.apiBaseUrl.trimEnd('/')
-                // Resume precedence: fromStart → 0; an explicit Zap-expand
-                // resumeSec → that exact second; otherwise the saved progress.
-                val resume = when {
-                    fromStart -> 0
-                    resumeSec >= 0 -> resumeSec
-                    else -> runCatching { container.chinoApi.getProgress(itemId).positionSec }.getOrDefault(0)
+                // The saved position matters only when neither "from start"
+                // nor a hand-off from Zap says where to begin. Null = it could
+                // not be read (resumeStartSec / mayWriteProgress below).
+                val handoff = !fromStart && resumeSec > 1
+                val saved = if (fromStart || handoff) {
+                    null
+                } else {
+                    runCatching { container.chinoApi.getProgress(itemId).positionSec }.getOrNull()
                 }
                 val caps = CodecCaps.queryParam
                 val info = runCatching { container.chinoApi.playInfo(itemId, caps = caps.ifEmpty { null }) }.getOrNull()
@@ -246,6 +248,15 @@ actual class PlayerScreen actual constructor(
                 } else {
                     emptyList()
                 }
+                // Where playback starts and whether this session may write its
+                // position: the shared resume rule, as the iOS player reads it.
+                // A barely started or finished title starts at the head.
+                val resume = ResumeInput(
+                    savedSec = saved,
+                    durationSec = (info?.durationMs ?: item?.durationMs ?: 0L) / 1000.0,
+                    startOver = fromStart,
+                    handoffSec = if (handoff) resumeSec else -1,
+                )
                 ready = PlayState(
                     itemId = itemId,
                     base = base,
@@ -253,7 +264,8 @@ actual class PlayerScreen actual constructor(
                     caps = caps,
                     currentQuality = streamQuality,
                     qualities = info?.qualities ?: emptyList(),
-                    resumeMs = resume * 1000L,
+                    resumeMs = resumeStartSec(resume) * 1000L,
+                    writable = mayWriteProgress(resume),
                     title = composePlayerTitle(item, seriesTitle),
                     info = info,
                     segments = segs,
@@ -305,7 +317,10 @@ private data class PlayState(
     val currentQuality: String,
     /** Quality ladder the server can serve (drives the picker menu). */
     val qualities: List<QualityRung>,
+    /** Where playback starts ([resumeStartSec]), 0 = the head. */
     val resumeMs: Long,
+    /** Whether this session may write its position ([mayWriteProgress]). */
+    val writable: Boolean,
     val title: String,
     val info: PlayInfo?,
     val segments: List<Segment>,
@@ -546,6 +561,24 @@ private fun PlaybackSurface(
     val activeMasterUrl = remember(currentQuality, reloadKey) {
         buildMasterUrl(state.base, state.itemId, state.streamToken, currentQuality, state.caps)
     }
+    // What this session has played, the only position it writes back — the
+    // guard the iOS player saves through (PlaybackProgress.kt): never a
+    // position before the resume seek has landed, never a seek target
+    // playback has not reached, nothing when the saved position could not be
+    // read. One per screen, so a quality switch keeps what was played.
+    val guard = remember { ProgressGuard(state.writable) }
+    fun saveProgress(p: ExoPlayer) {
+        val pos = guard.position() ?: return
+        val durMs = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.info?.durationMs ?: 0L
+        container.appScope.launch {
+            runCatching {
+                container.chinoApi.postProgress(
+                    itemId,
+                    cloud.nalet.chino.mobile.data.api.ProgressBody(positionSec = pos, durationSec = (durMs / 1000L).toInt()),
+                )
+            }
+        }
+    }
 
     val streamClient = remember {
         okhttp3.OkHttpClient.Builder()
@@ -673,6 +706,7 @@ private fun PlaybackSurface(
         // the rebuilt player resumes there; on first mount it's -1 and we
         // fall back to the entry resume position.
         val seekTarget = if (pendingResumeMs >= 0) pendingResumeMs else state.resumeMs
+        guard.expectSeek(seekTarget / 1000.0)
         ExoPlayer.Builder(context, renderersFactory).build().also {
             it.setMediaSource(mediaSource)
             it.prepare()
@@ -698,6 +732,13 @@ private fun PlaybackSurface(
     LaunchedEffect(player) {
         player.volume = if (muted) 0f else volume
         player.playbackParameters = PlaybackParameters(playbackSpeed)
+    }
+
+    // A seek the viewer makes (±10 s, the scrubber, a skip pill): the guard
+    // waits for playback to get there before it counts as played.
+    fun seekTo(ms: Long) {
+        guard.expectSeek(ms / 1000.0)
+        player.seekTo(ms)
     }
 
     // Hoisted "user is interacting" flags. ANY of these → suppress auto-hide.
@@ -774,18 +815,9 @@ private fun PlaybackSurface(
         }
         player.addListener(listener)
         onDispose {
-            val pos = (player.currentPosition / 1000L).toInt()
-            val dur = (player.duration.takeIf { it != C.TIME_UNSET } ?: 0L).let { (it / 1000L).toInt() }
-            if (pos > 0) {
-                container.appScope.launch {
-                    runCatching {
-                        container.chinoApi.postProgress(
-                            itemId,
-                            cloud.nalet.chino.mobile.data.api.ProgressBody(positionSec = pos, durationSec = dur),
-                        )
-                    }
-                }
-            }
+            // Leaving the screen, a quality switch, the error screen: the
+            // last position played.
+            saveProgress(player)
             player.removeListener(listener)
             player.release()
         }
@@ -795,22 +827,17 @@ private fun PlaybackSurface(
             if (!scrubbing) positionMs = player.currentPosition
             durationMs = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
             bufferedMs = player.bufferedPosition
+            // Only a position the player reports while playing counts as
+            // played; the guard drops one short of a seek still under way.
+            if (player.isPlaying) guard.played(player.currentPosition / 1000.0)
             delay(250)
         }
     }
+    // Every 10 s while playing; a pause and leaving the screen save too.
     LaunchedEffect(player) {
         while (true) {
             delay(10_000)
-            val pos = (player.currentPosition / 1000L).toInt()
-            val dur = (player.duration.takeIf { it != C.TIME_UNSET } ?: 0L).let { (it / 1000L).toInt() }
-            if (pos > 0) {
-                runCatching {
-                    container.chinoApi.postProgress(
-                        itemId,
-                        cloud.nalet.chino.mobile.data.api.ProgressBody(positionSec = pos, durationSec = dur),
-                    )
-                }
-            }
+            if (player.isPlaying) saveProgress(player)
         }
     }
 
@@ -1074,16 +1101,21 @@ private fun PlaybackSurface(
                 audioTracks = audioTracks,
                 subtitleTracks = subtitleTracks,
                 onPlayPause = {
-                    if (player.isPlaying) player.pause() else player.play()
+                    if (player.isPlaying) {
+                        player.pause()
+                        saveProgress(player)
+                    } else {
+                        player.play()
+                    }
                     noteInteraction()
                 },
                 onSkipBack = {
-                    player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
+                    seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
                     noteInteraction()
                 },
                 onSkipForward = {
                     val dur = player.duration.takeIf { it != C.TIME_UNSET } ?: Long.MAX_VALUE
-                    player.seekTo((player.currentPosition + 10_000L).coerceAtMost(dur))
+                    seekTo((player.currentPosition + 10_000L).coerceAtMost(dur))
                     noteInteraction()
                 },
                 onScrubStart = { ms ->
@@ -1094,7 +1126,7 @@ private fun PlaybackSurface(
                     scrubPreviewMs = ms
                 },
                 onScrubCommit = { ms ->
-                    player.seekTo(ms)
+                    seekTo(ms)
                     scrubbing = false
                     noteInteraction()
                 },
@@ -1216,7 +1248,7 @@ private fun PlaybackSurface(
             SkipSegmentButton(
                 label = skipSegmentLabel(skipSeg.kind),
                 onClick = {
-                    player.seekTo(skipSeg.endMs)
+                    seekTo(skipSeg.endMs)
                     container.telemetry.event(
                         "skip_segment",
                         itemId = itemId,
