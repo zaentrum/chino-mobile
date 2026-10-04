@@ -60,6 +60,7 @@ shared/                         KMP library
     ui/onboarding/AddServerScreen.kt  bring-your-own-server entry point
     ui/...                      auth / home / browse / detail / person / search / player / settings
   src/commonTest/...            shared unit tests (JVM + iOS simulator)
+  src/androidUnitTest/...       Android-only unit tests on the JVM (Media3's track selection)
   src/androidMain/...           DataStore-backed stores, Ktor OkHttp engine, Media3 player
   src/iosMain/...               NSUserDefaults stores, Darwin engine, AVPlayer
                                 player, MainViewController() exposed to Swift
@@ -116,29 +117,44 @@ running a development server next to the simulator.
 
 Android plays with Media3, iOS with AVPlayer. Both open the same HLS master
 (`/api/v1/items/{id}/play/master.m3u8`) with the stream token, the device's
-codec caps and the chosen quality, and share the segment, title and quality
-rules in `ui/player/`. The iOS player:
+codec caps and the chosen quality, and play by the same rules in
+`ui/player/`:
 
-- **Resume** — reads the saved position and seeks there before the first
-  frame shows; saves progress every 10 seconds, on pause and on exit, and
-  never a position it has not played (no 0:00 written before the resume seek
-  lands). Near the end the title is marked watched.
-- **Subtitles** — sidecar files and the stream's text tracks, named by
-  language ("English · SDH", "German (forced)") and drawn over the picture;
-  on by default only when the audio is in another language than the preferred
-  subtitle language, as on the web. Image-based subtitles (PGS) are listed as
-  not available.
+- **Resume** — the saved position, unless the title is barely started (30 s
+  or less) or finished (its last minute): then from the start. The detail
+  page offers "Resume" only where the player resumes. Progress is saved
+  every 10 seconds while playing, on pause and on exit, and never a position
+  the player has not played: nothing before the resume seek lands, nothing
+  when the saved position could not be read. In the credits or past 95 % the
+  title is marked watched.
+- **Subtitles** — on by default only when the audio is in another language
+  than the preferred subtitle language, as on the web; a full track before a
+  forced one, and a file's own default flag counts for nothing.
 - **Audio, quality, segments** — audio tracks, the quality ladder from
-  `/play/info`, intro/recap/credits skipping and the next-episode countdown,
-  as on Android.
-- **System** — keeps playing in the background, Picture in Picture, AirPlay,
-  the lock screen's Now Playing controls, landscape for full screen.
+  `/play/info`, intro/recap/credits skipping and the next-episode countdown.
+
+The iOS player draws subtitles itself — sidecar files and the stream's text
+tracks, named by language ("English · SDH", "German (forced)"); image-based
+subtitles (PGS) are listed as not available — and keeps playing in the
+background, with Picture in Picture, AirPlay, the lock screen's Now Playing
+controls and landscape for full screen. A failure offers Try again, where it
+was.
+
+The Android player side-loads the sidecars into Media3 and lists a package's
+HLS subtitle renditions only where no sidecar carries them. It recovers a
+failing stream by itself: a packaged title is retried in place, where it
+was; only a title played on the fly steps down its quality ladder.
+
+Zap's cards start on the master's first variant and the audio it starts
+with — what chino-stream lists first for the device's caps, and warms — and
+on Android the cards ahead are prefetched to exactly those bytes.
 
 ## Tests
 
 ```bash
-./gradlew :shared:testDebugUnitTest       # shared tests on the JVM (what CI runs)
-./gradlew :shared:iosSimulatorArm64Test   # the same tests, plus iOS-only ones, on a simulator (macOS)
+./gradlew :shared:testDebugUnitTest       # shared tests, plus Android-only ones, on the JVM (what CI runs)
+./gradlew :shared:iosSimulatorArm64Test   # the same shared tests, plus iOS-only ones, on a simulator (macOS)
+scripts/check-neutrality.sh               # the neutrality guard CI runs
 ```
 
 ## Configuration
