@@ -140,8 +140,15 @@ class ChinoApi(private val http: HttpClient) {
      *  deleted); any other throws [ApiStatusException], its
      *  [ApiStatusException.personMessage] what chino-api wrote for the
      *  person. [cloud.nalet.chino.mobile.data.account.deleteAccount] reads
-     *  both. */
-    suspend fun deleteMe(): Int = http.delete("v1/me").status.value
+     *  both.
+     *
+     *  The bearer is loaded afresh first ([forgetBearer]): the Auth plugin
+     *  keeps the one it loaded first, and the account deleted must be the
+     *  one signed in now, never one signed in before it in this process. */
+    suspend fun deleteMe(): Int {
+        http.forgetBearer()
+        return http.delete("v1/me").status.value
+    }
 
     /** Mints a 6-hour HMAC-signed token used as `?stream=<token>` on playback
      *  URLs. The OIDC bearer rotates on silent renew; the stream token

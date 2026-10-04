@@ -6,6 +6,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.auth.Auth
+import io.ktor.client.plugins.auth.authProvider
+import io.ktor.client.plugins.auth.providers.BearerAuthProvider
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -61,6 +63,16 @@ internal fun HttpClientConfig<*>.chinoApiClient(
     defaultRequest {
         url.takeFrom(URLBuilder().takeFrom(apiBaseUrl))
     }
+}
+
+/**
+ * Drops the bearer the Auth plugin holds. The plugin keeps what loadTokens
+ * returned first (until a 401 renews it), so after the active account
+ * changes it would go on sending the previous one's token; the next request
+ * after this loads the token of whoever is active then.
+ */
+internal fun HttpClient.forgetBearer() {
+    authProvider<BearerAuthProvider>()?.clearToken()
 }
 
 object HttpClientFactory {

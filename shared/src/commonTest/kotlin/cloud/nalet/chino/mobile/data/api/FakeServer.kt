@@ -29,16 +29,16 @@ class FakeServer(
 ) {
     val requests = mutableListOf<HttpRequestData>()
 
-    val api: ChinoApi = ChinoApi(
-        HttpClient(
-            MockEngine { request ->
-                requests += request
-                handler(request)
-            },
-        ) {
-            chinoApiClient(FAKE_API_BASE, accessToken, renewedToken)
+    val http: HttpClient = HttpClient(
+        MockEngine { request ->
+            requests += request
+            handler(request)
         },
-    )
+    ) {
+        chinoApiClient(FAKE_API_BASE, accessToken, renewedToken)
+    }
+
+    val api: ChinoApi = ChinoApi(http)
 }
 
 /** A JSON response, as chino-api's writeJSON sends it. */

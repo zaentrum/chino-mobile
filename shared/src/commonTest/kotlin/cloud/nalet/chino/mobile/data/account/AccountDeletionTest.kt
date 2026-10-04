@@ -1,6 +1,7 @@
 package cloud.nalet.chino.mobile.data.account
 
 import cloud.nalet.chino.mobile.data.api.FakeServer
+import cloud.nalet.chino.mobile.data.api.forgetBearer
 import cloud.nalet.chino.mobile.data.api.respondJson
 import cloud.nalet.chino.mobile.data.api.respondText
 import io.ktor.client.engine.mock.respond
@@ -44,6 +45,45 @@ class AccountDeletionTest {
         assertEquals("Bearer tok-secret", request.headers[HttpHeaders.Authorization])
         assertTrue(request.url.parameters.isEmpty())
         assertFalse("tok-secret" in request.url.toString())
+    }
+
+    @Test
+    fun theDeletionCarriesTheTokenOfTheAccountSignedInNow() = runTest {
+        // The Auth plugin keeps the bearer it loaded first. Another account
+        // signed in since (Switch account) must not have the first one
+        // deleted.
+        var active = "tok-first"
+        val server = FakeServer(accessToken = { active }) { request ->
+            if (request.method == HttpMethod.Delete) respondJson("""{"account":"deleted"}""")
+            else respondJson("""{"items":[]}""")
+        }
+        server.api.listItems()
+        active = "tok-now"
+
+        server.api.deleteAccount()
+
+        assertEquals(
+            listOf("Bearer tok-first", "Bearer tok-now"),
+            server.requests.map { it.headers[HttpHeaders.Authorization] },
+        )
+    }
+
+    @Test
+    fun afterTheDeletionTheNextRequestCarriesTheNextAccountsToken() = runTest {
+        // What forgetDeletedAccount does once the account is gone: the
+        // deleted account's bearer is not sent again, whoever comes next.
+        var active = "tok-deleted"
+        val server = FakeServer(accessToken = { active }) { request ->
+            if (request.method == HttpMethod.Delete) respondJson("""{"account":"deleted"}""")
+            else respondJson("""{"items":[]}""")
+        }
+        server.api.deleteAccount()
+        active = "tok-next"
+        server.http.forgetBearer()
+
+        server.api.listItems()
+
+        assertEquals("Bearer tok-next", server.requests.last().headers[HttpHeaders.Authorization])
     }
 
     @Test
