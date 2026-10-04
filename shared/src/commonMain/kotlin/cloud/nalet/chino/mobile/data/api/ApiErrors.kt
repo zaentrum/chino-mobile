@@ -15,7 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
  *
  * [path] is the request's path without its query (the stream token rides
  * there); [serverMessage] what the server said, when it said something
- * readable.
+ * readable; [personMessage] what it wrote for the person, when it did.
  */
 class ApiStatusException(
     val status: Int,
@@ -24,6 +24,10 @@ class ApiStatusException(
      *  `error` of a JSON one (writeJSON: "catalog unavailable"); null for an
      *  empty body, an HTML page, a JSON body without `error`. */
     val serverMessage: String? = null,
+    /** The `message` of a JSON answer — the sentence chino-api writes for
+     *  the person (deleting an account: why it was refused); null when the
+     *  body carries none. */
+    val personMessage: String? = null,
 ) : Exception(
     buildString {
         append(path).append(": HTTP ").append(status)
@@ -34,21 +38,34 @@ class ApiStatusException(
 /** Longest server message kept: one line of an error, not a page. */
 private const val MAX_SERVER_MESSAGE = 200
 
-/** This answer as an [ApiStatusException], with the server's message. */
-internal suspend fun HttpResponse.apiStatusException(): ApiStatusException =
-    ApiStatusException(status.value, call.request.url.encodedPath, serverMessage())
+/** Longest message for the person kept: a sentence or two, not a page. */
+private const val MAX_PERSON_MESSAGE = 300
+
+/** This answer as an [ApiStatusException], with the server's messages. */
+internal suspend fun HttpResponse.apiStatusException(): ApiStatusException {
+    val text = runCatching { bodyAsText() }.getOrNull()?.trim().orEmpty()
+    return ApiStatusException(status.value, call.request.url.encodedPath, serverMessage(text), personMessage(text))
+}
 
 /** What a non-2xx body says, in one line — see [ApiStatusException.serverMessage]. */
-internal suspend fun HttpResponse.serverMessage(): String? {
-    val text = runCatching { bodyAsText() }.getOrNull()?.trim().orEmpty()
+internal fun serverMessage(text: String): String? {
     if (text.isEmpty() || text.startsWith("<")) return null
     val message = if (text.startsWith("{")) {
-        runCatching { ChinoJson.parseToJsonElement(text).jsonObject["error"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+        jsonField(text, "error")
     } else {
         text.lineSequence().first()
     }
     return message?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_SERVER_MESSAGE)
 }
+
+/** The `message` of a JSON body — see [ApiStatusException.personMessage]. */
+internal fun personMessage(text: String): String? {
+    if (!text.startsWith("{")) return null
+    return jsonField(text, "message")?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_PERSON_MESSAGE)
+}
+
+private fun jsonField(text: String, name: String): String? =
+    runCatching { ChinoJson.parseToJsonElement(text).jsonObject[name]?.jsonPrimitive?.contentOrNull }.getOrNull()
 
 /**
  * A failed catalogue request in words a person can act on. A Ktor

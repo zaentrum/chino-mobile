@@ -133,6 +133,16 @@ class ChinoApi(private val http: HttpClient) {
 
     suspend fun me(): Me = http.get("v1/me").body()
 
+    /** DELETE /v1/me: deletes the signed-in person's data and their account
+     *  — the app stores ask every app that makes accounts to offer it. The
+     *  bearer rides in the Authorization header, as on every call (chino-api
+     *  refuses one in the URL). Returns the status of a 2xx answer (200:
+     *  deleted); any other throws [ApiStatusException], its
+     *  [ApiStatusException.personMessage] what chino-api wrote for the
+     *  person. [cloud.nalet.chino.mobile.data.account.deleteAccount] reads
+     *  both. */
+    suspend fun deleteMe(): Int = http.delete("v1/me").status.value
+
     /** Mints a 6-hour HMAC-signed token used as `?stream=<token>` on playback
      *  URLs. The OIDC bearer rotates on silent renew; the stream token
      *  doesn't, so the master URL stays stable across renews. */
