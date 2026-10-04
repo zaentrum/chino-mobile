@@ -598,6 +598,9 @@ private fun PlaybackSurface(
     // playback has not reached, nothing when the saved position could not be
     // read. One per screen, so a quality switch keeps what was played.
     val guard = remember { ProgressGuard(state.writable) }
+    // The screen's playback failures in turn: what each one gets
+    // (PlaybackRecovery.kt) and how many in-place retries have gone by.
+    val recoveries = remember { PlaybackRecoveries() }
     fun saveProgress(p: ExoPlayer) {
         val pos = guard.position() ?: return
         val durMs = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.info?.durationMs ?: 0L
@@ -837,7 +840,47 @@ private fun PlaybackSurface(
                 }
             }
             override fun onPlayerError(e: androidx.media3.common.PlaybackException) {
-                // Auto bug report — fire-and-forget + silent (BugReporter
+                // A 404 on the manifest = the item has no playable asset on
+                // chino-stream: nothing to retry. Anything else is recovered
+                // first (PlaybackRecovery.kt) — a packaged title retried in
+                // place, where it was; an on-the-fly one a rung down the
+                // ladder, where it was — and the viewer sees an error only
+                // once there is nothing left to try.
+                val http = e.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException
+                val manifestMissing = http?.responseCode == 404 &&
+                    (http.dataSpec.uri.toString().contains(".m3u8"))
+                if (!manifestMissing) {
+                    val atMs = player.currentPosition.coerceAtLeast(0L)
+                    when (val recovery = recoveries.next(state.info?.mode, currentQuality, atMs)) {
+                        PlaybackRecovery.RetryInPlace -> {
+                            container.telemetry.event(
+                                "retry",
+                                itemId = itemId,
+                                extra = mapOf("in_place" to "true", "at" to (atMs / 1000).toString(), "error" to e.errorCodeName),
+                            )
+                            // Media3 prepares the same source again from the
+                            // position it failed at.
+                            player.prepare()
+                            return
+                        }
+                        is PlaybackRecovery.StepDown -> {
+                            container.telemetry.event(
+                                "quality_fallback",
+                                itemId = itemId,
+                                extra = mapOf("from" to currentQuality, "to" to recovery.quality, "error" to e.errorCodeName),
+                            )
+                            // As a quality switch: rebuilt at the new rung,
+                            // seeked to where this one failed.
+                            pendingResumeMs = atMs
+                            currentQuality = recovery.quality
+                            reloadKey += 1
+                            return
+                        }
+                        PlaybackRecovery.GiveUp -> Unit
+                    }
+                }
+                // Giving up. Auto bug report, once per failure the viewer
+                // sees — fire-and-forget + silent (BugReporter
                 // swallows every failure and session-throttles repeat
                 // fingerprints). Position is read here on the player's
                 // looper, BEFORE the async hop; the screenshot is
@@ -872,12 +915,8 @@ private fun PlaybackSurface(
                         screenshot = shot,
                     )
                 }
-                // A 404 on the manifest = the item has no playable asset on
-                // chino-stream; show a plain-language message. Anything else
-                // keeps the engine error code for diagnostics.
-                val http = e.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException
-                val manifestMissing = http?.responseCode == 404 &&
-                    (http.dataSpec.uri.toString().contains(".m3u8"))
+                // The missing manifest in plain language; anything else keeps
+                // the engine error code for diagnostics.
                 onPlaybackError(
                     if (manifestMissing) "This title isn't available to stream yet."
                     else "Playback failed: ${e.errorCodeName}${e.message?.let { " — $it" } ?: ""}",
@@ -2674,9 +2713,10 @@ private fun NextEpisodeCard(
  *   4. This device can decode — list of common codecs with green/red
  *      status dots, probed via [probeDeviceCodecs].
  *
- * Pipeline-switches timeline is omitted: we don't yet track the switch
- * log on mobile (no quality auto-downgrade is wired). When that lands,
- * port the TV's switchHistory state and add the section here.
+ * Pipeline-switches timeline is omitted: the automatic recoveries
+ * (PlaybackRecovery.kt — an on-the-fly title a rung down, a packaged one
+ * retried in place) go to telemetry, not to a switch log here yet. Port
+ * the TV's switchHistory state and add the section when they do.
  */
 @Composable
 private fun PlaybackInfoDialog(
