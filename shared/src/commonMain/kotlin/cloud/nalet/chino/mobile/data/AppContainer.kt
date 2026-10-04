@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.data
 import cloud.nalet.chino.mobile.AppConfig
 import cloud.nalet.chino.mobile.data.api.ChinoApi
 import cloud.nalet.chino.mobile.data.api.HttpClientFactory
+import cloud.nalet.chino.mobile.data.api.forgetBearer
 import cloud.nalet.chino.mobile.data.auth.AccountStore
 import cloud.nalet.chino.mobile.data.auth.OidcDeviceClient
 import cloud.nalet.chino.mobile.data.auth.OidcDiscovery
@@ -129,12 +130,16 @@ class AppContainer(
             // Invalidate the stream token whenever the active user changes
             // so poster/player URLs the next screen renders are signed for
             // the new user — the old token is HMAC-bound to the previous
-            // Keycloak sub and chino-stream would reject it.
+            // Keycloak sub and chino-stream would reject it. The bearer the
+            // HTTP client holds goes too: the Auth plugin keeps the first
+            // one it loaded (or none, loaded while nobody was signed in) and
+            // would send it on the new user's requests.
             appScope.launch {
                 var seen: String? = store.snapshotBlocking().activeAccount?.id
                 store.activeAccountId.collect { id ->
                     if (id != seen) {
                         streamTokenManager.invalidate()
+                        http.forgetBearer()
                         seen = id
                     }
                 }
