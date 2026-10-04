@@ -100,7 +100,6 @@ import cloud.nalet.chino.mobile.data.api.PlayInfo
 import cloud.nalet.chino.mobile.data.api.QualityRung
 import cloud.nalet.chino.mobile.data.api.Segment
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
-import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.feedback.BugReportDialog
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
 import com.composables.icons.lucide.ArrowLeft
@@ -324,22 +323,6 @@ private data class PlayState(
      *  then shows time/segment text only. */
     val trickplayCues: List<TrickplayCue>,
 )
-
-/** Builds the chino-stream master playlist URL. Mirrors the TV's builder:
- *  `?stream=` first, then `&caps=` (only when non-empty), then `&q=`.
- *  Centralised so the initial prepare and a quality switch produce
- *  byte-identical URLs save for the rung. */
-private fun buildMasterUrl(
-    base: String,
-    itemId: String,
-    token: String,
-    quality: String,
-    caps: String,
-): String = buildString {
-    append("$base/v1/items/$itemId/play/master.m3u8?stream=$token")
-    if (caps.isNotEmpty()) append("&caps=$caps")
-    append("&q=$quality")
-}
 
 private enum class OpenPopover { NONE, SPEED, AUDIO, CAPTIONS, INFO, VOLUME, QUALITY }
 
@@ -1245,45 +1228,6 @@ private fun PlaybackSurface(
     }
 }
 
-/** Segment kinds that get a manual "Skip …" pill. Matches web's
- *  skipSegment('intro' | 'credits' | 'recap'). Post-credits previews are
- *  excluded — they get the "Next episode ▶" card instead (see
- *  [isPostCreditsPreview]). */
-private val SKIPPABLE_KINDS = setOf("intro", "recap", "credits")
-
-/**
- * Position-based reclassification of a next-episode preview. The analyzer
- * mislabels post-credits "next time on…" teasers as `recap` (a "Previously
- * on…" opener) — hundreds of them in the catalog — so a recap that STARTS at
- * or after the credits is really a post-roll preview, and an explicit `preview`
- * kind always is. Such segments get the "Next episode ▶" card treatment (play
- * the teaser, offer to jump) instead of the skip-recap treatment (seek past it,
- * which robbed the viewer of the teaser). A genuine opening recap starts near
- * 0:00 and keeps the skip behaviour. Mirrors the TV impl exactly.
- */
-private fun isPostCreditsPreview(seg: Segment, all: List<Segment>): Boolean {
-    return when (seg.kind.lowercase()) {
-        "preview" -> true
-        "recap" -> {
-            val creditsStart = all
-                .filter { it.kind.equals("credits", ignoreCase = true) }
-                .minByOrNull { it.startMs }?.startMs ?: return false
-            seg.startMs >= creditsStart
-        }
-        else -> false
-    }
-}
-
-/** Web wording for the manual skip pill (PlayerPage.tsx: "Skip Intro" /
- *  "Skip Recap" / "Skip Credits"). Unknown kinds fall back to a
- *  capitalised "Skip <Kind>". */
-private fun skipSegmentLabel(kind: String): String = when (kind.lowercase()) {
-    "intro" -> "Skip Intro"
-    "recap" -> "Skip Recap"
-    "credits" -> "Skip Credits"
-    else -> "Skip ${kind.replaceFirstChar { it.uppercase() }}"
-}
-
 /** Bottom-right white pill matching chino-web's manual skip button
  *  (`bg-white text-black rounded-full shadow`). Lucide SkipForward glyph
  *  + label. Sits above the bottom chrome and clears the nav bar. */
@@ -1858,28 +1802,6 @@ private fun TrickplayPreview(
             )
         }
     }
-}
-
-/** Friendly scrub-preview label for a segment — mirrors web's
- *  segmentDisplayLabel: prefer a human chapter label, else the kind
- *  capitalised. Auto-detector labels (numeric tags, dash-joined ranges)
- *  fall back to the kind so the preview doesn't surface raw analyzer
- *  noise. */
-private fun segmentDisplayLabel(seg: Segment): String {
-    val friendlyKind = when (seg.kind.lowercase()) {
-        "intro" -> "Intro"
-        "credits" -> "Credits"
-        "recap" -> "Recap"
-        "chapter" -> "Chapter"
-        else -> seg.kind.replaceFirstChar { it.uppercase() }
-    }
-    val raw = seg.label?.trim().orEmpty()
-    if (seg.kind.equals("chapter", ignoreCase = true) && raw.isNotEmpty()) return raw
-    if (raw.isEmpty()) return friendlyKind
-    // Dash-joined ("00:00-01:20") or numeric-tag ("seg_12") detector noise.
-    if (raw.contains('-')) return friendlyKind
-    if (Regex("""^\d""").containsMatchIn(raw)) return friendlyKind
-    return raw
 }
 
 @Composable
@@ -2997,40 +2919,4 @@ private fun segmentColor(kind: String): Color = when (kind.lowercase()) {
     "recap" -> Color(0xFF8B5CF6)
     "chapter" -> Color(0xFFFFFFFF)
     else -> Color(0xFFFFFFFF)
-}
-
-/**
- * Player heading. For an EPISODE (Item.kind == "episode", or any item that
- * carries a season/episode number) the title reads
- * `{seriesTitle} — S01E02 · {episodeTitle}` (2-digit zero-padded). When the
- * series title isn't resolved yet it degrades to `S01E02 · {episodeTitle}`.
- * Movies / series-level items keep their plain title. Mirrors chino-web's
- * player heading composition.
- */
-private fun composePlayerTitle(item: Item?, seriesTitle: String?): String {
-    val episodeTitle = item?.title ?: "Playing"
-    val isEpisode = item?.kind.equals("episode", ignoreCase = true) ||
-        item?.seasonNumber != null || item?.episodeNumber != null
-    if (item == null || !isEpisode) return episodeTitle
-    val se = buildString {
-        item.seasonNumber?.let { append("S").append(it.toString().padStart(2, '0')) }
-        item.episodeNumber?.let { append("E").append(it.toString().padStart(2, '0')) }
-    }
-    val tail = if (se.isNotEmpty()) "$se · $episodeTitle" else episodeTitle
-    return if (!seriesTitle.isNullOrBlank()) "$seriesTitle — $tail" else tail
-}
-
-private fun labelForQuality(q: String): String = when (q.lowercase()) {
-    "high" -> "1080p"
-    "medium" -> "720p"
-    "low" -> "480p"
-    "source" -> "Source"
-    else -> q
-}
-
-private fun formatTime(totalSec: Long): String {
-    val h = totalSec / 3600
-    val m = (totalSec % 3600) / 60
-    val s = totalSec % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }

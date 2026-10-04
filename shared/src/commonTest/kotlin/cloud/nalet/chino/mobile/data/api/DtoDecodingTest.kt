@@ -161,4 +161,48 @@ class DtoDecodingTest {
     fun meIsTheSubjectOnly() {
         assertEquals("abc", ChinoJson.decodeFromString<Me>("""{"sub":"abc"}""").sub)
     }
+
+    @Test
+    fun playInfoForATranscodeListsTheLadderAndTheEmbeddedTracks() {
+        // chino-stream internal/play/handler.go Info, behind chino-api's proxy.
+        val info = ChinoJson.decodeFromString<PlayInfo>(
+            """
+            {"filename":"A Film.mkv","container":"matroska,webm","video_codec":"hevc","audio_codec":"aac",
+             "width":1920,"height":1080,"duration_ms":6000000,"mode":"transcode",
+             "reason":"video codec hevc not in client caps",
+             "qualities":[{"name":"high","label":"High (source resolution)"},{"name":"medium","label":"Medium (720p)"}],
+             "default_quality":"high",
+             "audio_tracks":[{"index":1,"codec":"aac","language":"eng","default":true,"channels":2}],
+             "subtitle_tracks":[{"index":3,"codec":"subrip","language":"ger"}],
+             "encoder":"libx264"}
+            """,
+        )
+        assertEquals(listOf("high", "medium"), info.qualities.map { it.name })
+        assertTrue(info.rungs.isEmpty())
+        assertEquals(3, info.subtitleTracks.single().index)
+        assertEquals(1, info.audioTracks.single().index)
+    }
+
+    @Test
+    fun playInfoForAPackagedTitleWithItsRungsAndIndexlessSubtitleRows() {
+        // writePackagedInfo: qualities null, the rendition id as default, the
+        // manifest's subtitle rows (no stream index) — and the rung ladder
+        // the server is adding.
+        val info = ChinoJson.decodeFromString<PlayInfo>(
+            """
+            {"filename":"A Film","container":"cmaf","video_codec":"hvc1","audio_codec":"aac","width":3840,"height":2160,
+             "duration_ms":6000000,"mode":"packaged","reason":"pre-segmented CMAF on disk","qualities":null,
+             "default_quality":"v0",
+             "rungs":[{"id":"v0","height":2160,"codec":"hvc1.2.4.L153.B0","bitrate":16000000,"label":"4K"},{"id":"v1","height":1080}],
+             "audio_tracks":[{"index":0,"codec":"mp4a","language":"eng","title":"English","default":true,"channels":2}],
+             "subtitle_tracks":[{"id":"s0","path":"subs/0.vtt","language":"eng","format":"webvtt"}]}
+            """,
+        )
+        assertTrue(info.qualities.isEmpty())
+        assertEquals("v0", info.defaultQuality)
+        assertEquals(listOf("v0" to 2160, "v1" to 1080), info.rungs.map { it.id to it.height })
+        assertEquals("4K", info.rungs.first().label)
+        assertNull(info.rungs[1].bitrate)
+        assertNull(info.subtitleTracks.single().index)
+    }
 }

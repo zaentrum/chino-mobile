@@ -414,6 +414,18 @@ data class QualityRung(
     val label: String,
 )
 
+/** One rendition of a packaged title's ladder, as /play/info lists it under
+ *  `rungs`: its id is the `?q=` that asks for it alone (`q=auto` leaves the
+ *  pick to the player). Every field but the id is optional. */
+@Serializable
+data class PlaybackRung(
+    val id: String,
+    val height: Int? = null,
+    val codec: String? = null,
+    val bitrate: Long? = null,
+    val label: String? = null,
+)
+
 /** Per-stream metadata for embedded audio/subtitle tracks. Shape mirrors
  *  chino-stream/internal/play/ffprobe.go `TrackInfo`. */
 @Serializable
@@ -448,6 +460,9 @@ data class PlayInfo(
     val encoder: String? = null,
     val qualities: List<QualityRung> = emptyList(),
     @SerialName("default_quality") val defaultQuality: String? = null,
+    /** A packaged title's renditions, when the server lists them; empty for
+     *  the on-the-fly ladder ([qualities]) and for servers that do not. */
+    val rungs: List<PlaybackRung> = emptyList(),
     /** Embedded audio tracks (drives the language chip in the player
      *  chrome). chino-api emits as `audio_tracks`. */
     @SerialName("audio_tracks") val audioTracks: List<TrackInfo> = emptyList(),
