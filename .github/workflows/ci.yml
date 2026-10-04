@@ -8,59 +8,20 @@ permissions:
   contents: read
 
 jobs:
-  # Fails the build if any internal hostname, competitor product name, or
+  # Fails the build if any internal hostname, other media product's name, or
   # content-acquisition vocabulary leaks into the public tree. This client is a
   # neutral, bring-your-own-server app for the zaentrum platform; product names
   # (chino / musig / tv) and the reverse-DNS app ids (io.github.zaentrum.chino,
   # cloud.nalet.chino.*) are stable identifiers and are intentionally allowed.
+  # The rules and their self-test live in scripts/check-neutrality.sh, which
+  # runs the same way locally.
   neutrality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install ripgrep
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
-
-      - name: No internal hostnames
-        run: |
-          # Any *.nalet.cloud host (sso/identity/kb/gitlab/registry/chino...).
-          # The bare "nalet" brand token and "cloud.nalet.chino" package ids are
-          # allowed; only the ".cloud" host suffix is forbidden.
-          if rg -n -i --hidden \
-               --glob '!.git/**' \
-               --glob '!.github/workflows/ci.yml' \
-               --glob '!LICENSE' \
-               'nalet\.cloud' . ; then
-            echo "::error::Found internal hostname(s) ending in nalet.cloud"
-            exit 1
-          fi
-          echo "OK: no nalet.cloud hosts"
-
-      - name: No competitor product names
-        run: |
-          if rg -n -i --hidden \
-               --glob '!.git/**' \
-               --glob '!.github/workflows/ci.yml' \
-               --glob '!LICENSE' \
-               'jellyfin|plex|emby|kodi|naletflix' . ; then
-            echo "::error::Found competitor product name(s)"
-            exit 1
-          fi
-          echo "OK: no competitor names"
-
-      - name: No content-acquisition vocabulary
-        run: |
-          # Whole-word match for the download/piracy lexicon. User-facing text
-          # and code/comments must describe the client on its own terms.
-          if rg -n -i --hidden \
-               --glob '!.git/**' \
-               --glob '!.github/workflows/ci.yml' \
-               --glob '!LICENSE' \
-               '\b(indexer|tracker|usenet|arr|torrent)\b' . ; then
-            echo "::error::Found content-acquisition vocabulary"
-            exit 1
-          fi
-          echo "OK: no acquisition vocabulary"
+      - name: Neutrality guard
+        run: bash scripts/check-neutrality.sh
 
   # Runs the shared unit tests (commonTest on the JVM) and builds the
   # installable debug APK on every push. iOS is not built here (the App Store

@@ -79,6 +79,7 @@ iosApp/                         iOS host (no Xcode project in git)
   iosApp/ContentView.swift      hosts MainViewController() from shared
 
 .github/workflows/ci.yml        neutrality check, unit tests, Android debug APK
+scripts/check-neutrality.sh     the neutrality guard CI runs, with its self-test
 ```
 
 ## Run locally — Android
@@ -209,6 +210,11 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
 a **neutrality** check that fails the build on any internal hostname,
 competitor product name, or acquisition vocabulary, runs the shared unit tests
 and builds the installable Android debug APK (`assembleDebug`) on every push.
+The neutrality check is
+[`scripts/check-neutrality.sh`](scripts/check-neutrality.sh): it matches a
+name wherever no letter or digit stands next to it — so a name joined by `_`
+in an environment variable counts, and for product names a camelCase one
+too — tests its own patterns before it scans, and runs the same way locally.
 A signed release job (`bundleRelease` / `assembleRelease`) runs only when a
 signing keystore secret is configured. iOS is not built in CI (the App Store
 path needs a macOS runner + signing).
