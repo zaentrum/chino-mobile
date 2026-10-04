@@ -749,7 +749,9 @@ private fun PlaybackSurface(
             // chino-androidtv and chino-web's auto-pick do. Subtitles start
             // off; once the tracks are known the viewer's pick, else the
             // default rule, turns one on (onTracksChanged). A track's
-            // DEFAULT flag never selects it by itself.
+            // DEFAULT or FORCED flag never selects it by itself: Media3's own
+            // selection takes a DEFAULT track, and a FORCED=YES rendition in
+            // the audio's language, as wanted whenever text is on.
             it.trackSelectionParameters = it.trackSelectionParameters.buildUpon()
                 .apply {
                     val audioPref = state.audioPref
@@ -758,7 +760,7 @@ private fun PlaybackSurface(
                     }
                 }
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)
                 .build()
             it.setMediaSource(mediaSource)
             it.prepare()
@@ -819,7 +821,15 @@ private fun PlaybackSurface(
             override fun onIsPlayingChanged(p: Boolean) { isPlaying = p }
             override fun onTracksChanged(t: Tracks) {
                 audioTracks = collectAudioTracks(t)
-                subtitleTracks = collectSubtitleTracks(t)
+                // The sidecars, then the master's SUBTITLES renditions that
+                // are not a sidecar again: a package's HLS subtitles are its
+                // sidecars twice. The menu and the default rule read this.
+                subtitleTracks = sidecarsThenOtherRenditions(
+                    tracks = collectSubtitleTracks(t),
+                    isSidecar = { it.key.startsWith(SIDECAR_ID_PREFIX) },
+                    lang = { it.language },
+                    forced = { it.forced },
+                )
                 subtitlesEnabled = subtitleTracks.any { it.selected }
                 // Once per player, when its tracks are known: the viewer's
                 // pick, else the default rule (Languages.kt) — off unless the

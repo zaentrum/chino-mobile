@@ -111,6 +111,29 @@ fun buildSubtitleChoices(
     }
 }
 
+/**
+ * The captions menu of a player that side-loads the sidecars and also plays
+ * what the HLS master lists (Media3 does): the sidecars first, then the
+ * master's SUBTITLES renditions that are not a sidecar again.
+ *
+ * A package carries each WebVTT subtitle twice — the sidecar every client
+ * loads, and the HLS rendition the packager writes beside it (hls/sN), which
+ * the master names once the packager runs with HLS_SUBTITLES. Listed as they
+ * come, each would show twice. A rendition is a sidecar again when a sidecar
+ * has its language ([normalizeLang]) and is forced as it is; a rendition no
+ * sidecar has stays. chino-web and the iOS player load no rendition at all.
+ */
+fun <T> sidecarsThenOtherRenditions(
+    tracks: List<T>,
+    isSidecar: (T) -> Boolean,
+    lang: (T) -> String?,
+    forced: (T) -> Boolean,
+): List<T> {
+    val (sidecars, renditions) = tracks.partition(isSidecar)
+    val carried = sidecars.mapTo(HashSet()) { normalizeLang(lang(it)) to forced(it) }
+    return sidecars + renditions.filter { (normalizeLang(lang(it)) to forced(it)) !in carried }
+}
+
 /** The subtitle on by default ([defaultSubtitleTrack]) among the ones this
  *  player can show, or null for off. */
 fun defaultSubtitleChoice(

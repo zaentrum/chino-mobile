@@ -91,4 +91,52 @@ class SubtitleChoicesTest {
         assertEquals(2, preferredAudioTrack(tracks.drop(1), "ita")?.index)
         assertNull(preferredAudioTrack(emptyList(), "eng"))
     }
+
+    /** A text track as Media3 lists it: the master's SUBTITLES renditions in
+     *  their order, then the side-loaded sidecars. */
+    private data class Track(val id: String, val lang: String?, val forced: Boolean = false, val sidecar: Boolean = false)
+
+    private fun menu(tracks: List<Track>) =
+        sidecarsThenOtherRenditions(tracks, { it.sidecar }, { it.lang }, { it.forced }).map { it.id }
+
+    @Test
+    fun aPackagesRenditionsDoNotDoubleItsSidecars() {
+        // The packager's master with HLS_SUBTITLES: English, English (Forced),
+        // German — the same files as the title's sidecars.
+        val tracks = listOf(
+            Track("hls-en", "en"),
+            Track("hls-en-forced", "en", forced = true),
+            Track("hls-de", "de"),
+            Track("side-en", "eng", sidecar = true),
+            Track("side-en-forced", "eng", forced = true, sidecar = true),
+            Track("side-de", "ger", sidecar = true),
+        )
+        assertEquals(listOf("side-en", "side-en-forced", "side-de"), menu(tracks))
+    }
+
+    @Test
+    fun aRenditionNoSidecarCarriesStays() {
+        val tracks = listOf(
+            Track("hls-en", "en"),
+            // Forced English: no sidecar is forced, so this one is not a copy.
+            Track("hls-en-forced", "en", forced = true),
+            Track("hls-fr", "fr"),
+            Track("side-en", "en", sidecar = true),
+        )
+        assertEquals(listOf("side-en", "hls-en-forced", "hls-fr"), menu(tracks))
+        // No sidecars at all: the master's renditions, as they come.
+        assertEquals(listOf("hls-en", "hls-fr"), menu(listOf(Track("hls-en", "en"), Track("hls-fr", "fr"))))
+    }
+
+    @Test
+    fun theDefaultRuleReadsTheMenuNotTheCopies() {
+        val tracks = sidecarsThenOtherRenditions(
+            listOf(Track("hls-de", "de"), Track("side-de", "deu", sidecar = true)),
+            { it.sidecar },
+            { it.lang },
+            { it.forced },
+        )
+        val on = defaultSubtitleTrack(tracks, { it.lang }, { it.forced }, audioLang = "jpn", subtitlePref = "ger")
+        assertEquals("side-de", on?.id)
+    }
 }
