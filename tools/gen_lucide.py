@@ -3,7 +3,14 @@
 # shared module uses, under package com.composables.icons.lucide (same API as
 # the icons-lucide-cmp library) so no call sites change. Geometry comes straight
 # from Lucide's MIT-licensed SVG source -> identical glyphs, no external klib.
-import urllib.request, xml.etree.ElementTree as ET, sys
+import os, urllib.request, xml.etree.ElementTree as ET, sys
+
+# Output: the vendored Lucide.kt in this repo, found relative to this script
+# (tools/ sits at the repo root). LUCIDE_OUT overrides it, e.g. to diff a
+# regeneration against the checked-in file.
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEST = os.environ.get("LUCIDE_OUT") or os.path.join(
+    REPO, "shared/src/commonMain/kotlin/com/composables/icons/lucide/Lucide.kt")
 
 # PascalCase accessor -> Lucide kebab filename
 ICONS = {
@@ -109,8 +116,7 @@ public val Lucide.{pascal}: ImageVector
     except Exception as e:
         fail.append((pascal,kebab,str(e)))
 
-dest="/Users/nalet.meinen/projects/zaentrum/chino-mobile/shared/src/commonMain/kotlin/com/composables/icons/lucide/Lucide.kt"
-import os
+dest=DEST
 os.makedirs(os.path.dirname(dest),exist_ok=True)
 open(dest,"w").write("\n".join(out))
 print("wrote",dest)
