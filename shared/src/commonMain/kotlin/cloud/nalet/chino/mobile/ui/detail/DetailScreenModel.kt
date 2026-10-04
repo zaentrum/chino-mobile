@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.detail
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
+import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -32,12 +33,15 @@ sealed interface DetailUiState {
         /** Series only: episodeId -> in-progress resume state derived from the
          *  continue-watching feed. Rows absent here have nothing to resume. */
         val episodeResume: Map<String, EpisodeResume> = emptyMap(),
-    ) : DetailUiState
+    ) : DetailUiState {
+        /** The play button: what the player will do with [resumePositionSec]. */
+        val playAction: PlayAction get() = playAction(resumePositionSec, (item.durationMs ?: 0L) / 1000.0)
+    }
     data class Error(val message: String) : DetailUiState
 }
 
-/** One episode row's in-progress state (from /me/continue-watching): more
- *  than 30s in, not finished, not an up-next substitution. */
+/** One episode row's in-progress state (from /me/continue-watching): where
+ *  the player resumes it ([resumesAt]), not an up-next substitution. */
 data class EpisodeResume(val positionSec: Int, val durationSec: Int)
 
 class DetailScreenModel(
@@ -205,25 +209,28 @@ class DetailScreenModel(
                     // continue-watching feed stamps position/duration on its
                     // in-progress rows — episodes included. Keyed by episode
                     // id, so lookups only ever hit this series' own rows.
-                    // Up-next substitutions (position=0) and finished rows
-                    // (within 60s of the end) are skipped — nothing to
-                    // resume. Rows the feed stamps with duration<=0 are KEPT
-                    // (web parity): the EpisodeRow falls back to the
-                    // episode's catalogue runtime for the bar + remaining.
-                    val episodeResumeDef = async {
-                        if (item.kind != "series") return@async emptyMap<String, EpisodeResume>()
-                        runCatching { container.chinoApi.continueWatching().items }
-                            .getOrDefault(emptyList())
-                            .filter {
-                                !it.upNext && it.positionSec > 30 &&
-                                    (it.durationSec <= 0 || it.positionSec < it.durationSec - 60)
-                            }
-                            .associate { it.id to EpisodeResume(it.positionSec, it.durationSec) }
+                    val continueDef = async {
+                        if (item.kind != "series") return@async emptyList<ContinueWatchingItem>()
+                        runCatching { container.chinoApi.continueWatching().items }.getOrDefault(emptyList())
                     }
                     val seasons = if (item.kind == "series") {
                         runCatching { container.chinoApi.seriesEpisodes(item.id).seasons }
                             .getOrDefault(emptyList())
                     } else emptyList()
+                    // A row shows "Resume" where the player resumes it
+                    // (resumesAt): barely started and finished rows have
+                    // nothing to resume, nor have up-next substitutions
+                    // (position 0). The feed's duration, else the episode's
+                    // catalogue runtime — what the row draws its bar against
+                    // (web parity: a row the feed stamps duration<=0 stays).
+                    val runtimeSec = seasons.flatMap { it.episodes }
+                        .associate { it.id to (it.durationMs ?: 0L) / 1000L }
+                    val episodeResume = continueDef.await()
+                        .filter {
+                            val durationSec = if (it.durationSec > 0) it.durationSec.toLong() else runtimeSec[it.id] ?: 0L
+                            !it.upNext && resumesAt(it.positionSec, durationSec.toDouble())
+                        }
+                        .associate { it.id to EpisodeResume(it.positionSec, it.durationSec) }
                     DetailUiState.Ready(
                         item = item,
                         resumePositionSec = progressDef.await(),
@@ -232,7 +239,7 @@ class DetailScreenModel(
                         seasons = seasons,
                         similar = similarDef.await(),
                         focusEpisodeId = focusEpisodeId,
-                        episodeResume = episodeResumeDef.await(),
+                        episodeResume = episodeResume,
                     )
                 }
             } catch (e: Exception) {

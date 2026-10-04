@@ -152,8 +152,8 @@ class DetailScreen(private val itemId: String) : Screen {
                         // same idiom the auth/profile flows use. Lands on Home no
                         // matter how deep the detail stack is.
                         onHome = { nav.replaceAll(cloud.nalet.chino.mobile.ui.shell.MainShellScreen()) },
-                        onPlay = { resume ->
-                            nav.push(PlayerScreen(itemId = effectiveId, fromStart = !resume))
+                        onPlay = { fromStart ->
+                            nav.push(PlayerScreen(itemId = effectiveId, fromStart = fromStart))
                         },
                         // Plain tap: when the item is in NO list, add it to the
                         // default list (casual users never see the picker); when
@@ -230,7 +230,9 @@ private fun ReadyContent(
     episodeResume: Map<String, EpisodeResume>,
     onBack: () -> Unit,
     onHome: () -> Unit,
-    onPlay: (resume: Boolean) -> Unit,
+    /** fromStart: "Start over" — the head, whatever was saved. Otherwise
+     *  the player starts by its resume rule, as the button said. */
+    onPlay: (fromStart: Boolean) -> Unit,
     onToggleWatchlist: () -> Unit,
     onOpenAddToList: () -> Unit,
     onToggleLike: () -> Unit,
@@ -321,15 +323,15 @@ private fun ReadyContent(
                             GenreChips(item.genres)
                         }
                         ActionRow(
-                            resumeSec = ready.resumePositionSec,
+                            playAction = ready.playAction,
                             inWatchlist = inWatchlist,
                             liked = liked,
                             watched = watched,
                             isSeries = item.kind == "series",
                             hasTrailer = trailerUrl != null,
-                            onResume = { onPlay(true) },
+                            onResume = { onPlay(false) },
                             onPlay = { onPlay(false) },
-                            onStartOver = { onPlay(false) },
+                            onStartOver = { onPlay(true) },
                             onTrailer = {
                                 trailerUrl?.let { uriHandler.openUri(it) }
                             },
@@ -528,7 +530,7 @@ private fun Bullet() {
 
 @Composable
 private fun ActionRow(
-    resumeSec: Int,
+    playAction: PlayAction,
     inWatchlist: Boolean,
     liked: Boolean,
     watched: Boolean,
@@ -560,14 +562,20 @@ private fun ActionRow(
                     )
                 }
             }
-            resumeSec > 30 -> {
+            // "Resume" only where the player resumes (playAction, the
+            // players' own rule): a finished title starts over, as the
+            // player would start it.
+            playAction is PlayAction.Resume -> {
                 PillButton(
-                    label = "Resume ${fmtDur(resumeSec)}",
+                    label = "Resume ${fmtDur(playAction.sec)}",
                     icon = Lucide.Play,
                     primary = true,
                     onClick = onResume,
                 )
                 PillButton(label = "Start over", icon = null, primary = false, onClick = onStartOver)
+            }
+            playAction == PlayAction.StartOver -> {
+                PillButton(label = "Start over", icon = Lucide.Play, primary = true, onClick = onStartOver)
             }
             else -> {
                 PillButton(label = "Play", icon = Lucide.Play, primary = true, onClick = onPlay)
