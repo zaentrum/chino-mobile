@@ -418,10 +418,11 @@ data class QualityRung(
  *  chino-stream/internal/play/ffprobe.go `TrackInfo`. */
 @Serializable
 data class TrackInfo(
-    // Defaulted: the server omits `index` on subtitle_tracks, and a missing
-    // required field aborts the whole PlayInfo deserialization (coerceInputValues
-    // only rescues nulls, not missing fields). index isn't used for selection.
-    val index: Int = 0,
+    // Nullable: a packaged title's subtitle_tracks rows (its manifest's) carry
+    // no stream index — such a track cannot be addressed by
+    // /play/subtitles/{index}.vtt, and a missing required field would abort
+    // the whole PlayInfo deserialization.
+    val index: Int? = null,
     val codec: String? = null,
     val language: String? = null,
     val title: String? = null,
