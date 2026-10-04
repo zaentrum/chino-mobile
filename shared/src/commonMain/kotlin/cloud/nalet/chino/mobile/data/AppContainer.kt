@@ -45,6 +45,9 @@ class AppContainer(
      *  once signed in. Defaults null for hosts without a crash handler
      *  (iOS for now). */
     private val pendingReportStore: PendingReportStore? = null,
+    /** Hosts the Add-Server probe may reach over plain http (iOS: localhost
+     *  only — see [ServerBootstrap]); every other host is https only. */
+    private val allowPlainHttp: (host: String) -> Boolean = { true },
 ) {
     /** Application-lifetime scope for fire-and-forget POSTs (progress,
      *  watched, telemetry) that must outlive a screen-model's onCleared —
@@ -178,7 +181,7 @@ class AppContainer(
     /** First-run / change-server probe: healthz -> /api/config -> OIDC
      *  discovery -> [ServerConfig]. Used by the Add-Server flow. */
     val serverBootstrap: ServerBootstrap by lazy {
-        ServerBootstrap(http = probeHttp, discovery = OidcDiscovery(probeHttp))
+        ServerBootstrap(http = probeHttp, discovery = OidcDiscovery(probeHttp), allowPlainHttp = allowPlainHttp)
     }
 
     val tokenManager: TokenManager by lazy { TokenManager(accountStore, oidcDeviceClient) }

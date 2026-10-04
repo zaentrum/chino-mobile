@@ -88,5 +88,7 @@ class AddServerScreenModel(
             "Server reachable, but it didn't return its configuration (/api/config)."
         BootstrapResult.Fail.Kind.NO_DISCOVERY ->
             "Couldn't read the login provider's configuration (OIDC discovery failed)."
+        BootstrapResult.Fail.Kind.HTTPS_ONLY ->
+            "This app connects over HTTPS only; plain http works just for localhost. Use the server's https:// address."
     }
 }

@@ -14,7 +14,7 @@ import kotlinx.serialization.json.Json
 sealed interface BootstrapResult {
     data class Ok(val config: ServerConfig) : BootstrapResult
     data class Fail(val kind: Kind, val detail: String? = null) : BootstrapResult {
-        enum class Kind { UNREACHABLE, NOT_CHINO, TLS, NO_CONFIG, NO_DISCOVERY }
+        enum class Kind { UNREACHABLE, NOT_CHINO, TLS, NO_CONFIG, NO_DISCOVERY, HTTPS_ONLY }
     }
 }
 
@@ -38,6 +38,13 @@ sealed interface BootstrapResult {
 class ServerBootstrap(
     private val http: HttpClient,
     private val discovery: OidcDiscovery,
+    /** Whether plain http may be tried to a host. Everything else is reached
+     *  over https only. iOS passes [isLocalDevelopmentHost]: App Transport
+     *  Security does not cover IP-address hosts, so without this the probe's
+     *  http fallback would reach any LAN or public address in the clear.
+     *  Android's own network-security policy refuses cleartext, so it keeps
+     *  the default. */
+    private val allowPlainHttp: (host: String) -> Boolean = { true },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -53,7 +60,10 @@ class ServerBootstrap(
      * 10s/15s timeout, so trying two stays fast.
      */
     suspend fun probe(rawUrl: String): BootstrapResult {
-        val candidates = candidates(rawUrl)
+        val candidates = candidates(rawUrl, allowPlainHttp)
+        // An http:// address this build will not use in the clear: only its
+        // https form is tried, and a failure says why.
+        val refusedPlainHttp = rawUrl.trim().startsWith("http://") && !allowPlainHttp(hostOf(rawUrl.trim()))
         if (candidates.isEmpty()) {
             return BootstrapResult.Fail(BootstrapResult.Fail.Kind.UNREACHABLE, "empty URL")
         }
@@ -76,7 +86,11 @@ class ServerBootstrap(
                 }
             }
         }
-        return best ?: BootstrapResult.Fail(BootstrapResult.Fail.Kind.UNREACHABLE, candidates.first())
+        val failure = best ?: BootstrapResult.Fail(BootstrapResult.Fail.Kind.UNREACHABLE, candidates.first())
+        if (refusedPlainHttp && failure.kind == BootstrapResult.Fail.Kind.UNREACHABLE) {
+            return BootstrapResult.Fail(BootstrapResult.Fail.Kind.HTTPS_ONLY, rawUrl.trim())
+        }
+        return failure
     }
 
     /** Runs the healthz -> /api/config -> OIDC-discovery sequence against one
@@ -101,6 +115,10 @@ class ServerBootstrap(
         val issuer = cfg?.oidcIssuer
             ?: return BootstrapResult.Fail(BootstrapResult.Fail.Kind.NO_CONFIG, "$apiBase/config")
         val clientId = cfg.oidcClientId?.mobile ?: "chino"
+        // Sign-in goes to the issuer: the same https-only rule applies to it.
+        if (issuer.startsWith("http://") && !allowPlainHttp(hostOf(issuer))) {
+            return BootstrapResult.Fail(BootstrapResult.Fail.Kind.HTTPS_ONLY, issuer)
+        }
 
         // 3) OIDC discovery against the advertised issuer
         val ep = discovery.discover(issuer)
@@ -169,14 +187,26 @@ class ServerBootstrap(
          *    and a `https://` typo still reaches a http-only box.
          *  Empty input yields no candidates.
          */
-        fun candidates(raw: String): List<String> {
+        fun candidates(raw: String, allowPlainHttp: (host: String) -> Boolean = { true }): List<String> {
             val s = raw.trim()
             if (s.isEmpty()) return emptyList()
             return when {
                 s.startsWith("https://") -> listOf(s, "http://" + s.removePrefix("https://"))
                 s.startsWith("http://") -> listOf(s, "https://" + s.removePrefix("http://"))
                 else -> listOf("https://$s", "http://$s")
-            }.map { it.trimEnd('/') }.distinct()
+            }.map { it.trimEnd('/') }
+                .distinct()
+                // http only where the build allows it in the clear.
+                .filter { !it.startsWith("http://") || allowPlainHttp(hostOf(it)) }
+        }
+
+        /** The host of an address with or without a scheme: no user info, no
+         *  port, an IPv6 literal without its brackets. */
+        fun hostOf(address: String): String {
+            val rest = address.trim().substringAfter("://")
+            val authority = rest.takeWhile { it != '/' && it != '?' && it != '#' }.substringAfterLast('@')
+            if (authority.startsWith("[")) return authority.drop(1).substringBefore(']')
+            return authority.substringBefore(':')
         }
 
         private fun hasScheme(s: String): Boolean =
@@ -200,3 +230,11 @@ private data class ClientIds(
     val mobile: String? = null,
     val web: String? = null,
 )
+
+/**
+ * The hosts plain http may be used for on a build that is otherwise https
+ * only (iOS): this device itself, for local development — `localhost` and
+ * `127.0.0.1`, nothing else.
+ */
+fun isLocalDevelopmentHost(host: String): Boolean =
+    host.equals("localhost", ignoreCase = true) || host == "127.0.0.1"
