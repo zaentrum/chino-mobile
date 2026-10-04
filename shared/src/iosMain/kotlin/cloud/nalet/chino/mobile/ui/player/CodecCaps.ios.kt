@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.player
 import platform.AVFoundation.AVURLAsset
 import platform.CoreMedia.kCMVideoCodecType_AV1
 import platform.CoreMedia.kCMVideoCodecType_HEVC
+import platform.CoreMedia.kCMVideoCodecType_VP9
 import platform.VideoToolbox.VTIsHardwareDecodeSupported
 
 /**
@@ -42,3 +43,18 @@ private fun audioTokens(): Set<String> = buildSet {
 /** AVFoundation's own answer for an MP4 audio track in [codec] (RFC 6381). */
 private fun playsInMp4(codec: String): Boolean =
     AVURLAsset.isPlayableExtendedMIMEType("audio/mp4; codecs=\"$codec\"")
+
+/** The player's "This device can decode" list (chino-web's CODEC_PROBES),
+ *  answered by VideoToolbox (video, hardware) and AVFoundation (audio). */
+internal fun iosDecodeProbes(): List<Pair<String, Boolean>> = listOf(
+    "H.264 (AVC)" to true,
+    "H.265 (HEVC)" to VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC),
+    "VP9" to VTIsHardwareDecodeSupported(kCMVideoCodecType_VP9),
+    "AV1" to VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1),
+    "AAC" to true,
+    "MP3" to true,
+    "Opus" to playsInMp4("opus"),
+    "AC-3" to playsInMp4("ac-3"),
+    "E-AC-3" to playsInMp4("ec-3"),
+    "DTS" to playsInMp4("dtsc"),
+)
