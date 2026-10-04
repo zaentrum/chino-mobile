@@ -23,6 +23,7 @@ ICONS = {
  "Captions":"captions","ChevronLeft":"chevron-left","Gauge":"gauge","Minimize":"minimize",
  "Pause":"pause","RotateCcw":"rotate-ccw","RotateCw":"rotate-cw","Settings2":"settings-2",
  "SkipForward":"skip-forward","ChevronUp":"chevron-up",
+ "PictureInPicture2":"picture-in-picture-2","TriangleAlert":"triangle-alert",
 }
 BASE="https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/{}.svg"
 

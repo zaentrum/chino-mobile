@@ -199,3 +199,11 @@ public val Lucide.Settings2: ImageVector
 private var _skipForward: ImageVector? = null
 public val Lucide.SkipForward: ImageVector
     get() = _skipForward ?: lucide("SkipForward", listOf("M21 4v16", "M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z")).also { _skipForward = it }
+
+private var _pictureInPicture2: ImageVector? = null
+public val Lucide.PictureInPicture2: ImageVector
+    get() = _pictureInPicture2 ?: lucide("PictureInPicture2", listOf("M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4", "M14,13 h6 a2,2 0 0 1 2,2 v3 a2,2 0 0 1 -2,2 h-6 a2,2 0 0 1 -2,-2 v-3 a2,2 0 0 1 2,-2 Z")).also { _pictureInPicture2 = it }
+
+private var _triangleAlert: ImageVector? = null
+public val Lucide.TriangleAlert: ImageVector
+    get() = _triangleAlert ?: lucide("TriangleAlert", listOf("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01")).also { _triangleAlert = it }
