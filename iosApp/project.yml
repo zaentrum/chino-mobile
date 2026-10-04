@@ -54,6 +54,17 @@ targets:
         ChinoApiBaseUrl: "$(CHINO_API_BASE_URL)"
         ChinoOidcIssuer: "$(CHINO_OIDC_ISSUER)"
         ChinoOidcClientId: "$(CHINO_OIDC_CLIENT_ID)"
+        # Films turn to landscape; the rest of the app turns with the phone
+        # (as on Android).
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         # App Transport Security stays strict: https everywhere, plain http
         # only to this device for local development. ATS does not apply to
         # IP-address hosts at all (127.0.0.1 among them), so the app itself
