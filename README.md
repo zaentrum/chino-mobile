@@ -61,8 +61,8 @@ shared/                         KMP library
     ui/...                      auth / home / browse / detail / person / search / player / settings
   src/commonTest/...            shared unit tests (JVM + iOS simulator)
   src/androidMain/...           DataStore-backed stores, Ktor OkHttp engine, Media3 player
-  src/iosMain/...               NSUserDefaults stores, Darwin engine,
-                                MainViewController() exposed to Swift
+  src/iosMain/...               NSUserDefaults stores, Darwin engine, AVPlayer
+                                player, MainViewController() exposed to Swift
 
 androidApp/                     Android host
   build.gradle.kts              app id, signing, OAuth redirect scheme
@@ -104,8 +104,34 @@ open iosApp.xcodeproj
 In Xcode pick the `iosApp` scheme; the Debug and Release configurations come
 from the `xcconfig` files in [`iosApp/Configuration/`](iosApp/Configuration/).
 The Run script step `embedAndSignAppleFrameworkForXcode` builds the shared
-Kotlin framework on demand. The iOS player is not built yet: its screen is a
-placeholder.
+Kotlin framework on demand.
+
+The iOS app talks to servers over **HTTPS only**: App Transport Security
+refuses plain http, and Add Server keeps to the same rule. The one exception is
+a server on the Mac itself — `http://localhost` or `http://127.0.0.1` — for
+running a development server next to the simulator.
+
+## Player
+
+Android plays with Media3, iOS with AVPlayer. Both open the same HLS master
+(`/api/v1/items/{id}/play/master.m3u8`) with the stream token, the device's
+codec caps and the chosen quality, and share the segment, title and quality
+rules in `ui/player/`. The iOS player:
+
+- **Resume** — reads the saved position and seeks there before the first
+  frame shows; saves progress every 10 seconds, on pause and on exit, and
+  never a position it has not played (no 0:00 written before the resume seek
+  lands). Near the end the title is marked watched.
+- **Subtitles** — sidecar files and the stream's text tracks, named by
+  language ("English · SDH", "German (forced)") and drawn over the picture;
+  on by default only when the audio is in another language than the preferred
+  subtitle language, as on the web. Image-based subtitles (PGS) are listed as
+  not available.
+- **Audio, quality, segments** — audio tracks, the quality ladder from
+  `/play/info`, intro/recap/credits skipping and the next-episode countdown,
+  as on Android.
+- **System** — keeps playing in the background, Picture in Picture, AirPlay,
+  the lock screen's Now Playing controls, landscape for full screen.
 
 ## Tests
 
@@ -189,10 +215,10 @@ path needs a macOS runner + signing).
 
 ## Roadmap
 
-1. **iOS player**: AVPlayer playback with the same master URL, caps, resume,
-   subtitles and segments as the Android player.
-2. **Token hardening**: EncryptedSharedPreferences on Android, Keychain on iOS.
-3. **iOS CI**: self-hosted macOS runner + signed `.ipa`.
+1. **Token hardening**: EncryptedSharedPreferences on Android, Keychain on iOS.
+2. **iOS CI**: self-hosted macOS runner + signed `.ipa`.
+3. **Image subtitles on iOS**: draw PGS tracks (today they show as not
+   available).
 
 ## License
 
