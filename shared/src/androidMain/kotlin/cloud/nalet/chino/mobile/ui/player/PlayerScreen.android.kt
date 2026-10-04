@@ -822,6 +822,9 @@ private fun PlaybackSurface(
             player.release()
         }
     }
+    // Marked watched once per screen: the iOS player's moment (reachedWatched),
+    // in the credits or past 95 % of a known duration, while playing.
+    var markedWatched by remember { mutableStateOf(false) }
     LaunchedEffect(player) {
         while (true) {
             if (!scrubbing) positionMs = player.currentPosition
@@ -829,7 +832,20 @@ private fun PlaybackSurface(
             bufferedMs = player.bufferedPosition
             // Only a position the player reports while playing counts as
             // played; the guard drops one short of a seek still under way.
-            if (player.isPlaying) guard.played(player.currentPosition / 1000.0)
+            if (player.isPlaying) {
+                val playedMs = player.currentPosition
+                guard.played(playedMs / 1000.0)
+                val credits = inCredits(state.segments, playedMs)
+                if (!markedWatched && reachedWatched(playedMs, durationMs, credits)) {
+                    markedWatched = true
+                    container.appScope.launch { runCatching { container.chinoApi.postWatched(itemId) } }
+                    container.telemetry.event(
+                        "mark_watched",
+                        itemId = itemId,
+                        extra = mapOf("at" to (playedMs / 1000).toString(), "via" to if (credits) "credits" else "p95"),
+                    )
+                }
+            }
             delay(250)
         }
     }
