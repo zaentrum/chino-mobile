@@ -53,6 +53,17 @@ class WatchlistsRepository(
         }
     }
 
+    /** Forgets the cached lists and memberships: the account they belong to
+     *  is signed out. The next [warmLists] loads them for whoever is signed
+     *  in then. */
+    suspend fun clear() {
+        mutex.withLock {
+            _lists.value = emptyList()
+            listsLoaded = false
+            _memberships.value = emptyMap()
+        }
+    }
+
     /** Re-fetches the list overview (item counts shift as items are added /
      *  removed). Best-effort. */
     fun refreshLists() {

@@ -51,6 +51,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.AppSettings
+import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.feedback.captureScreenshot
 import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
@@ -83,6 +84,11 @@ fun SettingsSection() {
     // draft = dialog open. Plain holder class, not data — ByteArray equality
     // is identity anyway.
     var bugReportDraft by remember { mutableStateOf<BugReportDraft?>(null) }
+
+    // Delete Account dialog: the account it deletes is the one active when
+    // it opened, held here so the dialog keeps naming it while it is signed
+    // out underneath. Non-null = dialog open.
+    var deleteTarget by remember { mutableStateOf<Account?>(null) }
 
     // Outer Box so the bug-report dialog can scrim the whole content area
     // (same overlay pattern as AccountPicker's ConfirmRemoveDialog).
@@ -135,6 +141,14 @@ fun SettingsSection() {
                         else nav.replaceAll(AccountPickerScreen())
                     }
                 },
+            )
+            // Delete the active account on the server — asked first, in a
+            // destructive dialog; signed out only once the server deleted it.
+            ActionRow(
+                label = "Delete Account",
+                subtitle = "Delete your account and what this server keeps of it",
+                destructive = true,
+                onClick = { deleteTarget = activeAccount },
             )
 
             Box(modifier = Modifier.padding(top = 12.dp))
@@ -227,6 +241,21 @@ fun SettingsSection() {
                 onDismiss = { bugReportDraft = null },
             )
         }
+
+        deleteTarget?.let { account ->
+            DeleteAccountDialog(
+                account = account,
+                serverHost = serverHost,
+                onDismiss = { deleteTarget = null },
+                // Deleted and signed out: back to the start, as Sign out
+                // goes — the picker when others remain, Auth when this was
+                // the last one.
+                onSignedOut = { othersRemain ->
+                    deleteTarget = null
+                    if (othersRemain) nav.replaceAll(AccountPickerScreen()) else nav.replaceAll(AuthScreen())
+                },
+            )
+        }
     }
 }
 
@@ -246,7 +275,13 @@ private fun SectionHeading(text: String) {
 }
 
 @Composable
-private fun ActionRow(label: String, subtitle: String, onClick: () -> Unit) {
+private fun ActionRow(
+    label: String,
+    subtitle: String,
+    /** A row that deletes something: its label in the destructive red. */
+    destructive: Boolean = false,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -257,7 +292,7 @@ private fun ActionRow(label: String, subtitle: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = label, color = Color.White, fontSize = 14.sp)
+            Text(text = label, color = if (destructive) ChinoRed else Color.White, fontSize = 14.sp)
             Text(text = subtitle, color = ChinoMuted, fontSize = 12.sp)
         }
         Text(text = ">", color = ChinoMuted, fontSize = 16.sp)

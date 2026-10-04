@@ -51,6 +51,17 @@ class UserFlagsRepository(
         }
     }
 
+    /** Forgets the cached watchlist and likes: the account they belong to is
+     *  signed out. The next [warm] loads them for whoever is signed in then. */
+    suspend fun clear() {
+        mutex.withLock {
+            _watchlist.value = emptySet()
+            watchlistLoaded = false
+            _likes.value = emptySet()
+            likesLoaded = false
+        }
+    }
+
     fun setWatchlist(itemId: String, present: Boolean) {
         _watchlist.value = if (present) _watchlist.value + itemId else _watchlist.value - itemId
         scope.launch {

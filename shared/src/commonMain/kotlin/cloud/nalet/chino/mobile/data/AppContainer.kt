@@ -211,6 +211,21 @@ class AppContainer(
         )
     }
 
+    /**
+     * Signs [accountId] out of this device once the server has deleted it:
+     * its tokens leave [accountStore], and what the process still holds for
+     * it goes as well — the bearer the HTTP client keeps (it would ride on
+     * the next requests, whoever signs in next), the stream token, and the
+     * watchlist, likes and lists cached for it.
+     */
+    suspend fun forgetDeletedAccount(accountId: String) {
+        accountStore.remove(accountId)
+        http.forgetBearer()
+        streamTokenManager.invalidate()
+        userFlags.clear()
+        watchlists.clear()
+    }
+
     /** Bug-report funnel (POST /v1/feedback → server-side bug ticket). Same
      *  static-context injection as [telemetry]; auto reports are silent
      *  fire-and-forget, the Settings dialog goes through reportManual. */
