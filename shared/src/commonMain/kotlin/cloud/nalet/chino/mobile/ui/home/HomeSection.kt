@@ -31,6 +31,7 @@ import cloud.nalet.chino.mobile.ui.components.EpisodeBadge
 import cloud.nalet.chino.mobile.ui.components.HeroBanner
 import cloud.nalet.chino.mobile.ui.components.MediaCard
 import cloud.nalet.chino.mobile.ui.components.MediaRow
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 
 /**
  * Home tab content. Mirrors chino-web's HomeSection.tsx layout: hero banner
@@ -206,12 +207,14 @@ private fun ContinueWatchingShelf(
     onToggleWatched: ((String) -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // MediaRow's shelf title: the web's h2, in the heading face.
         Text(
             text = title,
             color = androidx.compose.ui.graphics.Color.White,
             fontSize = 24.sp,
             lineHeight = 32.sp,
             fontWeight = FontWeight.SemiBold,
+            style = ChinoHeading,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {

@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -57,6 +58,7 @@ import com.composables.icons.lucide.EyeOff
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Play
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -222,7 +224,8 @@ private fun HeroContentNarrow(item: Item, baseUrl: String, streamToken: String, 
                 ),
             ),
         )
-        // Title + chip overlaid top-left (web: x=32, y=96, text-2xl=24px).
+        // Title + chip overlaid top-left (web: x=32, y=96, text-2xl=24px,
+        // an h1 clamped to two lines with an ellipsis).
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -236,6 +239,8 @@ private fun HeroContentNarrow(item: Item, baseUrl: String, streamToken: String, 
                 lineHeight = 30.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                style = ChinoHeading,
             )
             YearRatingChipRow(item)
         }
@@ -327,16 +332,18 @@ private fun HeroContentWide(item: Item, baseUrl: String, streamToken: String, on
                 .widthIn(max = 476.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // h1.text-5xl = 48px/48 line-height/700. ExtraBold (800)
-            // compensates for Roboto rendering slightly thinner than
-            // web's macOS system-ui Bold at the same weight token.
+            // h1.text-5xl = 48px/48 line-height/700, clamped to two lines.
+            // The web's face, JetBrains Mono Bold, is bundled: no heavier
+            // weight to make up for another font.
             Text(
                 text = item.title,
                 color = Color.White,
                 fontSize = 48.sp,
                 lineHeight = 48.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Bold,
                 maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                style = ChinoHeading,
             )
             YearRatingChipRow(item)
             // text-lg = 18px/28 line-height on tablet (lg+). #C9D1D9
@@ -505,13 +512,15 @@ fun MediaRow(
     // CDP-verified: title → LazyRow gap = 16dp (web `mb-4`).
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // CDP-verified shelf title: `h2.text-2xl font-semibold` =
-        // 24px / 32 line / 600.
+        // 24px / 32 line / 600, in the heading face. The watchlist hub's
+        // opens its list and is a <button> on the web, so Inter there.
         Text(
             text = title,
             color = Color.White,
             fontSize = 24.sp,
             lineHeight = 32.sp,
             fontWeight = FontWeight.SemiBold,
+            style = if (onTitleClick == null) ChinoHeading else LocalTextStyle.current,
             modifier = Modifier
                 .padding(horizontal = 16.dp)
                 .let { m -> if (onTitleClick != null) m.clickable(onClick = onTitleClick) else m },
@@ -849,6 +858,7 @@ fun MediaCard(
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // The web's h3: the heading face, one line.
             Text(
                 text = item.title,
                 color = ChinoFg2,
@@ -857,6 +867,7 @@ fun MediaCard(
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                style = ChinoHeading,
             )
             if (episodeBadge != null) {
                 // Web: SxxExx in #58a6ff, · separator + episode title in
