@@ -87,6 +87,24 @@ class HeroPoolTest {
     }
 
     @Test
+    fun aHeroTitleCarriesItsDetailsExtrasAndTrailerLinks() {
+        // The list leaves both out; the hero's Trailer chooses from them.
+        val featurette = extra("f1", "featurette")
+        val own = extra("x1", "trailer")
+        val link = Trailer("https://www.youtube.com/watch?v=dQw4w9WgXcQ", site = "YouTube", title = "Official Trailer")
+        val candidates = listOf(item("m1", "movie"), item("s1", "series"))
+        val details = mapOf(
+            "m1" to item("m1", "movie", extras = listOf(featurette, own)).copy(trailers = listOf(link)),
+            "s1" to item("s1", "series").copy(trailers = listOf(link)),
+        )
+        val pool = pickHeroPool(candidates, details, random = Random(1)).associateBy { it.id }
+        assertEquals(listOf(featurette, own), pool.getValue("m1").extras)
+        assertEquals(listOf(link), pool.getValue("m1").trailers)
+        assertEquals(listOf(link), pool.getValue("s1").trailers)
+        assertTrue(pool.getValue("s1").extras.isEmpty())
+    }
+
+    @Test
     fun aCandidateWithoutDetailsIsLeftOut() {
         assertTrue(pickHeroPool(listOf(item("m1", "movie")), emptyMap()).isEmpty())
     }

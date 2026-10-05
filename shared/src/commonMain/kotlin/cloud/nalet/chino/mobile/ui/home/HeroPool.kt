@@ -32,9 +32,10 @@ internal fun youTubeKey(url: String): String? =
  * The hero's pool as chino-web picks it: of the [candidates] (the newest
  * movies and series), those whose [details] have a trailer — one this
  * server plays ([localTrailer]) or a YouTube link — a title enriched enough
- * to lead with, each with the details' overview (the list endpoint leaves it
- * out). Those with a trailer of their own come first, then those with a
- * link, each group shuffled; at most [size].
+ * to lead with, each with the details' overview, extras and trailer links
+ * (the list endpoint leaves them out): what the hero's Trailer chooses from
+ * (trailerChoice). Those with a trailer of their own come first, then those
+ * with a link, each group shuffled; at most [size].
  */
 internal fun pickHeroPool(
     candidates: List<Item>,
@@ -46,7 +47,12 @@ internal fun pickHeroPool(
     val linked = ArrayList<Item>()
     for (candidate in candidates) {
         val detail = details[candidate.id] ?: continue
-        val hero = candidate.copy(overview = detail.overview ?: candidate.overview, kind = candidate.kind ?: detail.kind)
+        val hero = candidate.copy(
+            overview = detail.overview ?: candidate.overview,
+            kind = candidate.kind ?: detail.kind,
+            trailers = detail.trailers,
+            extras = detail.extras,
+        )
         when {
             localTrailer(detail.extras) != null -> local += hero
             detail.trailers.any { youTubeKey(it.url) != null } -> linked += hero
