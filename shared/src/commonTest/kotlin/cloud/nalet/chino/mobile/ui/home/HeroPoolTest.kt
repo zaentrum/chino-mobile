@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.home
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.api.Episode
 import cloud.nalet.chino.mobile.data.api.Season
+import cloud.nalet.chino.mobile.data.model.Extra
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.model.Trailer
 import kotlin.random.Random
@@ -11,7 +12,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** The hero picks and plays as chino-web's does, so a server shows one hero. */
+/** The hero picks and plays as chino-web's does, so a server shows one hero:
+ *  titles with a trailer — this server's first, then a YouTube link. */
 class HeroPoolTest {
     @Test
     fun aTrailerUrlNamesItsYouTubeVideo() {
@@ -25,16 +27,46 @@ class HeroPoolTest {
 
     @Test
     fun thePoolIsTheCandidatesWithATrailerWithTheirOverview() {
-        val candidates = listOf(item("m1", "movie"), item("m2", "movie"), item("s1", "series"))
+        val candidates = listOf(
+            item("m1", "movie"), item("m2", "movie"), item("s1", "series"),
+            item("m3", "movie"), item("m4", "movie"), item("m5", "movie"),
+        )
         val details = mapOf(
             "m1" to item("m1", "movie", overview = "Long story.", trailer = "https://youtu.be/dQw4w9WgXcQ"),
             "m2" to item("m2", "movie", trailer = "https://video.example.com/trailer.mp4"),
             "s1" to item("s1", "series", trailer = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+            // A trailer this server plays, and no link at all.
+            "m3" to item("m3", "movie", extras = listOf(extra("x3", "trailer"))),
+            // A teaser counts too; a featurette alone does not.
+            "m4" to item("m4", "movie", extras = listOf(extra("x4", "teaser"))),
+            "m5" to item("m5", "movie", extras = listOf(extra("x5", "featurette"))),
         )
         val pool = pickHeroPool(candidates, details, random = Random(1))
-        assertEquals(setOf("m1", "s1"), pool.map { it.id }.toSet())
+        assertEquals(setOf("m1", "s1", "m3", "m4"), pool.map { it.id }.toSet())
         assertEquals("Long story.", pool.single { it.id == "m1" }.overview)
         assertEquals("series", pool.single { it.id == "s1" }.kind)
+    }
+
+    @Test
+    fun titlesWithATrailerOfTheirOwnComeFirstEachGroupShuffled() {
+        val candidates = (1..6).map { item("m$it", "movie") }
+        // m1-m3 have a YouTube link only, m4-m6 a trailer this server plays
+        // (m6 a link as well): the server's ones lead, whatever the order.
+        val details = candidates.associate { c ->
+            val n = c.id.drop(1).toInt()
+            c.id to c.copy(
+                trailers = if (n <= 3 || n == 6) listOf(Trailer("https://youtu.be/dQw4w9WgXcQ")) else emptyList(),
+                extras = if (n >= 4) listOf(extra("x$n", "trailer")) else emptyList(),
+            )
+        }
+        val orders = (1..20).map { seed -> pickHeroPool(candidates, details, random = Random(seed)).map { it.id } }
+        for (ids in orders) {
+            assertEquals(setOf("m4", "m5", "m6"), ids.take(3).toSet())
+            assertEquals(setOf("m1", "m2", "m3"), ids.drop(3).toSet())
+        }
+        // Shuffled within each group, not kept in the candidates' order.
+        assertTrue(orders.map { it.take(3) }.toSet().size > 1)
+        assertTrue(orders.map { it.drop(3) }.toSet().size > 1)
     }
 
     @Test
@@ -42,6 +74,16 @@ class HeroPoolTest {
         val candidates = (1..12).map { item("m$it", "movie") }
         val details = candidates.associate { it.id to it.copy(trailers = listOf(Trailer("https://youtu.be/dQw4w9WgXcQ"))) }
         assertEquals(HERO_POOL_SIZE, pickHeroPool(candidates, details).size)
+
+        // Ten with a trailer of their own and five with a link: the eight are theirs.
+        val more = (1..15).map { item("m$it", "movie") }
+        val mixed = more.associate { c ->
+            val n = c.id.drop(1).toInt()
+            c.id to if (n <= 10) c.copy(extras = listOf(extra("x$n", "trailer"))) else c.copy(trailers = listOf(Trailer("https://youtu.be/dQw4w9WgXcQ")))
+        }
+        val pool = pickHeroPool(more, mixed, random = Random(3))
+        assertEquals(HERO_POOL_SIZE, pool.size)
+        assertTrue(pool.all { it.id.drop(1).toInt() <= 10 })
     }
 
     @Test
@@ -79,8 +121,18 @@ class HeroPoolTest {
         Season(1, listOf(episode("s1e2", 2), episode("s1e1", 1))),
     )
 
-    private fun item(id: String, kind: String, overview: String? = null, trailer: String? = null) =
-        Item(id = id, title = id.uppercase(), kind = kind, overview = overview, trailers = listOfNotNull(trailer?.let { Trailer(it) }))
+    private fun item(id: String, kind: String, overview: String? = null, trailer: String? = null, extras: List<Extra> = emptyList()) =
+        Item(
+            id = id,
+            title = id.uppercase(),
+            kind = kind,
+            overview = overview,
+            trailers = listOfNotNull(trailer?.let { Trailer(it) }),
+            extras = extras,
+        )
+
+    private fun extra(id: String, kind: String) =
+        Extra(id = id, kind = kind, title = kind, local = true, playPath = "/api/v1/items/m/extras/$id/play/master.m3u8")
 
     private fun episode(id: String, number: Int) = Episode(id = id, title = id, episodeNumber = number)
 

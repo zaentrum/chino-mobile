@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.home
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.api.Season
 import cloud.nalet.chino.mobile.data.model.Item
+import cloud.nalet.chino.mobile.ui.trailer.localTrailer
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.TimeSource
@@ -29,21 +30,30 @@ internal fun youTubeKey(url: String): String? =
 
 /**
  * The hero's pool as chino-web picks it: of the [candidates] (the newest
- * movies and series), those whose [details] name a YouTube trailer — a title
- * enriched enough to lead with — each with the details' overview (the list
- * endpoint leaves it out), shuffled, at most [size].
+ * movies and series), those whose [details] have a trailer — one this
+ * server plays ([localTrailer]) or a YouTube link — a title enriched enough
+ * to lead with, each with the details' overview (the list endpoint leaves it
+ * out). Those with a trailer of their own come first, then those with a
+ * link, each group shuffled; at most [size].
  */
 internal fun pickHeroPool(
     candidates: List<Item>,
     details: Map<String, Item>,
     size: Int = HERO_POOL_SIZE,
     random: Random = Random,
-): List<Item> =
-    candidates.mapNotNull { candidate ->
-        val detail = details[candidate.id] ?: return@mapNotNull null
-        if (detail.trailers.none { youTubeKey(it.url) != null }) return@mapNotNull null
-        candidate.copy(overview = detail.overview ?: candidate.overview, kind = candidate.kind ?: detail.kind)
-    }.shuffled(random).take(size)
+): List<Item> {
+    val local = ArrayList<Item>()
+    val linked = ArrayList<Item>()
+    for (candidate in candidates) {
+        val detail = details[candidate.id] ?: continue
+        val hero = candidate.copy(overview = detail.overview ?: candidate.overview, kind = candidate.kind ?: detail.kind)
+        when {
+            localTrailer(detail.extras) != null -> local += hero
+            detail.trailers.any { youTubeKey(it.url) != null } -> linked += hero
+        }
+    }
+    return (local.shuffled(random) + linked.shuffled(random)).take(size)
+}
 
 /**
  * The episode Play on a series plays — a series is not itself playable, its

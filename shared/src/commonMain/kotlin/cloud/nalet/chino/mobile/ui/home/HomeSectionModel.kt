@@ -18,7 +18,8 @@ sealed interface HomeUiState {
     data object Loading : HomeUiState
     data class Ready(
         /** Hero rotation pool — the newest movies and series with a trailer,
-         *  shuffled, as chino-web picks it (pickHeroPool). */
+         *  those this server plays one of first, each group shuffled, as
+         *  chino-web picks it (pickHeroPool). */
         val heroPool: List<Item>,
         val continueWatching: List<ContinueWatchingItem>,
         val nextUp: List<ContinueWatchingItem>,
@@ -128,10 +129,11 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
 
     /**
      * The hero's pool as chino-web picks it (pickHeroPool): the newest movies
-     * and series, those whose details name a trailer, shuffled, eight. One
-     * details fetch per candidate, all in parallel — so it is kept for an
-     * hour per server and account (HeroPoolCache), as web keeps it per
-     * session. Empty when the server has no such title: no hero, as on web.
+     * and series, those whose details have a trailer — one of this server's
+     * first, then a YouTube link — each group shuffled, eight. One details
+     * fetch per candidate, all in parallel — so it is kept for an hour per
+     * server and account (HeroPoolCache), as web keeps it per session. Empty
+     * when the server has no such title: no hero, as on web.
      */
     private suspend fun heroPool(): List<Item> = coroutineScope {
         val api = container.chinoApi
