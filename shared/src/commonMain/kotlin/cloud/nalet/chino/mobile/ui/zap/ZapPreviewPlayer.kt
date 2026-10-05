@@ -2,6 +2,7 @@ package cloud.nalet.chino.mobile.ui.zap
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 
 /**
  * Minimal platform video surface for the Zap card's mid-scene preview.
@@ -28,6 +29,9 @@ import androidx.compose.ui.Modifier
  * @param onFirstFrame fired once the player has rendered its first video frame
  *   (Media3 Player.Listener.onRenderedFirstFrame). The card uses this to fade
  *   out the cold-start backdrop image layered underneath the surface.
+ * @param onAmbientFrame while the card plays, a small copy of the frame on
+ *        screen a few times a second, for the card's ambient light; never
+ *        called where the platform takes none (iOS for now)
  */
 @Composable
 expect fun ZapPreviewPlayer(
@@ -40,6 +44,7 @@ expect fun ZapPreviewPlayer(
     onEnded: () -> Unit = {},
     onError: () -> Unit = {},
     onFirstFrame: () -> Unit = {},
+    onAmbientFrame: (ImageBitmap) -> Unit = {},
 )
 
 /**

@@ -88,10 +88,14 @@ class ZapScreenModel(
     // Client-side prefetch dedup — an id is handed to the platform prefetcher
     // at most once per session (mirrors prewarmed).
     private val prefetched = HashSet<String>()
-    private val saved = HashSet<String>()
+    /** Saved = in the watchlist every screen shares (UserFlagsRepository):
+     *  optimistic, so a Save shows at once, and a title saved elsewhere —
+     *  on Detail, on the web — shows saved here. */
+    val watchlist: StateFlow<Set<String>> = container.userFlags.watchlist
 
     init {
         telemetry.event("zap_session_start", extra = mapOf("source" to "nav"))
+        screenModelScope.launch { container.userFlags.warm() }
         load()
     }
 
@@ -236,43 +240,22 @@ class ZapScreenModel(
         return card.item.id to resume
     }
 
-    /** Sound on/off toggle telemetry (mirrors web's zap_mute_toggle). The
-     *  muted state itself is lifted into ZapScreen and applies to every card. */
-    fun onMuteToggle(muted: Boolean) {
-        val card = cards.getOrNull(lastActiveIndex) ?: return
-        telemetry.event(
-            "zap_mute_toggle",
-            itemId = card.item.id,
-            extra = baseExtra(card) + ("muted" to muted.toString()),
-        )
-    }
-
-    /** True after [onSaveToggle] adds the id — drives the bookmark fill. */
-    fun isSaved(id: String): Boolean = id in saved
-
     /** Save/watchlist toggle. Mirrors web's onSaveToggle: a save bumps prefs
      *  by the SAVE strength and writes through to the watchlist; telemetry
-     *  fires for both directions. */
+     *  fires for both directions. The watchlist is the shared one, so the
+     *  bookmark fills at once and the save shows up on Detail; a refusal
+     *  rolls it back. */
     fun onSaveToggle(index: Int) {
         val card = cards.getOrNull(index) ?: return
         val id = card.item.id
-        val nowSaved = id !in saved
-        if (nowSaved) {
-            saved.add(id)
-            prefs.update(card.features, ZapPreferences.SAVE)
-        } else {
-            saved.remove(id)
-        }
+        val nowSaved = id !in container.userFlags.watchlist.value
+        if (nowSaved) prefs.update(card.features, ZapPreferences.SAVE)
         telemetry.event(
             "zap_save",
             itemId = id,
             extra = baseExtra(card) + ("saved" to nowSaved.toString()),
         )
-        // Reuse the shared watchlist path so a Zap save shows up on Detail.
-        screenModelScope.launch {
-            runCatching { container.userFlags.setWatchlist(id, nowSaved) }
-        }
-        _state.value = ZapUiState.Active(cards.toList())
+        container.userFlags.setWatchlist(id, nowSaved)
     }
 
     /**

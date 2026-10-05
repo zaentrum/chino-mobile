@@ -1,5 +1,10 @@
 package cloud.nalet.chino.mobile.ui.zap
 
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
+import android.view.SurfaceView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -8,6 +13,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -26,7 +33,9 @@ import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
+import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * Android Zap preview surface — Media3 ExoPlayer in a controller-less
@@ -46,6 +55,7 @@ actual fun ZapPreviewPlayer(
     onEnded: () -> Unit,
     onError: () -> Unit,
     onFirstFrame: () -> Unit,
+    onAmbientFrame: (ImageBitmap) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -184,6 +194,31 @@ actual fun ZapPreviewPlayer(
         }
     }
 
+    // The card's ambient light: a small copy of the frame on screen, a few
+    // times a second while this card plays. PixelCopy scales the video
+    // surface down into the bitmap, so a copy costs next to nothing; one that
+    // finds no frame yet (before the first, a surface going away) is skipped.
+    // The view is held, not state: the loop asks for its surface each time.
+    val playerView = remember { arrayOfNulls<PlayerView>(1) }
+    LaunchedEffect(active) {
+        if (!active) return@LaunchedEffect
+        val main = Handler(Looper.getMainLooper())
+        while (true) {
+            delay(AMBIENT_EVERY_MS)
+            val surface = playerView[0]?.videoSurfaceView as? SurfaceView ?: continue
+            if (!surface.holder.surface.isValid || surface.width == 0 || surface.height == 0) continue
+            val frame = Bitmap.createBitmap(AMBIENT_WIDTH, AMBIENT_HEIGHT, Bitmap.Config.ARGB_8888)
+            val copied = suspendCancellableCoroutine { done ->
+                runCatching {
+                    PixelCopy.request(surface, frame, { result ->
+                        if (done.isActive) done.resume(result == PixelCopy.SUCCESS)
+                    }, main)
+                }.onFailure { if (done.isActive) done.resume(false) }
+            }
+            if (copied) onAmbientFrame(frame.asImageBitmap())
+        }
+    }
+
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
@@ -192,10 +227,17 @@ actual fun ZapPreviewPlayer(
                 setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                 keepScreenOn = true
                 this.player = player
+                playerView[0] = this
             }
         },
     )
 }
+
+/** The ambient copy: 16:9, small (the card blows it up and blurs it), and
+ *  how often it is taken. */
+private const val AMBIENT_WIDTH = 48
+private const val AMBIENT_HEIGHT = 27
+private const val AMBIENT_EVERY_MS = 400L
 
 /**
  * The audio a card starts on is the rendition the master's first variant

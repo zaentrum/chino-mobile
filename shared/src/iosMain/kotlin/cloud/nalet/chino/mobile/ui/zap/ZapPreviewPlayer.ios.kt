@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -27,6 +28,9 @@ actual fun ZapPreviewPlayer(
     onEnded: () -> Unit,
     onError: () -> Unit,
     onFirstFrame: () -> Unit,
+    // No frame to copy without a player: the card's ambient light stays its
+    // backdrop.
+    onAmbientFrame: (ImageBitmap) -> Unit,
 ) {
     // No real player yet, so there is no first frame to wait for — report it
     // immediately so the card hides its cold-start backdrop and shows this
