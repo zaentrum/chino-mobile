@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -64,6 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -72,6 +74,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1841,20 +1844,29 @@ private fun Scrubber(
                 if (pm != null && trickplayCues.isNotEmpty()) {
                     val cue = findTrickplayCue(trickplayCues, pm)
                     if (cue != null) {
-                        // Clamp the preview's center so it stays inside the
-                        // track (web does the same: half-tile margins).
-                        val tileWDp = with(density) { cue.w.toDp() }
-                        val tileHDp = with(density) { cue.h.toDp() }
-                        val halfTilePx = with(density) { (tileWDp / 2).toPx() }
-                        val centerPx = (trackWidthPx * (pm.toFloat() / durationSafe))
-                            .coerceIn(halfTilePx, trackWidthPx - halfTilePx)
-                        val leftDp = with(density) { centerPx.toDp() } - tileWDp / 2
+                        val scrubPx = trackWidthPx * (pm.toFloat() / durationSafe)
+                        val gapPx = with(density) { 16.dp.roundToPx() }
                         // Segment label under the time, like web's hover card.
                         val seg = segments.firstOrNull { pm >= it.startMs && pm < it.endMs }
+                        // The bar is only as tall as its thumb, and a child
+                        // measured in it is squeezed to that height: the
+                        // tile showed as a thin strip and its time label
+                        // not at all. So the preview is measured unbounded
+                        // and placed from a zero-size anchor on the bar's
+                        // centre line — its bottom 16dp above the bar, its
+                        // centre on the scrub position, kept inside the
+                        // track (web does the same: half-tile margins).
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
-                                .offset(x = leftDp, y = -(tileHDp + 36.dp)),
+                                .layout { measurable, _ ->
+                                    val p = measurable.measure(Constraints())
+                                    val half = p.width / 2f
+                                    val center = scrubPx.coerceIn(half, maxOf(half, trackWidthPx - half))
+                                    layout(0, 0) {
+                                        p.place((center - half).roundToInt(), -p.height - gapPx)
+                                    }
+                                },
                         ) {
                             TrickplayPreview(
                                 cue = cue,
@@ -1906,7 +1918,8 @@ private fun TrickplayPreview(
     ) {
         Box(
             modifier = Modifier
-                .size(tileWDp, tileHDp)
+                // Exactly one tile, whatever the parent allows.
+                .requiredSize(tileWDp, tileHDp)
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color.Black)
                 .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)), RoundedCornerShape(6.dp))
@@ -2204,7 +2217,8 @@ private fun ChromeButton(
 }
 
 /** Compact pill chip showing the current audio track's 3-letter language
- *  code (e.g. "JAP", "ENG"). Mirrors chino-web's audio chip at
+ *  code (e.g. "JAP", "ENG"), or "Audio" for a track that names no language
+ *  ("und", or no tag at all). Mirrors chino-web's audio chip at
  *  PlayerPage.tsx L2939-2945. When `enabled` (multi-track file), tapping
  *  the chip opens the AudioMenuCard via the shared OpenPopover state.
  *  Single-track files render a non-tappable chip (no menu, same look). */
@@ -2215,7 +2229,8 @@ private fun AudioLangChip(
     accent: Boolean,
     onClick: () -> Unit,
 ) {
-    val label = langLabel(language).take(3).uppercase()
+    // "und" was "Unknown" cut to "UNK": a track with no language is audio.
+    val label = if (normalizeLang(language).isEmpty()) "Audio" else langLabel(language).take(3).uppercase()
     val bg = if (accent) Color(0xFF58A6FF).copy(alpha = 0.3f)
     else Color.White.copy(alpha = 0.1f)
     Box(
