@@ -552,7 +552,9 @@ private fun SearchField(modifier: Modifier = Modifier, query: String, onChange: 
             value = query,
             onValueChange = onChange,
             singleLine = true,
-            textStyle = androidx.compose.ui.text.TextStyle(
+            // The style around it, so the query is Inter as its placeholder
+            // is: a bare TextStyle drew it in the platform's font.
+            textStyle = androidx.compose.material3.LocalTextStyle.current.copy(
                 color = ChinoFg2,
                 fontSize = 16.sp,
                 lineHeight = 24.sp,

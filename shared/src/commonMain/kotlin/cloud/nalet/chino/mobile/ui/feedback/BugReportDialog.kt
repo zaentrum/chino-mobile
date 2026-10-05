@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,7 +52,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -215,7 +215,9 @@ fun BugReportDialog(
                         value = description,
                         onValueChange = { description = it },
                         enabled = !submitting,
-                        textStyle = TextStyle(color = Color.White, fontSize = 14.sp, lineHeight = 20.sp),
+                        // The style around it, so the description is Inter
+                        // as its placeholder is, not the platform's font.
+                        textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 14.sp, lineHeight = 20.sp),
                         cursorBrush = SolidColor(ChinoCloudBlue),
                         decorationBox = { inner ->
                             if (description.isEmpty()) {

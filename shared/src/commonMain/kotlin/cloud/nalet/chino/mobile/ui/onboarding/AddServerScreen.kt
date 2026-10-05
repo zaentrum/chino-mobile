@@ -33,6 +33,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,7 +50,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -248,7 +248,9 @@ private fun UrlField(
                 onValueChange = onChange,
                 singleLine = true,
                 enabled = enabled,
-                textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                // The style around it, so the address is Inter as its
+                // placeholder is: a bare TextStyle drew the platform's font.
+                textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 16.sp),
                 cursorBrush = SolidColor(ChinoCloudBlue),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,

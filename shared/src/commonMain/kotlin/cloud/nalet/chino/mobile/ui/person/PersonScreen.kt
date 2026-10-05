@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -39,7 +40,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.intl.LocaleList
@@ -347,9 +347,12 @@ private fun About(facts: List<PersonFact>, biography: String?, biographyLang: St
 private fun Biography(text: String, lang: String?) {
     var expanded by remember(text) { mutableStateOf(false) }
     var clamped by remember(text) { mutableStateOf(false) }
-    val style = remember(lang) {
-        lang?.trim()?.takeIf { LANGUAGE_SUBTAG.matches(it) }?.let { TextStyle(localeList = LocaleList(it)) }
-            ?: TextStyle.Default
+    // The style around it, Inter, with the biography's language: a bare
+    // TextStyle drew the text in the platform's font.
+    val around = LocalTextStyle.current
+    val style = remember(lang, around) {
+        lang?.trim()?.takeIf { LANGUAGE_SUBTAG.matches(it) }?.let { around.copy(localeList = LocaleList(it)) }
+            ?: around
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
