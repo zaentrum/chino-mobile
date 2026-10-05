@@ -57,8 +57,9 @@ shared/                         KMP library
     data/auth/OAuthRedirect.kt  the app's one OAuth redirect URI
     data/auth/OidcDiscovery.kt  OIDC discovery from the connected server
     data/ServerConfigStore.kt   persisted Add-Server config
+    data/slots/, data/notices/  what addons add: slot rows and notices (see Addons)
     ui/onboarding/AddServerScreen.kt  bring-your-own-server entry point
-    ui/...                      auth / home / browse / detail / person / search / player / settings
+    ui/...                      auth / home / browse / detail / person / search / player / settings / notices
   src/commonTest/...            shared unit tests (JVM + iOS simulator)
   src/androidUnitTest/...       Android-only unit tests on the JVM (Media3's track selection)
   src/androidMain/...           DataStore-backed stores, Ktor OkHttp engine, Media3 player
@@ -153,6 +154,35 @@ On an Android phone Zap stays in portrait. On a large screen (smallest width
 600 dp and up) it turns with the device — Android 16 ignores an orientation
 lock there for an app targeting API 36 — and a card too short for its whole
 overlay keeps the title and the facts and leaves out the overview.
+
+## Addons
+
+An addon installed on the server adds to the app through two generic seams.
+The app names no addon, and what a seam shows is in the addon's words.
+
+- **Slots** — buttons an addon contributes to a named place. The app draws
+  one, `search.empty`: a search that finds no titles and no people shows its
+  buttons under the headline, as the app's own
+  (`GET /api/v1/extensions?slot=search.empty`, the query carried as `{q}`). A
+  link opens in the system browser, and only when it is a page of the server
+  the app is signed in to; an action is a POST with the person's bearer to the
+  portal's app proxy on that server (`/api/portal/apps/<addon>/…`) and nowhere
+  else. A row that leads anywhere else is not drawn.
+- **Notices** — what an addon tells one person ("your title is ready"). The
+  bell in the top bar counts the unread ones and opens the list, newest first:
+  whom each is from, how long ago it came, its title and text as plain text.
+  Opening one reads it and opens the title it is about, else its link — a
+  page of the same server only — in the system browser; Mark All Read and
+  delete are there too. The app asks `GET /api/v1/notices` every minute while
+  it is in the foreground and as it comes back to it, only while someone is
+  signed in. A server whose notices are not available (`available: false`)
+  shows no bell.
+
+Both follow the platform's rules for
+[slots](https://github.com/zaentrum/zaentrum/blob/main/docs/extending/slots.md)
+and [notices](https://github.com/zaentrum/zaentrum/blob/main/docs/extending/notices.md),
+checked again on the device by the shared code (`data/slots`, `data/notices`,
+`data/ServerLinks.kt`) that Android and iOS run alike.
 
 ## Tests
 
