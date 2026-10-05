@@ -81,11 +81,14 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
-import cloud.nalet.chino.mobile.ui.trailer.pickTrailer
+import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
+import cloud.nalet.chino.mobile.ui.trailer.TrailerScreen
+import cloud.nalet.chino.mobile.ui.trailer.trailerChoice
 import coil3.compose.AsyncImage
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Clapperboard
 import com.composables.icons.lucide.Youtube
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Eye
@@ -159,6 +162,11 @@ class DetailScreen(private val itemId: String) : Screen {
                         onHome = { nav.replaceAll(cloud.nalet.chino.mobile.ui.shell.MainShellScreen()) },
                         onPlay = { fromStart ->
                             nav.push(PlayerScreen(itemId = effectiveId, fromStart = fromStart))
+                        },
+                        // The shown title's trailer from this server — the
+                        // series' when an episode redirected here.
+                        onPlayTrailer = { extraId ->
+                            nav.push(TrailerScreen(itemId = effectiveId, extraId = extraId))
                         },
                         // Plain tap: when the item is in NO list, add it to the
                         // default list (casual users never see the picker); when
@@ -238,6 +246,8 @@ private fun ReadyContent(
     /** fromStart: "Start over" — the head, whatever was saved. Otherwise
      *  the player starts by its resume rule, as the button said. */
     onPlay: (fromStart: Boolean) -> Unit,
+    /** Plays the shown title's extra extraId: its trailer from this server. */
+    onPlayTrailer: (extraId: String) -> Unit,
     onToggleWatchlist: () -> Unit,
     onOpenAddToList: () -> Unit,
     onToggleLike: () -> Unit,
@@ -250,9 +260,9 @@ private fun ReadyContent(
 ) {
     val item = ready.item
     val uriHandler = LocalUriHandler.current
-    // Resolved trailer URL (null when none) — drives both the pill's
-    // visibility and its click. Mirrors web/TV pickTrailer.
-    val trailerUrl = pickTrailer(item.trailers)?.url
+    // The Trailer pill (null: none): a trailer this server plays, else the
+    // title's link — every client's rule (trailerChoice).
+    val trailer = trailerChoice(item)
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ChinoBg2)) {
         // Backdrop = 21:9 but capped at 60vh (web `max-h-[60vh]`) so in
         // landscape the action row stays near the fold instead of the tall
@@ -343,12 +353,17 @@ private fun ReadyContent(
                             liked = liked,
                             watched = watched,
                             isSeries = item.kind == "series",
-                            hasTrailer = trailerUrl != null,
+                            trailer = trailer,
                             onResume = { onPlay(false) },
                             onPlay = { onPlay(false) },
                             onStartOver = { onPlay(true) },
-                            onTrailer = {
-                                trailerUrl?.let { uriHandler.openUri(it) }
+                            // This server's trailer plays in the app; a link
+                            // opens outside it, as before.
+                            onTrailer = { choice ->
+                                when (choice) {
+                                    is TrailerChoice.Local -> onPlayTrailer(choice.extra.id)
+                                    is TrailerChoice.Link -> uriHandler.openUri(choice.trailer.url)
+                                }
                             },
                             onToggleWatchlist = onToggleWatchlist,
                             onOpenAddToList = onOpenAddToList,
@@ -568,33 +583,26 @@ private fun ActionRow(
     liked: Boolean,
     watched: Boolean,
     isSeries: Boolean = false,
-    hasTrailer: Boolean = false,
+    /** The Trailer pill's choice; null: no pill. */
+    trailer: TrailerChoice? = null,
     onResume: () -> Unit,
     onPlay: () -> Unit,
     onStartOver: () -> Unit,
-    onTrailer: () -> Unit = {},
+    onTrailer: (TrailerChoice) -> Unit = {},
     onToggleWatchlist: () -> Unit,
     onOpenAddToList: () -> Unit,
     onToggleWatched: () -> Unit,
     onToggleLike: () -> Unit,
 ) {
-    Row(
+    // Wraps onto a second line where a phone is too narrow for the pills and
+    // the circles together, as the web's `flex flex-wrap gap-3` does.
+    FlowRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         when {
-            // Series: no series-level Play; show Trailer pill when one
-            // exists (web: DetailPage.tsx L199-210 — same gate).
-            isSeries -> {
-                if (hasTrailer) {
-                    PillButton(
-                        label = "Trailer",
-                        icon = Lucide.Youtube,
-                        primary = false,
-                        onClick = onTrailer,
-                    )
-                }
-            }
+            // Series: no series-level Play — its episodes play.
+            isSeries -> Unit
             // "Resume" only where the player resumes (playAction, the
             // players' own rule): a finished title starts over, as the
             // player would start it.
@@ -613,6 +621,17 @@ private fun ActionRow(
             else -> {
                 PillButton(label = "Play", icon = Lucide.Play, primary = true, onClick = onPlay)
             }
+        }
+        // Trailer, for movies and series alike (web: DetailPage.tsx): the
+        // clapperboard plays this server's trailer in the app, the YouTube
+        // mark opens the link.
+        trailer?.let { choice ->
+            PillButton(
+                label = "Trailer",
+                icon = if (choice is TrailerChoice.Local) Lucide.Clapperboard else Lucide.Youtube,
+                primary = false,
+                onClick = { onTrailer(choice) },
+            )
         }
         // Circular icon-only buttons. Web: `p-2.5 rounded-full bg-white/10`,
         // pressed state recolours to emerald (watchlist/watched) or rose (like).
