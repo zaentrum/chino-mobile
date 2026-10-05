@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -148,6 +149,7 @@ fun SearchResultsSection(
 
         item(span = { GridItemSpan(maxLineSpan) }) {
             val count = (ui as? SearchState.Ready)?.items?.size ?: 0
+            // SearchPage.tsx's headline: `h1.text-2xl font-semibold`.
             Text(
                 text = when (ui) {
                     SearchState.Idle -> "Search the chino catalogue…"
@@ -161,7 +163,8 @@ fun SearchResultsSection(
                 },
                 color = Color.White,
                 fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
+                style = ChinoHeading,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
         }
@@ -224,11 +227,13 @@ private fun PeopleSection(
         modifier = Modifier.padding(bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // An h2 on the web: the heading face.
         Text(
             text = "Cast & crew",
             color = Color.White,
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
+            style = ChinoHeading,
         )
         people.forEach { person ->
             PersonRow(person = person, portraitUrl = portraitUrl(person), onClick = { onPersonClick(person) })
@@ -317,6 +322,7 @@ private fun SearchCard(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // MediaCard's h3 on the web: the heading face.
             Text(
                 text = item.title,
                 color = ChinoFg2,
@@ -324,6 +330,7 @@ private fun SearchCard(
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                style = ChinoHeading,
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
