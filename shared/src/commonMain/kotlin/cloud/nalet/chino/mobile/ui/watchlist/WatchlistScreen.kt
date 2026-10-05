@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -225,12 +226,14 @@ private fun WatchlistHub(
             .padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(32.dp),
     ) {
-        // Page title — matches BrowseSection's 36sp Bold heading.
+        // Page title — matches BrowseSection's 36sp Bold heading, the web's
+        // h1 in the heading face.
         Text(
             text = "Watchlist",
             color = Color.White,
             fontSize = 36.sp,
             fontWeight = FontWeight.Bold,
+            style = ChinoHeading,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
         lists.forEach { list ->
@@ -270,7 +273,8 @@ private fun EmptyShelf(list: Watchlist, onOpen: () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Same header type as MediaRow's shelf title (24sp / 32 line / 600).
+        // Same header type as MediaRow's shelf title (24sp / 32 line / 600),
+        // in Inter as a hub shelf's is: a <button> on the web, no heading.
         Text(
             text = shelfTitle(list),
             color = Color.White,
@@ -342,6 +346,7 @@ private fun ListMoreView(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // The list's name is the web's h1 here; its count is not.
                 Text(
                     text = list.name,
                     color = Color.White,
@@ -349,6 +354,7 @@ private fun ListMoreView(
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    style = ChinoHeading,
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 Text(
