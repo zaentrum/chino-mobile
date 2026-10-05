@@ -137,6 +137,12 @@ fun languageName(code: String?): String {
     return NAMES[normalizeLang(code)] ?: code.orEmpty().trim()
 }
 
+/** A track's language by name ("German", "No dialogue" for zxx), else its own
+ *  label for a track in no language; null for neither. What a title's
+ *  subtitle languages are listed as. */
+fun languageOrLabel(lang: String?, label: String?): String? =
+    if (hasLanguage(lang)) languageName(lang) else label?.trim()?.takeIf { it.isNotEmpty() }
+
 /** What a subtitle menu is told about one track. */
 data class SubtitleLabelInput(
     /** The language code as the track is tagged. */

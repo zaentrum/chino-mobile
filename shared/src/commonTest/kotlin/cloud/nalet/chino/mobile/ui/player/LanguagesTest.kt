@@ -211,6 +211,16 @@ class LanguagesTest {
     }
 
     @Test
+    fun aTitlesSubtitleLanguagesByNameATrackInNoLanguageByItsLabel() {
+        assertEquals("German", languageOrLabel("ger", null))
+        assertEquals("English", languageOrLabel("eng", "English (SDH)"))
+        assertEquals("No dialogue", languageOrLabel("zxx", "zxx"))
+        assertEquals("Signs", languageOrLabel("und", " Signs "))
+        assertNull(languageOrLabel("und", null))
+        assertNull(languageOrLabel("", " "))
+    }
+
+    @Test
     fun theAudioChipThreeLettersADashForNoDialogueAudioForNoLanguage() {
         assertEquals(
             listOf("ENG", "GER", "FRE", "ENG", "POR", "—", "—", "Audio", "Audio", "Audio"),

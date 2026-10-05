@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.model.CastMember
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.model.groupCredits
+import cloud.nalet.chino.mobile.ui.player.languageOrLabel
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
@@ -189,10 +190,11 @@ internal fun MetaText(text: String, maxLines: Int = Int.MAX_VALUE) {
     )
 }
 
-/** The subtitle languages, each once: a label, else the language code. */
+/** The subtitle languages, each once, by name ("German", as chino-web lists
+ *  them); a track in no language by its label ([languageOrLabel]). */
 private fun subtitleSummary(item: Item): String? =
     item.subtitles
-        .mapNotNull { sub -> sub.label?.takeIf { it.isNotBlank() } ?: sub.lang.takeIf { it.isNotBlank() } }
+        .mapNotNull { sub -> languageOrLabel(sub.lang, sub.label) }
         .distinct()
         .joinToString(", ")
         .takeIf { it.isNotBlank() }
