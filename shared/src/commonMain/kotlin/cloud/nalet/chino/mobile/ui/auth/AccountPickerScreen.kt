@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -336,6 +337,7 @@ private fun ConfirmRemoveDialog(account: Account, onConfirm: () -> Unit, onDismi
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
+                style = ChinoHeading,
             )
             Text(
                 text = "You'll need to sign in again to use this account on this device.",

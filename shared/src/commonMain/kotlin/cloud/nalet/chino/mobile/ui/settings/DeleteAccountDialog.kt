@@ -40,6 +40,7 @@ import cloud.nalet.chino.mobile.data.account.text
 import cloud.nalet.chino.mobile.data.account.title
 import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -121,10 +122,13 @@ fun DeleteAccountDialog(
         containerColor = ChinoSurface,
         icon = { Icon(imageVector = Lucide.TriangleAlert, contentDescription = null, tint = ChinoRed) },
         title = {
+            // The web dialog's `h2.text-lg font-medium`, at the dialog's
+            // title size.
             Text(
                 text = "Delete Account",
                 color = Color.White,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
+                style = ChinoHeading,
                 modifier = Modifier.semantics { heading() },
             )
         },

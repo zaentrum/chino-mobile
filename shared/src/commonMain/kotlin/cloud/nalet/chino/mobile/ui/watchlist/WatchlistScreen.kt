@@ -471,6 +471,7 @@ internal fun NameListDialog(
                 color = Color.White,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
+                style = ChinoHeading,
             )
             TextField(
                 value = name,
@@ -541,6 +542,7 @@ private fun ConfirmDeleteListDialog(
                 color = Color.White,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
+                style = ChinoHeading,
             )
             Text(
                 text = "This removes the list and everything in it. Titles stay in your other lists.",

@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -191,11 +192,13 @@ fun BugReportDialog(
                         tint = ChinoCloudBlue,
                         modifier = Modifier.size(20.dp),
                     )
+                    // The web dialog's `h2.text-lg font-medium`.
                     Text(
                         text = "Report a bug",
                         color = Color.White,
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Medium,
+                        style = ChinoHeading,
                     )
                 }
                 // Multi-line description input — field colors mirror the
