@@ -88,12 +88,12 @@ fun ChinoTheme(content: @Composable () -> Unit) {
         titleLarge = base.titleLarge.copy(fontFamily = mono, letterSpacing = HeadingTracking),
         titleMedium = base.titleMedium.copy(fontFamily = mono, letterSpacing = HeadingTracking),
         titleSmall = base.titleSmall.copy(fontFamily = mono, letterSpacing = HeadingTracking),
-        bodyLarge = base.bodyLarge.copy(fontFamily = inter),
-        bodyMedium = base.bodyMedium.copy(fontFamily = inter),
-        bodySmall = base.bodySmall.copy(fontFamily = inter),
-        labelLarge = base.labelLarge.copy(fontFamily = inter),
-        labelMedium = base.labelMedium.copy(fontFamily = inter),
-        labelSmall = base.labelSmall.copy(fontFamily = inter),
+        bodyLarge = base.bodyLarge.copy(fontFamily = inter, letterSpacing = 0.sp),
+        bodyMedium = base.bodyMedium.copy(fontFamily = inter, letterSpacing = 0.sp),
+        bodySmall = base.bodySmall.copy(fontFamily = inter, letterSpacing = 0.sp),
+        labelLarge = base.labelLarge.copy(fontFamily = inter, letterSpacing = 0.sp),
+        labelMedium = base.labelMedium.copy(fontFamily = inter, letterSpacing = 0.sp),
+        labelSmall = base.labelSmall.copy(fontFamily = inter, letterSpacing = 0.sp),
     )
     // Square everything — the design system uses zero corner radius (no
     // rounded corners, no pills) across all Material3 shape slots.
@@ -116,7 +116,9 @@ fun ChinoTheme(content: @Composable () -> Unit) {
         // Android / SF on iOS) and we'd see two fonts mixed on screen.
         // The mono family goes down once, for [ChinoHeading] and [ChinoMono].
         CompositionLocalProvider(
-            LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = inter),
+            // Untracked, as the web draws Inter: Material's body style
+            // spaces it +0.5sp wider.
+            LocalTextStyle provides LocalTextStyle.current.copy(fontFamily = inter, letterSpacing = 0.sp),
             LocalMonoFamily provides mono,
             content = content,
         )
