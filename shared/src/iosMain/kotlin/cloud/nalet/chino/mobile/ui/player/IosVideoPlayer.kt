@@ -239,8 +239,7 @@ internal class IosVideoPlayer {
         if (it.status != AVPlayerItemStatusFailed) return null
         val error = it.error
         val events = it.errorLog()?.events.orEmpty().filterIsInstance<AVPlayerItemErrorLogEvent>()
-        val masterMissing = events.any { e -> e.errorStatusCode == 404L && e.URI?.contains(".m3u8") == true } ||
-            errorChain(error).any { e -> e.domain == "CoreMediaErrorDomain" && e.code == -12938L }
+        val masterMissing = it.masterPlaylistMissing()
         val tech = buildString {
             append("AVPlayerItem failed")
             for (e in errorChain(error)) append("\n").append(e.domain).append(" ").append(e.code).append(": ").append(e.localizedDescription)
@@ -412,6 +411,16 @@ private fun seconds(t: kotlinx.cinterop.CValue<platform.CoreMedia.CMTime>): Doub
     CMTimeGetSeconds(t).takeIf { it.isFinite() && it >= 0 } ?: 0.0
 
 private fun Double.toMs(): Long = (this * 1000).toLong()
+
+/** The failed item's master playlist answered 404, so there is nothing to
+ *  stream: its error log says so, or CoreMedia's HTTP 404 (-12938) is in its
+ *  error. The player's rule, and the trailer's. */
+@OptIn(ExperimentalForeignApi::class)
+internal fun AVPlayerItem.masterPlaylistMissing(): Boolean {
+    val events = errorLog()?.events.orEmpty().filterIsInstance<AVPlayerItemErrorLogEvent>()
+    return events.any { e -> e.errorStatusCode == 404L && e.URI?.contains(".m3u8") == true } ||
+        errorChain(error).any { e -> e.domain == "CoreMediaErrorDomain" && e.code == -12938L }
+}
 
 /** The error and its underlying errors, outermost first. */
 private fun errorChain(error: NSError?): List<NSError> {
