@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -104,11 +105,13 @@ fun SettingsSection() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // The web's h1, in the heading face.
             Text(
                 text = "Settings",
                 color = Color.White,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
+                style = ChinoHeading,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
             SectionHeading("Account")
@@ -263,6 +266,7 @@ fun SettingsSection() {
  *  class on purpose — a data class would lint on ByteArray equals/hashCode. */
 private class BugReportDraft(val screenshot: ByteArray?)
 
+/** A section's title: the web's Section h2, in the heading face. */
 @Composable
 private fun SectionHeading(text: String) {
     Text(
@@ -270,6 +274,7 @@ private fun SectionHeading(text: String) {
         color = Color.White,
         fontSize = 14.sp,
         fontWeight = FontWeight.SemiBold,
+        style = ChinoHeading,
         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
     )
 }

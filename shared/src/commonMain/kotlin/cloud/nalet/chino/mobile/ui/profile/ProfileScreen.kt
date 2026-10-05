@@ -9,6 +9,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -195,11 +196,13 @@ class ProfileScreen : Screen {
                                 }
                             },
                         )
+                        // The web's h2, in the heading face.
                         Text(
                             text = "Watch history",
                             color = Color.White,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.SemiBold,
+                            style = ChinoHeading,
                             modifier = Modifier.padding(top = 24.dp, bottom = 12.dp),
                         )
                     }
@@ -296,11 +299,13 @@ private fun ProfileHeader(onBack: () -> Unit) {
                 modifier = Modifier.size(20.dp),
             )
         }
+        // The web's h1, in the heading face.
         Text(
             text = "Profile",
             color = Color.White,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
+            style = ChinoHeading,
         )
     }
 }
