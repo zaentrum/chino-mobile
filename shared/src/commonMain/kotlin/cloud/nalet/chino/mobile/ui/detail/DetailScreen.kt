@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -66,6 +67,9 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.coerceAtLeast
+import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
@@ -253,6 +257,14 @@ private fun ReadyContent(
         // landscape the action row stays near the fold instead of the tall
         // 21:9 image eating the whole screen.
         val backdropH = minOf(maxWidth * 9f / 21f, maxHeight * 0.6f)
+        // How far the poster and content ride up over the backdrop: web's
+        // 128dp where the backdrop is tall enough, less on a phone, whose
+        // 21:9 backdrop is short — the poster starts below the Back / Home
+        // row instead of under it (heroOverlap).
+        val overlap = heroOverlap(
+            backdropHeight = backdropH,
+            topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -279,7 +291,7 @@ private fun ReadyContent(
                     ),
                 )
             }
-            // Content overlaps the backdrop by -128dp (web: -mt-32 = -128px).
+            // Content overlaps the backdrop by up to 128dp (web: -mt-32 = -128px).
             // Responsive: side-by-side poster | content on wide (tablet /
             // phone-landscape), STACKED poster-then-content on a narrow phone —
             // matching chino-web (CDP-verified at 411px: poster 192x288 top-
@@ -357,7 +369,7 @@ private fun ReadyContent(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .offset(y = (-128).dp)
+                            .offset(y = -overlap)
                             .padding(horizontal = 24.dp),
                         horizontalArrangement = Arrangement.spacedBy(32.dp),
                     ) {
@@ -370,7 +382,7 @@ private fun ReadyContent(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .offset(y = (-128).dp)
+                            .offset(y = -overlap)
                             .padding(horizontal = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
@@ -381,12 +393,13 @@ private fun ReadyContent(
             }
             // Sections below the hero — sit OUTSIDE the offset-overlap
             // Row so they don't get clipped. Same horizontal padding so
-            // headings line up with the content column above.
+            // headings line up with the content column above, and 32dp
+            // under it however far the hero rode up.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp)
-                    .offset(y = (-96).dp),
+                    .offset(y = -(overlap - 32.dp).coerceAtLeast(0.dp)),
                 verticalArrangement = Arrangement.spacedBy(32.dp),
             ) {
                 if (ready.seasons.isNotEmpty()) {
@@ -423,7 +436,7 @@ private fun ReadyContent(
         Row(
             modifier = Modifier
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(start = 16.dp, top = 16.dp),
+                .padding(start = 16.dp, top = HERO_BUTTONS_TOP),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             OverlayIconButton(
@@ -440,6 +453,23 @@ private fun ReadyContent(
     }
 }
 
+/** Where the Back / Home row starts under the status bar, and how big its
+ *  buttons are: the poster starts below them (heroOverlap). */
+private val HERO_BUTTONS_TOP = 16.dp
+private val HERO_BUTTON_SIZE = 40.dp
+
+/**
+ * How far the poster and content ride up over a backdrop [backdropHeight]
+ * tall: web's 128dp, or less where that would put the poster under the Back /
+ * Home row — [topInset] (the status bar), the row's 16dp, its 40dp buttons
+ * and a 12dp gap. A phone's 21:9 backdrop is short, so there the poster
+ * starts below the buttons instead of under them; never below 0.
+ */
+internal fun heroOverlap(backdropHeight: Dp, topInset: Dp): Dp {
+    val belowButtons = topInset + HERO_BUTTONS_TOP + HERO_BUTTON_SIZE + 12.dp
+    return (backdropHeight - belowButtons).coerceIn(0.dp, 128.dp)
+}
+
 /** Dark translucent square icon chip used for the detail backdrop overlay
  *  affordances (Back / Home). Matches web's `p-2 rounded bg-black/50` with
  *  the app's square-corner tokens. */
@@ -451,7 +481,7 @@ private fun OverlayIconButton(
 ) {
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(HERO_BUTTON_SIZE)
             .clip(RectangleShape)
             .background(Color(0x80000000))
             .clickable(onClick = onClick),
