@@ -14,9 +14,15 @@ import java.util.TimeZone
 actual fun preferredLanguageTags(): List<String> {
     val locales = LocaleList.getDefault()
     return (0 until locales.size()).mapNotNull { i ->
-        locales[i].stripExtensions().toLanguageTag().takeIf { it.isNotBlank() && it != "und" }
+        withoutExtensions(locales[i].toLanguageTag()).takeIf { it.isNotBlank() && it != "und" }
     }
 }
+
+/** A BCP 47 tag up to its first singleton subtag, where the extensions and the
+ *  private use start: what Locale.stripExtensions() gives, which needs API 26
+ *  (minSdk is 24). */
+internal fun withoutExtensions(tag: String): String =
+    tag.split('-').takeWhile { it.length > 1 }.joinToString("-")
 
 actual fun formatDeviceDate(date: CatalogDate): String {
     val locale = Locale.getDefault()
