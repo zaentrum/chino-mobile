@@ -155,8 +155,9 @@ On an Android phone Zap stays in portrait. On a large screen (smallest width
 lock there for an app targeting API 36. Each card plays its clip whole in the
 middle, over the clip's own ambient light — a small copy of the frame on
 screen, blown up, blurred and dimmed (Android; iOS shows the backdrop) — with
-the title, the year and rating, and Watch and Save small at its foot. Zap
-plays with sound: the phone's volume is the mute.
+the title, the year and rating and three lines of the overview small at its
+foot, and Save and Watch beside them at the right edge. Zap plays with
+sound: the phone's volume is the mute.
 
 ## Addons
 

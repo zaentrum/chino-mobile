@@ -31,13 +31,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -82,7 +80,7 @@ import coil3.compose.AsyncImage
 import com.composables.icons.lucide.Bookmark
 import com.composables.icons.lucide.BookmarkCheck
 import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.Maximize
 import com.composables.icons.lucide.Zap
 
 
@@ -269,21 +267,22 @@ private fun ZapCard(
             }
         }
 
-        // Title, year and rating, Watch and Save: small, at the foot of the
-        // card, over a scrim that keeps them legible on the ambient light.
-        ZapInfo(
-            item = card.item,
-            compact = compact,
-            saved = saved,
-            onWatch = onTapExpand,
-            onToggleSave = onToggleSave,
+        // At the foot, over a scrim that keeps it legible on the ambient
+        // light: what the title is on the left, Save and Watch on the right,
+        // both on the bottom line.
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
                 .background(Brush.verticalGradient(0f to Color.Transparent, 1f to Color(0xD9000000)))
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(start = 20.dp, end = 20.dp, top = 40.dp, bottom = 20.dp),
-        )
+                .padding(start = 20.dp, end = 16.dp, top = 48.dp, bottom = 20.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            ZapInfo(item = card.item, compact = compact, modifier = Modifier.weight(1f))
+            ZapRail(saved = saved, onWatch = onTapExpand, onToggleSave = onToggleSave)
+        }
     }
 }
 
@@ -346,93 +345,91 @@ private fun ZapColdStartBackdrop(
     }
 }
 
-/** Watch from this scene — the primary — and Save, in the detail page's
- *  button style (square corners, the blue primary), a size smaller. Each has
- *  its own clickable, so a tap on one doesn't reach the card's tap-to-watch. */
+/** Save and Watch, one over the other at the card's right edge: translucent
+ *  squares with their label under them. Each has its own clickable, so a
+ *  tap on one doesn't reach the card's tap-to-watch (which Watch also is). */
 @Composable
-private fun ZapActions(saved: Boolean, onWatch: () -> Unit, onToggleSave: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
-            modifier = Modifier
-                .height(40.dp)
-                .clip(RectangleShape)
-                .background(ChinoCloudBlue)
-                .clickable(onClick = onWatch)
-                .padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(imageVector = Lucide.Play, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-            Text(text = "Watch", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-        }
-        ZapIconButton(
+private fun ZapRail(saved: Boolean, onWatch: () -> Unit, onToggleSave: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        ZapRailButton(
             icon = if (saved) Lucide.BookmarkCheck else Lucide.Bookmark,
-            contentDescription = if (saved) "Saved" else "Save",
+            label = if (saved) "Saved" else "Save",
             tint = if (saved) ChinoCloudBlue else Color.White,
             onClick = onToggleSave,
         )
+        ZapRailButton(icon = Lucide.Maximize, label = "Watch", onClick = onWatch)
     }
 }
 
 @Composable
-private fun ZapIconButton(
+private fun ZapRailButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
+    label: String,
     tint: Color = Color.White,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(RectangleShape)
-            .background(Color.White.copy(alpha = 0.12f))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onClick,
+        ),
     ) {
-        Icon(imageVector = icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(18.dp))
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RectangleShape)
+                .background(Color.White.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(imageVector = icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+        }
+        Text(text = label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
     }
 }
 
 /** What the card says of its title, small: the title, the year and the
- *  rating, and Watch and Save. [compact]: the card is short — the title on
- *  one line. */
+ *  rating, and three lines of the overview. [compact]: the card is short —
+ *  the title on one line, no overview. */
 @Composable
-private fun ZapInfo(
-    item: Item,
-    compact: Boolean,
-    saved: Boolean,
-    onWatch: () -> Unit,
-    onToggleSave: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(modifier = modifier) {
-        // A readable measure on a wide card (a tablet) instead of running
-        // across it.
-        Column(
-            modifier = Modifier.widthIn(max = 560.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+private fun ZapInfo(item: Item, compact: Boolean, modifier: Modifier = Modifier) {
+    // A readable measure on a wide card (a tablet) instead of running across it.
+    Column(
+        modifier = modifier.widthIn(max = 560.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = item.title,
+            color = Color.White,
+            fontSize = 22.sp,
+            lineHeight = 28.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = if (compact) 1 else 2,
+            overflow = TextOverflow.Ellipsis,
+            style = ChinoHeading,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 22.sp,
-                lineHeight = 28.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = if (compact) 1 else 2,
-                overflow = TextOverflow.Ellipsis,
-                style = ChinoHeading,
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                item.year?.let { Text(it.toString(), color = ChinoFg2, fontSize = 13.sp) }
-                item.rating?.let {
-                    Text("★ ${((it * 10).toInt() / 10.0)}", color = ChinoCloudBlue, fontSize = 13.sp)
-                }
+            item.year?.let { Text(it.toString(), color = ChinoFg2, fontSize = 13.sp) }
+            item.rating?.let {
+                Text("★ ${((it * 10).toInt() / 10.0)}", color = ChinoCloudBlue, fontSize = 13.sp)
             }
-            Spacer(modifier = Modifier.height(6.dp))
-            ZapActions(saved = saved, onWatch = onWatch, onToggleSave = onToggleSave)
+        }
+        if (!compact) {
+            item.overview?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    color = ChinoFg2,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
