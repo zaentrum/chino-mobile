@@ -6,6 +6,8 @@ import cloud.nalet.chino.mobile.data.api.Season
 import cloud.nalet.chino.mobile.data.model.Extra
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.model.Trailer
+import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
+import cloud.nalet.chino.mobile.ui.trailer.trailerChoice
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,7 +15,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The hero picks and plays as chino-web's does, so a server shows one hero:
- *  titles with a trailer — this server's first, then a YouTube link. */
+ *  titles with a trailer — this server's first, then a YouTube link — whose
+ *  Trailer does what the title's page's does. */
 class HeroPoolTest {
     @Test
     fun aTrailerUrlNamesItsYouTubeVideo() {
@@ -102,6 +105,29 @@ class HeroPoolTest {
         assertEquals(listOf(link), pool.getValue("m1").trailers)
         assertEquals(listOf(link), pool.getValue("s1").trailers)
         assertTrue(pool.getValue("s1").extras.isEmpty())
+    }
+
+    @Test
+    fun theHerosTrailerPlaysTheTitlesOwnElseOpensItsLink() {
+        val own = extra("x1", "trailer")
+        val teaser = extra("z1", "teaser")
+        val link = Trailer("https://www.youtube.com/watch?v=dQw4w9WgXcQ", site = "YouTube", title = "Official Trailer")
+        val candidates = listOf(item("m1", "movie"), item("m2", "movie"), item("s1", "series"))
+        val details = mapOf(
+            // Its own and a link: its own plays, as on the title's page.
+            "m1" to item("m1", "movie", extras = listOf(own)).copy(trailers = listOf(link)),
+            // A link only: the link opens.
+            "m2" to item("m2", "movie").copy(trailers = listOf(link)),
+            // A series' teaser of its own.
+            "s1" to item("s1", "series", extras = listOf(teaser)),
+        )
+        val pool = pickHeroPool(candidates, details, random = Random(1)).associateBy { it.id }
+        assertEquals(TrailerChoice.Local(own), trailerChoice(pool.getValue("m1")))
+        assertEquals(TrailerChoice.Link(link), trailerChoice(pool.getValue("m2")))
+        assertEquals(TrailerChoice.Local(teaser), trailerChoice(pool.getValue("s1")))
+        // A title as the list gives it, without its details, has neither: no
+        // button.
+        assertNull(trailerChoice(item("m1", "movie")))
     }
 
     @Test

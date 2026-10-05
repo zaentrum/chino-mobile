@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -52,12 +53,14 @@ import androidx.compose.material3.Icon
 import com.composables.icons.lucide.BookmarkCheck
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.Clapperboard
 import com.composables.icons.lucide.EllipsisVertical
 import com.composables.icons.lucide.Eye
 import com.composables.icons.lucide.EyeOff
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.Youtube
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -81,16 +84,19 @@ import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cloud.nalet.chino.mobile.data.model.Item
+import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
+import cloud.nalet.chino.mobile.ui.trailer.trailerChoice
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
  * Hero banner — clone of chino-web's HeroSection.tsx for the tablet/desktop
  * layout. Backdrop image right-anchored with a left-edge mask that fades to
- * the canvas; title + year + rating chip + overview paragraph + Play/More-
- * Info buttons left-anchored on the dark portion. Rotates through the pool
- * every ~12s with a crossfade. Skips the YouTube trailer embed (native
- * YouTube player is platform-specific and not load-bearing here).
+ * the canvas; title + year + rating chip + overview paragraph + Play / More
+ * Info / Trailer buttons left-anchored on the dark portion. Rotates through
+ * the pool every ~12s with a crossfade. No trailer plays on the hero by
+ * itself (web's TRAILERS_ON_HERO is off too): the title's Trailer button
+ * opens it, as its page's does.
  */
 @Composable
 fun HeroBanner(
@@ -100,6 +106,8 @@ fun HeroBanner(
     rotateEveryMs: Long = 12_000L,
     onMoreInfo: ((String) -> Unit)? = null,
     onPlay: ((String) -> Unit)? = null,
+    /** The Trailer of the title with that id: its [TrailerChoice]. */
+    onTrailer: ((String, TrailerChoice) -> Unit)? = null,
 ) {
     if (pool.isEmpty()) return
     // Swipeable carousel. HorizontalPager gives native touch-drag + snapping;
@@ -151,6 +159,7 @@ fun HeroBanner(
                     isWide = isWide,
                     onMoreInfo = onMoreInfo,
                     onPlay = onPlay,
+                    onTrailer = onTrailer,
                 )
             }
             if (pool.size > 1) {
@@ -195,13 +204,21 @@ private fun HeroContent(
     isWide: Boolean,
     onMoreInfo: ((String) -> Unit)?,
     onPlay: ((String) -> Unit)?,
+    onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
-    if (isWide) HeroContentWide(item, baseUrl, streamToken, onMoreInfo, onPlay)
-    else HeroContentNarrow(item, baseUrl, streamToken, onMoreInfo, onPlay)
+    if (isWide) HeroContentWide(item, baseUrl, streamToken, onMoreInfo, onPlay, onTrailer)
+    else HeroContentNarrow(item, baseUrl, streamToken, onMoreInfo, onPlay, onTrailer)
 }
 
 @Composable
-private fun HeroContentNarrow(item: Item, baseUrl: String, streamToken: String, onMoreInfo: ((String) -> Unit)?, onPlay: ((String) -> Unit)?) {
+private fun HeroContentNarrow(
+    item: Item,
+    baseUrl: String,
+    streamToken: String,
+    onMoreInfo: ((String) -> Unit)?,
+    onPlay: ((String) -> Unit)?,
+    onTrailer: ((String, TrailerChoice) -> Unit)?,
+) {
     // Phone hero mirrors chino-web's mobile hero (CDP-verified at 411px: a
     // 379x280 object-cover backdrop with the title OVERLAID top-left and the
     // Play / More Info buttons OVERLAID bottom-left — NOT a stacked image-then-
@@ -244,20 +261,25 @@ private fun HeroContentNarrow(item: Item, baseUrl: String, streamToken: String, 
             )
             YearRatingChipRow(item)
         }
-        // Play / More Info overlaid bottom-left, sitting above the pagination
-        // dots (which the parent pins at bottom=16). Web: Play at y=284 (~40dp
-        // from the 280-tall image bottom), 8dp button gap.
-        Row(
+        // Play / More Info / Trailer overlaid bottom-left, sitting above the
+        // pagination dots (which the parent pins at bottom=16). Web: Play at
+        // y=284 (~40dp from the 280-tall image bottom), 8dp button gap, the
+        // buttons in their size below md (compact) — three in the md+ size
+        // are wider than a phone. Where the three don't fit even so (a very
+        // narrow phone, a large font), Trailer takes a line of its own.
+        FlowRow(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = 40.dp),
+                .padding(start = 16.dp, end = 16.dp, bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             HeroButton(
                 label = "Play",
                 icon = Lucide.Play,
                 background = ChinoCloudBlue,
                 contentColor = Color.White,
+                compact = true,
                 onClick = { onPlay?.invoke(item.id) },
             )
             HeroButton(
@@ -265,14 +287,23 @@ private fun HeroContentNarrow(item: Item, baseUrl: String, streamToken: String, 
                 icon = Lucide.Info,
                 background = Color.White.copy(alpha = 0.2f),
                 contentColor = Color.White,
+                compact = true,
                 onClick = { onMoreInfo?.invoke(item.id) },
             )
+            HeroTrailerButton(item, compact = true, onTrailer = onTrailer)
         }
     }
 }
 
 @Composable
-private fun HeroContentWide(item: Item, baseUrl: String, streamToken: String, onMoreInfo: ((String) -> Unit)?, onPlay: ((String) -> Unit)?) {
+private fun HeroContentWide(
+    item: Item,
+    baseUrl: String,
+    streamToken: String,
+    onMoreInfo: ((String) -> Unit)?,
+    onPlay: ((String) -> Unit)?,
+    onTrailer: ((String, TrailerChoice) -> Unit)?,
+) {
     Box(modifier = Modifier.fillMaxSize()) {
         // CDP-verified: web backdrop image is `md:w-[60%] md:max-w-[1100px]
         // h-full object-cover object-center` — 60% wide of the hero
@@ -391,8 +422,28 @@ private fun HeroContentWide(item: Item, baseUrl: String, streamToken: String, on
                 contentColor = Color.White,
                 onClick = { onMoreInfo?.invoke(item.id) },
             )
+            HeroTrailerButton(item, compact = false, onTrailer = onTrailer)
         }
     }
+}
+
+/**
+ * The hero title's Trailer, after Play and More Info (web: HeroSection.tsx),
+ * by its page's rule (trailerChoice): the clapperboard plays this server's
+ * trailer, the YouTube mark opens the title's link; without either, no
+ * button. Translucent, as More Info.
+ */
+@Composable
+private fun HeroTrailerButton(item: Item, compact: Boolean, onTrailer: ((String, TrailerChoice) -> Unit)?) {
+    val choice = trailerChoice(item) ?: return
+    HeroButton(
+        label = "Trailer",
+        icon = if (choice is TrailerChoice.Local) Lucide.Clapperboard else Lucide.Youtube,
+        background = Color.White.copy(alpha = 0.2f),
+        contentColor = Color.White,
+        compact = compact,
+        onClick = { onTrailer?.invoke(item.id, choice) },
+    )
 }
 
 /** Year + bullet + blue rating chip — shared by narrow and wide hero
@@ -440,6 +491,8 @@ private fun HeroButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     background: Color,
     contentColor: Color,
+    /** The web's size below md, the phone's: see below. */
+    compact: Boolean = false,
     onClick: () -> Unit,
 ) {
     // CDP-verified: web hero buttons use
@@ -447,12 +500,14 @@ private fun HeroButton(
     //    text-white rounded-lg text-sm md:text-base`
     // On md+ viewports that's padding 12 24, gap 8, rounded-lg = 8px,
     // text-base = 16px, icon SVG 20×20. At tablet's 1280dp we're md+.
+    // Below md ([compact], a phone): padding 8 16, text-sm = 14px / 20,
+    // icon `w-4 h-4` = 16×16.
     Row(
         modifier = Modifier
             .clip(RectangleShape)
             .background(background)
             .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            .padding(horizontal = if (compact) 16.dp else 24.dp, vertical = if (compact) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -460,7 +515,7 @@ private fun HeroButton(
             imageVector = icon,
             contentDescription = null,
             tint = contentColor,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(if (compact) 16.dp else 20.dp),
         )
         // CDP-verified: web button label is font-weight 400 (Normal),
         // 16px text-base, line-height 24. Previous SemiBold was a tick
@@ -468,8 +523,8 @@ private fun HeroButton(
         Text(
             text = label,
             color = contentColor,
-            fontSize = 16.sp,
-            lineHeight = 24.sp,
+            fontSize = if (compact) 14.sp else 16.sp,
+            lineHeight = if (compact) 20.sp else 24.sp,
             fontWeight = FontWeight.Normal,
         )
     }

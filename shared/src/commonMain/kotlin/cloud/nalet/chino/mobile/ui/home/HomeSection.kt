@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +33,7 @@ import cloud.nalet.chino.mobile.ui.components.HeroBanner
 import cloud.nalet.chino.mobile.ui.components.MediaCard
 import cloud.nalet.chino.mobile.ui.components.MediaRow
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
+import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
 
 /**
  * Home tab content. Mirrors chino-web's HomeSection.tsx layout: hero banner
@@ -52,9 +54,13 @@ fun HomeSection(
     // bottom-nav / side-rail section switch. Mirrors chino-web's
     // HomeSection onNavigate('movies'|'series').
     onNavigateToSection: ((String) -> Unit)? = null,
+    /** Plays the extra extraId of the hero title itemId: its trailer from
+     *  this server. */
+    onPlayTrailer: (itemId: String, extraId: String) -> Unit = { _, _ -> },
 ) {
     val model = remember { HomeSectionModel(container) }
     val state by model.state.collectAsState()
+    val uriHandler = LocalUriHandler.current
 
     when (val s = state) {
         HomeUiState.Loading -> Center { CircularProgressIndicator() }
@@ -75,6 +81,14 @@ fun HomeSection(
                     onPlay(id)
                 }
             },
+            // The hero title's Trailer does what its page's does: this
+            // server's trailer plays in the app, a link opens outside it.
+            onTrailerHero = { id, choice ->
+                when (choice) {
+                    is TrailerChoice.Local -> onPlayTrailer(id, choice.extra.id)
+                    is TrailerChoice.Link -> uriHandler.openUri(choice.trailer.url)
+                }
+            },
             onRemoveFromContinueWatching = model::removeFromContinueWatching,
             onToggleWatched = model::toggleWatched,
             onNavigateToSection = onNavigateToSection,
@@ -88,6 +102,7 @@ private fun ReadyContent(
     onItemSelected: (String) -> Unit,
     onPlay: (String) -> Unit,
     onPlayHero: (String) -> Unit,
+    onTrailerHero: (String, TrailerChoice) -> Unit,
     onRemoveFromContinueWatching: (String) -> Unit,
     onToggleWatched: (String) -> Unit,
     onNavigateToSection: ((String) -> Unit)? = null,
@@ -110,6 +125,7 @@ private fun ReadyContent(
                 streamToken = s.streamToken,
                 onMoreInfo = onItemSelected,
                 onPlay = onPlayHero,
+                onTrailer = onTrailerHero,
             )
         }
         if (s.continueWatching.isNotEmpty()) {
