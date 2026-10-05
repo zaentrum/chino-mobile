@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -130,11 +131,16 @@ class AddServerScreen(private val changeServer: Boolean = false) : Screen {
                     modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
                 ) {
                     LogoMark(sizeDp = 56)
+                    // A heading, in the heading face. Its lines are centred
+                    // like the column: on a narrow phone the mono title takes
+                    // two.
                     Text(
                         text = if (changeServer) "Change server" else "Connect to your server",
                         color = Color.White,
                         fontSize = 26.sp,
                         fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        style = ChinoHeading,
                     )
                     Text(
                         text = "Enter the address of your Chino server.",

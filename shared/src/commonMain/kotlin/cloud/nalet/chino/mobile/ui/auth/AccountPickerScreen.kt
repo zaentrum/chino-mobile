@@ -145,11 +145,13 @@ class AccountPickerScreen : Screen {
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column {
+                        // A page title, in the heading face.
                         Text(
                             text = "Who's watching?",
                             color = Color.White,
                             fontSize = if (isWide) 34.sp else 26.sp,
                             fontWeight = FontWeight.SemiBold,
+                            style = ChinoHeading,
                         )
                         Text(
                             text = "Tap to switch. Tap the sign-out badge to remove an account.",
