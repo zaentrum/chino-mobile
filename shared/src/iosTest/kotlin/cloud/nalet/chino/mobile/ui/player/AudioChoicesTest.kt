@@ -5,8 +5,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /** The audio menu's rows: AVFoundation's renditions named as the web names
- *  /play/info's tracks — the title, else the language — with codec and
- *  channels underneath. */
+ *  /play/info's tracks — the language first, else the title or NAME — with
+ *  codec and channels underneath. */
 class AudioChoicesTest {
     private val tracks = listOf(
         TrackInfo(index = 1, codec = "aac", language = "eng", title = "", default = true, channels = 2),
@@ -14,7 +14,7 @@ class AudioChoicesTest {
     )
 
     @Test
-    fun renditionsTakeTheTrackTitleElseTheLanguageName() {
+    fun renditionsTakeTheLanguageNameFirst() {
         val choices = audioChoicesFor(
             listOf(
                 AudioRendition(index = 0, name = "audio_eng", language = "en", selected = true),
@@ -22,7 +22,7 @@ class AudioChoicesTest {
             ),
             tracks,
         )
-        assertEquals(listOf("English", "Deutsch"), choices.map { it.label })
+        assertEquals(listOf("English", "German"), choices.map { it.label })
         assertEquals(listOf("AAC · Stereo", "EAC3 · 5.1"), choices.map { it.detail })
         assertEquals(listOf(true, false), choices.map { it.selected })
         assertEquals(listOf(0, 1), choices.map { it.index })
@@ -34,7 +34,7 @@ class AudioChoicesTest {
             listOf(AudioRendition(index = 0, name = "Deutsch", language = "ger", selected = true)),
             tracks,
         )
-        assertEquals("Deutsch", choices.single().label)
+        assertEquals("German", choices.single().label)
         assertEquals("EAC3 · 5.1", choices.single().detail)
     }
 
@@ -46,5 +46,18 @@ class AudioChoicesTest {
 
         val tagged = audioChoicesFor(listOf(AudioRendition(index = 0, name = "Main", language = "fra", selected = true)), emptyList())
         assertEquals("French", tagged.single().label)
+    }
+
+    @Test
+    fun aFilmWithoutDialogueAndATrackInNoLanguage() {
+        val choices = audioChoicesFor(
+            listOf(
+                AudioRendition(index = 0, name = "zxx", language = "zxx", selected = true),
+                AudioRendition(index = 1, name = "Track 1", language = "und", selected = false),
+                AudioRendition(index = 2, name = "AC3 5.1 @ 640 Kbps", language = null, selected = false),
+            ),
+            emptyList(),
+        )
+        assertEquals(listOf("No dialogue", "Unknown", "Unknown (2)"), choices.map { it.label })
     }
 }

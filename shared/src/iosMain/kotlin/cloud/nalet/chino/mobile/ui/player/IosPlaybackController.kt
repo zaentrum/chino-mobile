@@ -384,24 +384,34 @@ internal class IosPlaybackController(
     }
 }
 
-/** The audio menu: the renditions as chino-web names them — the track's
- *  title, else its language — with "AAC · Stereo" from /play/info. */
+/** The audio menu: the renditions as chino-web names them ([audioLabels]) —
+ *  by the language they are tagged with ("German", "No dialogue" for zxx),
+ *  by the track's title or the rendition's NAME where there is none — with
+ *  "AAC · Stereo" from /play/info. */
 internal fun audioChoicesFor(
     renditions: List<AudioRendition>,
     tracks: List<cloud.nalet.chino.mobile.data.api.TrackInfo>,
-): List<AudioChoice> = renditions.map { r ->
+): List<AudioChoice> {
     // chino-stream lists the renditions in /play/info's order; by language
     // when the counts differ.
-    val track = if (tracks.size == renditions.size) tracks[r.index] else tracks.firstOrNull { normalizeLang(it.language) == normalizeLang(r.language) }
-    val lang = r.language ?: track?.language
-    val label = track?.title?.trim()?.takeIf { it.isNotEmpty() }
-        ?: normalizeLang(lang).takeIf { it.isNotEmpty() }?.let { languageName(lang) }
-        ?: r.name
-    val detail = listOfNotNull(
-        track?.codec?.takeIf { it.isNotBlank() }?.let { if (it.equals("mp4a", ignoreCase = true)) "AAC" else it.uppercase() },
-        track?.channels?.takeIf { it > 0 }?.let { channelLabel(it) },
-    ).joinToString(" · ").ifEmpty { null }
-    AudioChoice(index = r.index, label = label, detail = detail, language = lang, selected = r.selected)
+    val matched = renditions.map { r ->
+        if (tracks.size == renditions.size) tracks[r.index] else tracks.firstOrNull { normalizeLang(it.language) == normalizeLang(r.language) }
+    }
+    val details = matched.map { track ->
+        listOfNotNull(
+            track?.codec?.takeIf { it.isNotBlank() }?.let { if (it.equals("mp4a", ignoreCase = true)) "AAC" else it.uppercase() },
+            track?.channels?.takeIf { it > 0 }?.let { channelLabel(it) },
+        ).joinToString(" · ").ifEmpty { null }
+    }
+    val langs = renditions.mapIndexed { i, r -> r.language ?: matched[i]?.language }
+    val labels = audioLabels(
+        renditions.mapIndexed { i, r ->
+            AudioLabelInput(langs[i], name = matched[i]?.title?.trim()?.takeIf { it.isNotEmpty() } ?: r.name, detail = details[i])
+        },
+    )
+    return renditions.mapIndexed { i, r ->
+        AudioChoice(index = r.index, label = labels[i], detail = details[i], language = langs[i], selected = r.selected)
+    }
 }
 
 private fun channelLabel(n: Int): String = when (n) {

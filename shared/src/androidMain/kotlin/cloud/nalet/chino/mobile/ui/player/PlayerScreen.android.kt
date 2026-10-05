@@ -70,6 +70,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Popup
@@ -375,8 +377,11 @@ private data class AudioTrack(
 
 private data class SubtitleTrack(
     val id: String,
+    /** What the menu shows ([withMenuLabels]). */
     val label: String,
     val language: String?,
+    /** The track's own label: the sidecar's, or the rendition's NAME. */
+    val title: String?,
     /** Names the track across rebuilt players (a quality switch): a sidecar's
      *  `sidecar:<id>`, else the format's id, else its language and label. */
     val key: String,
@@ -394,37 +399,40 @@ private const val SIDECAR_ID_PREFIX = "sidecar:"
 /** [SubtitleTrack.key] of "no subtitles". */
 private const val SUBTITLES_OFF = ""
 
-private fun collectAudioTracks(tracks: Tracks): List<AudioTrack> =
-    tracks.groups
+/** The audio menu's rows. Each is labelled by the language it is tagged with
+ *  ("German", "No dialogue" for zxx), by its NAME where it has none, two of
+ *  one language and format told apart by their NAMEs ([audioLabels]); then
+ *  its channels and codec. */
+private fun collectAudioTracks(tracks: Tracks): List<AudioTrack> {
+    val found = tracks.groups
         .filter { it.type == C.TRACK_TYPE_AUDIO }
-        .flatMap { g ->
-            (0 until g.length).map { i ->
-                val fmt = g.getTrackFormat(i)
-                val primary = fmt.label
-                    ?: fmt.language?.takeIf { it.isNotBlank() && it != "und" }
-                    ?: "Track ${i + 1}"
-                val parts = buildList {
-                    add(primary)
-                    if (fmt.channelCount > 0) {
-                        add(
-                            when (fmt.channelCount) {
-                                1 -> "Mono"; 2 -> "Stereo"; 6 -> "5.1"; 8 -> "7.1"
-                                else -> "${fmt.channelCount}ch"
-                            }
-                        )
-                    }
-                    fmt.codecs?.takeIf { it.isNotBlank() }?.let { add(it) }
+        .flatMap { g -> (0 until g.length).map { i -> g to i } }
+    val formats = found.map { (g, i) -> g.getTrackFormat(i) }
+    val details = formats.map { fmt ->
+        listOfNotNull(
+            fmt.channelCount.takeIf { it > 0 }?.let {
+                when (it) {
+                    1 -> "Mono"; 2 -> "Stereo"; 6 -> "5.1"; 8 -> "7.1"
+                    else -> "${it}ch"
                 }
-                AudioTrack(
-                    id = "${g.mediaTrackGroup.id}#$i",
-                    label = parts.joinToString(" • "),
-                    language = fmt.language,
-                    selected = g.isTrackSelected(i),
-                    group = g,
-                    trackIndex = i,
-                )
-            }
-        }
+            },
+            fmt.codecs?.takeIf { it.isNotBlank() },
+        )
+    }
+    val labels = audioLabels(
+        formats.mapIndexed { k, fmt -> AudioLabelInput(fmt.language, fmt.label, details[k].joinToString(" • ")) },
+    )
+    return found.mapIndexed { k, (g, i) ->
+        AudioTrack(
+            id = "${g.mediaTrackGroup.id}#$i",
+            label = (listOf(labels[k]) + details[k]).joinToString(" • "),
+            language = formats[k].language,
+            selected = g.isTrackSelected(i),
+            group = g,
+            trackIndex = i,
+        )
+    }
+}
 
 private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
     tracks.groups
@@ -432,20 +440,29 @@ private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
         .flatMap { g ->
             (0 until g.length).map { i ->
                 val fmt = g.getTrackFormat(i)
-                val label = fmt.label ?: fmt.language ?: "Track ${i + 1}"
                 SubtitleTrack(
                     id = "${g.mediaTrackGroup.id}#$i",
-                    label = label,
+                    label = fmt.label ?: fmt.language ?: "Track ${i + 1}",
                     language = fmt.language,
+                    title = fmt.label,
                     key = fmt.id ?: "${fmt.language.orEmpty()}:${fmt.label.orEmpty()}",
                     forced = (fmt.selectionFlags and C.SELECTION_FLAG_FORCED) != 0 ||
-                        label.contains("forced", ignoreCase = true),
+                        fmt.label.orEmpty().contains("forced", ignoreCase = true),
                     selected = g.isTrackSelected(i),
                     group = g,
                     trackIndex = i,
                 )
             }
         }
+
+/** The captions menu's labels ([subtitleLabels]): each track by its language
+ *  ("German", "No dialogue" for zxx), with what its own label says beyond
+ *  that ("English · SDH"); a track in no language by its own label, else
+ *  "Unknown". */
+private fun withMenuLabels(tracks: List<SubtitleTrack>): List<SubtitleTrack> {
+    val labels = subtitleLabels(tracks.map { SubtitleLabelInput(it.language, it.title, it.forced) })
+    return tracks.mapIndexed { i, t -> t.copy(label = labels[i]) }
+}
 
 private fun applyAudioSelection(player: ExoPlayer, track: AudioTrack) {
     val params = player.trackSelectionParameters
@@ -827,12 +844,15 @@ private fun PlaybackSurface(
                 audioTracks = collectAudioTracks(t)
                 // The sidecars, then the master's SUBTITLES renditions that
                 // are not a sidecar again: a package's HLS subtitles are its
-                // sidecars twice. The menu and the default rule read this.
-                subtitleTracks = sidecarsThenOtherRenditions(
-                    tracks = collectSubtitleTracks(t),
-                    isSidecar = { it.key.startsWith(SIDECAR_ID_PREFIX) },
-                    lang = { it.language },
-                    forced = { it.forced },
+                // sidecars twice. The menu and the default rule read this,
+                // each track labelled by its language.
+                subtitleTracks = withMenuLabels(
+                    sidecarsThenOtherRenditions(
+                        tracks = collectSubtitleTracks(t),
+                        isSidecar = { it.key.startsWith(SIDECAR_ID_PREFIX) },
+                        lang = { it.language },
+                        forced = { it.forced },
+                    ),
                 )
                 subtitlesEnabled = subtitleTracks.any { it.selected }
                 // Once per player, when its tracks are known: the viewer's
@@ -2219,10 +2239,11 @@ private fun ChromeButton(
     }
 }
 
-/** Compact pill chip showing the current audio track's 3-letter language
- *  code (e.g. "JAP", "ENG"), or "Audio" for a track that names no language
- *  ("und", or no tag at all). Mirrors chino-web's audio chip at
- *  PlayerPage.tsx L2939-2945. When `enabled` (multi-track file), tapping
+/** Compact pill chip showing the current audio track's language in three
+ *  letters (e.g. "ENG", "GER"), "—" for a film without dialogue (zxx), or
+ *  "Audio" for a track that names no language ("und", or no tag at all) —
+ *  [audioChipLabel], as chino-web's audio chip reads; the whole name to a
+ *  screen reader. When `enabled` (multi-track file), tapping
  *  the chip opens the AudioMenuCard via the shared OpenPopover state.
  *  Single-track files render a non-tappable chip (no menu, same look). */
 @Composable
@@ -2232,8 +2253,8 @@ private fun AudioLangChip(
     accent: Boolean,
     onClick: () -> Unit,
 ) {
-    // "und" was "Unknown" cut to "UNK": a track with no language is audio.
-    val label = if (normalizeLang(language).isEmpty()) "Audio" else langLabel(language).take(3).uppercase()
+    val label = audioChipLabel(language)
+    val description = "Audio: ${languageName(language)}"
     val bg = if (accent) Color(0xFF58A6FF).copy(alpha = 0.3f)
     else Color.White.copy(alpha = 0.1f)
     Box(
@@ -2254,6 +2275,7 @@ private fun AudioLangChip(
             color = Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { contentDescription = description },
         )
     }
 }
@@ -2455,33 +2477,6 @@ private fun MenuHeader(title: String, trailing: String?) {
             )
         }
     }
-}
-
-/** Best-effort ISO 639 → English name lookup matching chino-web's
- *  LANG_NAMES table at PlayerPage.tsx L76-84. We only need it for the
- *  chip's 3-letter cap — passing through the raw code if unknown still
- *  reads correctly (e.g. an unmapped "fre" → "FRE"). */
-private fun langLabel(code: String): String {
-    val map = mapOf(
-        "en" to "English", "eng" to "English",
-        "ja" to "Japanese", "jpn" to "Japanese", "jap" to "Japanese",
-        "de" to "German", "ger" to "German", "deu" to "German",
-        "fr" to "French", "fre" to "French", "fra" to "French",
-        "es" to "Spanish", "spa" to "Spanish",
-        "it" to "Italian", "ita" to "Italian",
-        "pt" to "Portuguese", "por" to "Portuguese",
-        "ru" to "Russian", "rus" to "Russian",
-        "zh" to "Chinese", "chi" to "Chinese", "zho" to "Chinese",
-        "ko" to "Korean", "kor" to "Korean",
-        "ar" to "Arabic", "ara" to "Arabic",
-        "hi" to "Hindi", "hin" to "Hindi",
-        "tr" to "Turkish", "tur" to "Turkish",
-        "pl" to "Polish", "pol" to "Polish",
-        "nl" to "Dutch", "dut" to "Dutch", "nld" to "Dutch",
-        "sv" to "Swedish", "swe" to "Swedish",
-        "und" to "Unknown",
-    )
-    return map[code.lowercase()] ?: code
 }
 
 /** Inline speed-rate selector. Rendered as a child of the bottom strip

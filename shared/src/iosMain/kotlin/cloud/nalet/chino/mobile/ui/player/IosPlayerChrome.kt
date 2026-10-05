@@ -63,6 +63,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -703,9 +705,12 @@ internal fun ChromeButton(icon: ImageVector, onClick: () -> Unit, variant: Chrom
  *  picture (where they would only restart the auto-hide timer). */
 private fun Modifier.absorbStrayTaps(): Modifier = pointerInput(Unit) { detectTapGestures(onTap = { }) }
 
-/** The playing audio's language as three letters ("ENG", "GER"), web's chip. */
+/** The playing audio's language as three letters ("ENG", "GER"), "—" for a
+ *  film without dialogue (zxx), "Audio" for a track in no language — web's
+ *  chip ([audioChipLabel]); the whole name to a screen reader. */
 @Composable
 private fun AudioLangChip(language: String, enabled: Boolean, accent: Boolean, onClick: () -> Unit) {
+    val description = "Audio: ${languageName(language)}"
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
@@ -715,7 +720,13 @@ private fun AudioLangChip(language: String, enabled: Boolean, accent: Boolean, o
             }
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Text(text = languageName(language).take(3).uppercase(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = audioChipLabel(language),
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { contentDescription = description },
+        )
     }
 }
 

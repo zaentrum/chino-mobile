@@ -53,10 +53,18 @@ class LanguagesTest {
         assertEquals("Traditional Chinese", languageName("zh-Hant-TW"))
         // A region without a name of its own is its language.
         assertEquals("English", languageName("en-NZ"))
-        assertEquals("Unknown language", languageName("und"))
-        assertEquals("Unknown language", languageName(null))
+        assertEquals("Unknown", languageName("und"))
+        assertEquals("Unknown", languageName(null))
         // A code there is no name for is shown as it came.
         assertEquals("qaa", languageName("qaa"))
+    }
+
+    @Test
+    fun zxxNoLinguisticContentIsAFilmWithoutDialogue() {
+        for (code in listOf("zxx", "ZXX", " zxx ", "zxx-Latn")) assertEquals("No dialogue", languageName(code), code)
+        // Still no language to follow: no subtitles come on for it.
+        assertEquals("", normalizeLang("zxx"))
+        assertNull(defaultSubtitleLang(audioLang = "zxx", subtitlePref = "eng"))
     }
 
     @Test
@@ -81,7 +89,7 @@ class LanguagesTest {
                 "German · Forced",
                 "German",
                 "German (2)",
-                "Unknown language",
+                "Unknown",
             ),
             subtitleLabels(
                 listOf(
@@ -96,6 +104,117 @@ class LanguagesTest {
                     SubtitleLabelInput("und"),
                 ),
             ),
+        )
+    }
+
+    @Test
+    fun subtitlesWithoutDialogueOrInNoKnownLanguageNoDialogueElseTheTitleElseUnknown() {
+        assertEquals(
+            listOf("No dialogue", "No dialogue (2)", "No dialogue · Signs", "Signs & Songs", "Unknown", "Forced", "Unknown (2)"),
+            subtitleLabels(
+                listOf(
+                    SubtitleLabelInput("zxx"),
+                    SubtitleLabelInput("zxx", title = "zxx"),
+                    SubtitleLabelInput("zxx", title = "Signs"),
+                    SubtitleLabelInput("und", title = "Signs & Songs"),
+                    SubtitleLabelInput("und", title = "und"),
+                    SubtitleLabelInput("", title = "Forced", forced = true),
+                    SubtitleLabelInput("und"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun audioByItsLanguageFirstNoDialogueForZxxUnknownForNone() {
+        assertEquals(
+            listOf("English", "No dialogue", "Unknown", "German", "Brazilian Portuguese"),
+            audioLabels(
+                listOf(
+                    AudioLabelInput("eng"),
+                    AudioLabelInput("zxx"),
+                    AudioLabelInput("und"),
+                    AudioLabelInput("ger", name = "Deutsch"),
+                    AudioLabelInput("pt-BR"),
+                ),
+            ),
+        )
+        // A packager's NAMEs: the language wins, and says the same.
+        assertEquals(
+            listOf("English", "No dialogue", "Unknown"),
+            audioLabels(
+                listOf(
+                    AudioLabelInput("en", name = "English"),
+                    AudioLabelInput("zxx", name = "No dialogue"),
+                    AudioLabelInput("und", name = "Unknown"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun anOldPlaylistsFreeTextNamesAFormatANumberOrACodeIsNoLabel() {
+        assertEquals(
+            listOf("English", "French", "No dialogue", "Unknown", "Unknown (2)", "Unknown (3)"),
+            audioLabels(
+                listOf(
+                    AudioLabelInput("eng", name = "AC3 5.1 @ 640 Kbps"),
+                    AudioLabelInput("fre", name = "DTS-HD Master Audio / 5.1 / 48 kHz / 2618 kbps / 24-bit"),
+                    AudioLabelInput("zxx", name = "zxx"),
+                    AudioLabelInput("und", name = "Track 0"),
+                    AudioLabelInput("und", name = "Dolby Digital 5.1"),
+                    AudioLabelInput("und", name = "und"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun aTrackInNoLanguageIsCalledWhatItsNameSaysACodeWithNoNameToo() {
+        assertEquals(
+            listOf("Director's Commentary", "Commentary", "Unknown", "Klingon", "qaa"),
+            audioLabels(
+                listOf(
+                    AudioLabelInput("und", name = "Director's Commentary"),
+                    AudioLabelInput("", name = "Commentary 5.1"),
+                    AudioLabelInput(null, name = "Stereo"),
+                    AudioLabelInput("qaa", name = "Klingon"),
+                    AudioLabelInput("qaa"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun twoOfOneLanguageToldApartByTheirNamesElseNumberedAnotherDetailTellsThemApart() {
+        assertEquals(
+            listOf("English", "English · Commentary", "English · Commentary (SDH)", "English (2)", "English"),
+            audioLabels(
+                listOf(
+                    AudioLabelInput("en", name = "English", detail = "Stereo • mp4a.40.2"),
+                    AudioLabelInput("en", name = "Commentary", detail = "Stereo • mp4a.40.2"),
+                    AudioLabelInput("en", name = "English Commentary (SDH)", detail = "Stereo • mp4a.40.2"),
+                    AudioLabelInput("en", name = "AC3 5.1", detail = "Stereo • mp4a.40.2"),
+                    AudioLabelInput("en", name = "English 5.1", detail = "5.1 • ac-3"),
+                ),
+            ),
+        )
+        // chino-stream's unique NAMEs: "English (2)" is numbered, not "English · 2".
+        assertEquals(
+            listOf("English", "English (2)"),
+            audioLabels(listOf(AudioLabelInput("eng", name = "English"), AudioLabelInput("eng", name = "English (2)"))),
+        )
+        assertEquals(
+            listOf("No dialogue", "No dialogue · Music & Effects"),
+            audioLabels(listOf(AudioLabelInput("zxx"), AudioLabelInput("zxx", name = "Music & Effects"))),
+        )
+    }
+
+    @Test
+    fun theAudioChipThreeLettersADashForNoDialogueAudioForNoLanguage() {
+        assertEquals(
+            listOf("ENG", "GER", "FRE", "ENG", "POR", "—", "—", "Audio", "Audio", "Audio"),
+            listOf("eng", "ger", "fre", "en-US", "pt-BR", "zxx", "ZXX", "und", "", null).map { audioChipLabel(it) },
         )
     }
 

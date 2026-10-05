@@ -43,6 +43,13 @@ private val OLD_1 = mapOf("iw" to "he", "in" to "id", "ji" to "yi")
 // one could read or listen to.
 private val NO_LANGUAGE = setOf("und", "zxx", "mul", "mis")
 
+/** What a track tagged "zxx" (no linguistic content) is called: the audio of a
+ *  film without dialogue. */
+const val NO_DIALOGUE = "No dialogue"
+
+/** What a track is called whose language is not known ("und", none). */
+const val UNKNOWN_LANGUAGE = "Unknown"
+
 // The English name of each normalised language (639-1, else 639-2/T).
 private val NAMES = mapOf(
     "af" to "Afrikaans", "am" to "Amharic", "ar" to "Arabic", "az" to "Azerbaijani",
@@ -84,6 +91,9 @@ private val PRIMARY = Regex("^[a-z]{2,3}$")
 
 private fun subtags(code: String): List<String> = code.trim().replace('_', '-').split('-')
 
+/** Whether the code is "zxx": no linguistic content, no dialogue. */
+fun isNoDialogue(code: String?): Boolean = code != null && subtags(code).first().lowercase() == "zxx"
+
 /**
  * The language a code names, as one comparable key: the 639-1 code where there
  * is one ("ger", "deu", "de", "de-CH" are all "de"), else the 639-2/T code.
@@ -115,11 +125,12 @@ fun languageTag(code: String?): String {
 }
 
 /** The language's English name ("ger" -> "German", "pt-BR" -> "Brazilian
- *  Portuguese"); the code as it came when there is no name for it; "Unknown
- *  language" for none. */
+ *  Portuguese"); the code as it came when there is no name for it; "No
+ *  dialogue" for "zxx", "Unknown" for none. */
 fun languageName(code: String?): String {
+    if (isNoDialogue(code)) return NO_DIALOGUE
     val tag = languageTag(code)
-    if (tag.isEmpty()) return "Unknown language"
+    if (tag.isEmpty()) return UNKNOWN_LANGUAGE
     VARIANT_NAMES[tag]?.let { return it }
     // A tag with a script and a region ("zh-Hant-TW"): the script variant's name.
     VARIANT_NAMES[tag.split('-').take(2).joinToString("-")]?.let { return it }
@@ -137,15 +148,23 @@ data class SubtitleLabelInput(
 
 private val CODE_LIKE = Regex("^[a-z]{2,3}([-_][a-z0-9]+)*$", RegexOption.IGNORE_CASE)
 
-/** A title that is only the track's language code again ("eng" on English). */
-private fun sameLanguageCode(title: String, lang: String?): Boolean =
-    CODE_LIKE.matches(title) && normalizeLang(title).isNotEmpty() && normalizeLang(title) == normalizeLang(lang)
+/** Whether the code says what the track is in: a language, or no dialogue. */
+private fun hasLanguage(code: String?): Boolean = normalizeLang(code).isNotEmpty() || isNoDialogue(code)
+
+/** A title that is only a language code: the track's own again ("eng" on
+ *  English), or one that names no language ("und"). */
+private fun sameLanguageCode(title: String, lang: String?): Boolean {
+    if (!CODE_LIKE.matches(title)) return false
+    val named = normalizeLang(title)
+    return named.isEmpty() || named == normalizeLang(lang)
+}
 
 /**
  * The subtitle menu's labels, one per track, in order: the language's name
- * ("German"), the track's title when it says more than that ("English · SDH"),
- * "(forced)" for a forced track; and where two tracks would still read the
- * same, a number for the second and later ones ("German (2)").
+ * ("German", "No dialogue" for zxx), the track's title when it says more than
+ * that ("English · SDH"), "(forced)" for a forced track; a track tagged with no
+ * language by its title, else "Unknown"; and where two tracks would still read
+ * the same, a number for the second and later ones ("German (2)").
  */
 fun subtitleLabels(tracks: List<SubtitleLabelInput>): List<String> {
     val labels = tracks.map { t ->
@@ -153,17 +172,127 @@ fun subtitleLabels(tracks: List<SubtitleLabelInput>): List<String> {
         val title = t.title?.trim().orEmpty()
         var label = name
         if (title.isNotEmpty() && !title.equals(name, ignoreCase = true) && !sameLanguageCode(title, t.lang)) {
-            label = if (title.contains(name, ignoreCase = true)) title else "$name · $title"
+            label = when {
+                !hasLanguage(t.lang) -> title
+                title.contains(name, ignoreCase = true) -> title
+                else -> "$name · $title"
+            }
         }
         if (t.forced && !label.contains("forced", ignoreCase = true)) label += " (forced)"
         label
     }
+    return numbered(labels)
+}
+
+/** The labels, the second and later of the ones that read the same numbered
+ *  ("German (2)"). [key] says which read the same: by default the label. */
+private fun numbered(labels: List<String>, key: (String, Int) -> String = { label, _ -> label }): List<String> {
     val seen = HashMap<String, Int>()
-    return labels.map { label ->
-        val n = (seen[label] ?: 0) + 1
-        seen[label] = n
+    return labels.mapIndexed { i, label ->
+        val k = key(label, i)
+        val n = (seen[k] ?: 0) + 1
+        seen[k] = n
         if (n == 1) label else "$label ($n)"
     }
+}
+
+/** What an audio menu is told about one track. */
+data class AudioLabelInput(
+    /** The language code as the track is tagged. */
+    val lang: String?,
+    /** What the track is called: the file's title, or the master's NAME. */
+    val name: String? = null,
+    /** What the menu shows beside the label ("AAC · Stereo"). Two tracks that
+     *  differ there are told apart there. */
+    val detail: String? = null,
+)
+
+// A name that describes the source's audio format — a codec, a bitrate, a
+// sample rate or depth ("AC3 5.1 @ 640 Kbps", "DTS-HD MA 5.1") — and so
+// nothing of the track: the stream is AAC whatever the file had. chino-web's
+// lib/languages.ts.
+private val FORMAT_WORDS = Regex(
+    """(^|[^A-Za-z0-9])(dts(-hd)?|truehd|atmos|dolby|e?-?ac-?3|ddp?\+?|aac|flac|l?pcm|opus|mp3|vorbis|lossless|master audio|\d+ ?k?hz|\d* ?[km]bps|kb/s|\d+[- ]?bit)(?![A-Za-z0-9])""",
+    RegexOption.IGNORE_CASE,
+)
+
+// A channel layout, which goes from a name that names the track ("Commentary
+// 5.1" is "Commentary"): the menu shows the channels beside it.
+private val LAYOUT_WORDS = Regex(
+    """(^|[^A-Za-z0-9.])(mono|stereo|surround|[1-9]\.[0-2]|\d{1,2} ?ch(annels?)?)(?![A-Za-z0-9.])""",
+    RegexOption.IGNORE_CASE,
+)
+
+// A name that only numbers the track ("Track 2", "Audio Track 1", "2").
+private val NUMBERED = Regex("""^(audio|sound|track|stream|[\s#])*\d*$""", RegexOption.IGNORE_CASE)
+
+private val EMPTY_BRACKETS = Regex("""\(\s*\)|\[\s*]""")
+private val SPACES = Regex("""\s+""")
+private val EDGE_SEPARATORS = Regex("""^[\s\-–—:·,|/]+|[\s\-–—:·,|/]+$""")
+private val LEADING_SEPARATORS = Regex("""^[\s\-–—:·,|]+""")
+private val QUALIFIER_START = Regex("""^([\s\-–—:·,|(\[]|$)""")
+
+/** What a track's name says about it, or "" when it says nothing: none, a
+ *  format, a number, a language code. */
+private fun trackName(name: String?, lang: String?): String {
+    val raw = name?.trim().orEmpty()
+    if (raw.isEmpty() || FORMAT_WORDS.containsMatchIn(raw)) return ""
+    val t = raw.replace(LAYOUT_WORDS, "$1")
+        .replace(EMPTY_BRACKETS, "")
+        .replace(SPACES, " ")
+        .replace(EDGE_SEPARATORS, "")
+    if (t.isEmpty() || NUMBERED.matches(t) || sameLanguageCode(t, lang)) return ""
+    return t
+}
+
+/** What a track's name adds to its label ("English Commentary" on an English
+ *  track: "Commentary"); "" when nothing. */
+private fun nameQualifier(name: String?, label: String, lang: String?): String {
+    var t = trackName(name, lang)
+    if (t.startsWith(label, ignoreCase = true) && QUALIFIER_START.containsMatchIn(t.substring(label.length))) {
+        t = t.substring(label.length).replace(LEADING_SEPARATORS, "").trim()
+        if ((t.startsWith("(") && t.endsWith(")")) || (t.startsWith("[") && t.endsWith("]"))) {
+            t = t.substring(1, t.length - 1).trim()
+        }
+    }
+    return if (t.isNotEmpty() && !NUMBERED.matches(t)) t else ""
+}
+
+/**
+ * The audio menu's labels, one per track, in order: the language the track is
+ * tagged with, by name ("German"; "No dialogue" for zxx). A track tagged with
+ * none is called what its name says ("Commentary") — not a format ("AC3 5.1 @
+ * 640 Kbps"), a number ("Track 1") or a code — else "Unknown". Two that would
+ * read the same, with the same detail, are told apart by their names
+ * ("English · Commentary"), else numbered ("English (2)"). chino-web's rule.
+ */
+fun audioLabels(tracks: List<AudioLabelInput>): List<String> {
+    val bases = tracks.map { t ->
+        if (hasLanguage(t.lang)) {
+            val name = languageName(t.lang)
+            // No name for the code: the track's own name before the code.
+            if (name != t.lang.orEmpty().trim()) return@map name
+        }
+        trackName(t.name, t.lang).ifEmpty { if (hasLanguage(t.lang)) t.lang.orEmpty().trim() else UNKNOWN_LANGUAGE }
+    }
+    val key = { label: String, i: Int -> label + "\u0000" + tracks[i].detail.orEmpty() }
+    val count = HashMap<String, Int>()
+    bases.forEachIndexed { i, b -> count[key(b, i)] = (count[key(b, i)] ?: 0) + 1 }
+    val labels = bases.mapIndexed { i, b ->
+        if ((count[key(b, i)] ?: 0) < 2) return@mapIndexed b
+        val q = nameQualifier(tracks[i].name, b, tracks[i].lang)
+        if (q.isNotEmpty() && !q.equals(b, ignoreCase = true)) "$b · $q" else b
+    }
+    return numbered(labels, key)
+}
+
+/** The audio chip's three letters for the track playing: its language's name
+ *  cut to three ("ENG", "GER"), "—" for no dialogue (zxx), "Audio" for a track
+ *  tagged with no language. */
+fun audioChipLabel(code: String?): String {
+    if (isNoDialogue(code)) return "—"
+    val lang = normalizeLang(code)
+    return if (lang.isEmpty()) "Audio" else languageName(lang).take(3).uppercase()
 }
 
 /**
