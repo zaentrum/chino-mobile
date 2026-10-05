@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -429,13 +430,15 @@ private fun ZapInfo(item: Item, compact: Boolean, actions: @Composable () -> Uni
                 )
                 Text("Zap", color = ChinoCloudBlue, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
+            // ZapCard.tsx: `h2.text-2xl font-semibold`, in the heading face.
             Text(
                 text = item.title,
                 color = Color.White,
                 fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = if (compact) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
+                style = ChinoHeading,
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -485,7 +488,8 @@ private fun ZapMessage(text: String, subtitle: String? = null, spinner: Boolean 
                     modifier = Modifier.size(48.dp),
                 )
             }
-            Text(text = text, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            // The web's EmptyState h2.
+            Text(text = text, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, style = ChinoHeading)
             subtitle?.let {
                 Text(
                     text = it,
