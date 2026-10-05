@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.interop.LocalUIViewController
 import cloud.nalet.chino.mobile.data.api.PlayInfo
 import cloud.nalet.chino.mobile.data.api.Segment
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import coil3.compose.AsyncImage
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Captions
@@ -152,7 +153,7 @@ internal fun PlaybackFailurePanel(
         ) {
             Icon(Lucide.TriangleAlert, contentDescription = null, tint = Color(0xFFF85149), modifier = Modifier.size(40.dp))
             Spacer(Modifier.height(12.dp))
-            Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+            Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, style = ChinoHeading)
             Spacer(Modifier.height(4.dp))
             Text(label, color = MutedText, fontSize = 14.sp, lineHeight = 20.sp, textAlign = TextAlign.Center)
             Spacer(Modifier.height(20.dp))
@@ -474,7 +475,8 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
             ChromeButton(icon = Lucide.ArrowLeft, onClick = onBack)
             ChromeButton(icon = Lucide.House, onClick = onHome)
             // The title takes the rest of the row ("Series — S01E02 · Title"
-            // needs it on a phone held upright).
+            // needs it on a phone held upright). The web player's h1, in the
+            // heading face.
             Text(
                 text = title,
                 color = Color.White,
@@ -482,6 +484,7 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                style = ChinoHeading,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -1023,7 +1026,7 @@ private fun PlaybackInfoDialog(info: PlayInfo?, positionMs: Long, durationMs: Lo
         ) {
             Column {
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Playback info", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Text("Playback info", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium, style = ChinoHeading, modifier = Modifier.weight(1f))
                     Box(modifier = Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
                         Icon(Lucide.X, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
                     }
@@ -1098,7 +1101,7 @@ private fun ModeBadge(mode: String?, reason: String?) {
 @Composable
 private fun InfoSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, style = ChinoHeading)
         content()
     }
 }

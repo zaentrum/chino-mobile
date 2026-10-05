@@ -105,6 +105,7 @@ import cloud.nalet.chino.mobile.data.api.Segment
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.ui.feedback.BugReportDialog
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Captions
 import com.composables.icons.lucide.ChevronLeft
@@ -1643,6 +1644,7 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
                 onClick = onHome,
                 variant = ChromeBtnVariant.Neutral,
             )
+            // The web player's `h1.text-lg font-medium truncate`.
             Text(
                 text = title,
                 color = Color.White,
@@ -1650,6 +1652,7 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                style = ChinoHeading,
                 modifier = Modifier.weight(1f, fill = false),
             )
             // The playback mode is no longer surfaced on the always-visible
@@ -2793,6 +2796,7 @@ private fun PlaybackInfoDialog(
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium,
+                        style = ChinoHeading,
                         modifier = Modifier.weight(1f),
                     )
                     Box(
@@ -2991,11 +2995,13 @@ private fun DecodeCapabilitiesSection(codecs: List<DeviceCodecProbe>) {
 @Composable
 private fun InfoSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // The web's h3, in the heading face.
         Text(
             text = title,
             color = Color.White,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
+            style = ChinoHeading,
         )
         content()
     }
