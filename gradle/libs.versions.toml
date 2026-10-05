@@ -9,6 +9,8 @@ voyager = "1.1.0-beta03"
 
 androidActivity = "1.9.3"
 androidLifecycle = "2.8.7"
+# The multiplatform lifecycle Compose Multiplatform 1.7.3 is built with.
+lifecycleMultiplatform = "2.8.4"
 androidCoreKtx = "1.15.0"
 androidDatastore = "1.1.1"
 androidBrowser = "1.8.0"
@@ -39,6 +41,10 @@ ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "kto
 
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+
+# LocalLifecycleOwner + repeatOnLifecycle in commonMain: the activity's
+# lifecycle on Android, the hosting view controller's on iOS.
+lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycleMultiplatform" }
 
 # Shared unit tests (commonTest — run on the JVM by :shared:testDebugUnitTest
 # and on the iOS simulator by :shared:iosSimulatorArm64Test). MockEngine

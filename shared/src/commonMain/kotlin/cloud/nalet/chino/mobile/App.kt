@@ -22,6 +22,7 @@ import cloud.nalet.chino.mobile.data.auth.LocalSignInLauncher
 import cloud.nalet.chino.mobile.data.auth.SignInLauncher
 import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
+import cloud.nalet.chino.mobile.ui.notices.NoticesPolling
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.shell.LogoMark
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
@@ -121,6 +122,10 @@ fun App(
                         else -> MainShellScreen()
                     }
                     Navigator(initialScreen)
+                    // What addons told the signed-in person, asked for beside
+                    // the navigator — whichever screen it shows — while the
+                    // app is in the foreground.
+                    NoticesPolling()
                 }
                 // M3 status-bar accent strip — scrims the system-status-
                 // bar inset zone with #161B22 (one step lighter than the

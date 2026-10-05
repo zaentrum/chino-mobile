@@ -49,6 +49,10 @@ kotlin {
 
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
+            // The app's lifecycle in common code — whether it is in the
+            // foreground, for the notices poll. compose.ui brings the same
+            // version already; declared because commonMain uses it.
+            implementation(libs.lifecycle.runtime.compose)
 
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
