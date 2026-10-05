@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -122,13 +123,15 @@ fun BrowseSection(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        // Page title spans the full grid width as a header row.
+        // Page title spans the full grid width as a header row: the web's
+        // h1, in the heading face.
         item(span = { GridItemSpan(maxLineSpan) }) {
             Text(
                 text = pageTitle,
                 color = Color.White,
                 fontSize = 36.sp,
                 fontWeight = FontWeight.Bold,
+                style = ChinoHeading,
                 modifier = Modifier.padding(bottom = 16.dp),
             )
         }
@@ -331,6 +334,7 @@ private fun BrowseCard(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // MediaCard's h3 on the web: the heading face.
             Text(
                 text = item.title,
                 color = ChinoFg2,
@@ -338,6 +342,7 @@ private fun BrowseCard(
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                style = ChinoHeading,
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
