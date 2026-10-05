@@ -80,8 +80,8 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.model.Item
-import cloud.nalet.chino.mobile.data.model.Trailer
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
+import cloud.nalet.chino.mobile.ui.trailer.pickTrailer
 import coil3.compose.AsyncImage
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.ChevronDown
@@ -252,7 +252,7 @@ private fun ReadyContent(
     val uriHandler = LocalUriHandler.current
     // Resolved trailer URL (null when none) — drives both the pill's
     // visibility and its click. Mirrors web/TV pickTrailer.
-    val trailerUrl = pickTrailer(item.trailers)
+    val trailerUrl = pickTrailer(item.trailers)?.url
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(ChinoBg2)) {
         // Backdrop = 21:9 but capped at 60vh (web `max-h-[60vh]`) so in
         // landscape the action row stays near the fold instead of the tall
@@ -784,21 +784,6 @@ private fun GenreChips(genres: List<String>) {
             }
         }
     }
-}
-
-/** Prefer the most-likely "Official Trailer" YouTube entry; fall back to
- *  the first. Mirrors chino-web's pickTrailer (DetailPage.tsx) and the TV
- *  client. Returns the resolved trailer URL, or null when none exists. */
-private fun pickTrailer(trailers: List<Trailer>): String? {
-    if (trailers.isEmpty()) return null
-    val yt = trailers.filter { (it.site ?: "").contains("youtube", ignoreCase = true) }
-    val pool = if (yt.isNotEmpty()) yt else trailers
-    val picked = pool.firstOrNull {
-        val t = it.title.orEmpty()
-        t.contains("official", ignoreCase = true) && t.contains("trailer", ignoreCase = true)
-    } ?: pool.firstOrNull { it.title.orEmpty().contains("trailer", ignoreCase = true) }
-        ?: pool.first()
-    return picked.url
 }
 
 /** Episodes accordion — one collapsible row per season, expanded into
