@@ -40,7 +40,13 @@ data class Item(
     @SerialName("watched_at") val watchedAt: String? = null,
     @SerialName("duration_ms") val durationMs: Long? = null,
     val cast: List<CastMember> = emptyList(),
+    /** The title's links to online videos (detail only). A trailer this
+     *  server plays is never here: it is one of [extras]. */
     val trailers: List<Trailer> = emptyList(),
+    /** The title's extras that play from this server — its trailers,
+     *  teasers, featurettes, … — in the order a viewer sees them (detail
+     *  only; chino-api leaves it out when none plays). */
+    val extras: List<Extra> = emptyList(),
     /** Free-form genre tags from katalog metadata, e.g.
      *  ["Action & Adventure", "Animation"]. Rendered as pill chips on
      *  the Detail page (web: DetailPage.tsx L160-170). */
@@ -117,6 +123,39 @@ data class Trailer(
     @SerialName("external_id") val externalId: String? = null,
     val title: String? = null,
 )
+
+/**
+ * One of a movie's or a series' extras, as chino-api lists it with the
+ * title's detail: a trailer, a teaser, a featurette, … — a file of its own,
+ * packaged for streaming apart from the title. Every field has a default, so
+ * an extra short of one never fails the whole item; [playable] says whether
+ * it can be played. An extra has no progress, watched, segments, trickplay
+ * or play info of its own.
+ */
+@Serializable
+data class Extra(
+    val id: String = "",
+    /** trailer, teaser, featurette, behind-the-scenes, making-of,
+     *  deleted-scene, interview, gag-reel, short or other; a kind the app
+     *  does not know is skipped. */
+    val kind: String = "",
+    val title: String = "",
+    /** BCP 47, when known ("en"). */
+    val language: String? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    /** Set on a series' extra of one season (0 the specials). */
+    @SerialName("season_number") val seasonNumber: Int? = null,
+    /** It plays from this server — chino-api always says so. */
+    val local: Boolean = false,
+    /** The extra's HLS master from the server root
+     *  ("/api/v1/items/{id}/extras/{extraId}/play/master.m3u8"), asked for
+     *  as a title's master is: `?stream=<token>&caps=<caps>`. Resolve with
+     *  [cloud.nalet.chino.mobile.data.api.artworkUrl]. */
+    @SerialName("play_path") val playPath: String = "",
+) {
+    /** It can be played here: it has an id and a master, from this server. */
+    val playable: Boolean get() = id.isNotBlank() && local && playPath.isNotBlank()
+}
 
 /** The `{ items }` envelope of chino-api's item lists (/v1/items,
  *  /v1/items/{id}/similar, /v1/me/watched). There is no page token: lists

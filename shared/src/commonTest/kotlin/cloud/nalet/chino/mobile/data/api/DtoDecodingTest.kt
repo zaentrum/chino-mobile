@@ -50,6 +50,43 @@ class DtoDecodingTest {
         )
         assertEquals("abc", item.trailers.single().externalId)
         assertTrue(item.roles.isEmpty())
+        // chino-api leaves extras out when none plays, and an older one knows none.
+        assertTrue(item.extras.isEmpty())
+    }
+
+    @Test
+    fun aTitlesExtrasComeBesideItsTrailerLinks() {
+        // chino-api's item detail with an extra, as its README shows it.
+        val item = ChinoJson.decodeFromString<Item>(
+            """
+            {"id":"9c4e7a12-3b5d-4f60-8a91-0e2d4c6b8f13","type":"movie","title":"A Film",
+             "trailers":[{"site":"YouTube","external_id":"x1","url":"https://www.youtube.com/watch?v=x1","title":"Official Trailer"}],
+             "extras":[
+               {"id":"1b5c2a8e-6f0d-4c3e-9a51-2d7f0c4b8e01","kind":"trailer","title":"Trailer","language":"en",
+                "duration_ms":33000,"local":true,
+                "play_path":"/api/v1/items/9c4e7a12-3b5d-4f60-8a91-0e2d4c6b8f13/extras/1b5c2a8e-6f0d-4c3e-9a51-2d7f0c4b8e01/play/master.m3u8"},
+               {"id":"e2","kind":"teaser","title":"Season 2","season_number":2,"local":true,
+                "play_path":"/api/v1/items/s/extras/e2/play/master.m3u8"}]}
+            """,
+        )
+
+        assertEquals("https://www.youtube.com/watch?v=x1", item.trailers.single().url)
+        val (trailer, teaser) = item.extras
+        assertEquals("trailer", trailer.kind)
+        assertEquals("Trailer", trailer.title)
+        assertEquals("en", trailer.language)
+        assertEquals(33_000L, trailer.durationMs)
+        assertNull(trailer.seasonNumber)
+        assertTrue(trailer.playable)
+        assertEquals(
+            "/api/v1/items/9c4e7a12-3b5d-4f60-8a91-0e2d4c6b8f13/extras/1b5c2a8e-6f0d-4c3e-9a51-2d7f0c4b8e01/play/master.m3u8",
+            trailer.playPath,
+        )
+        assertEquals(2, teaser.seasonNumber)
+
+        // An extra short of a field decodes, and the item with it; it just does not play.
+        val short = ChinoJson.decodeFromString<Item>("""{"id":"m","title":"T","extras":[{"kind":"trailer","title":"Trailer"}]}""")
+        assertFalse(short.extras.single().playable)
     }
 
     @Test
