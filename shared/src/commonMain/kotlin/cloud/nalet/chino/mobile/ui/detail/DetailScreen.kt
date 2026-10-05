@@ -11,6 +11,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -315,12 +316,14 @@ private fun ReadyContent(
                 }
                 val content: @Composable (Modifier, androidx.compose.ui.unit.TextUnit) -> Unit = { mod, titleSize ->
                     Column(modifier = mod, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        // The web's h1: the heading face.
                         Text(
                             text = item.title,
                             color = Color.White,
                             fontSize = titleSize,
                             lineHeight = (titleSize.value * 1.12f).sp,
                             fontWeight = FontWeight.Bold,
+                            style = ChinoHeading,
                         )
                         item.tagline?.takeIf { it.isNotBlank() }?.let {
                             Text(
@@ -816,11 +819,13 @@ private fun EpisodesSection(
     onEpisodeAddToList: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // EpisodesList.tsx: `h2.text-2xl font-semibold`.
         Text(
             text = "Episodes",
             color = Color.White,
             fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
+            style = ChinoHeading,
         )
         seasons.forEach { season ->
             val containsFocus = focusEpisodeId != null && season.episodes.any { it.id == focusEpisodeId }
@@ -1121,11 +1126,13 @@ private fun MoreLikeThisSection(
     onItemClick: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // A MediaRow on the web: its `h2.text-2xl font-semibold`.
         Text(
             text = "More like this",
             color = Color.White,
             fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
+            style = ChinoHeading,
         )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(items, key = { it.id }) { entry ->
@@ -1164,6 +1171,7 @@ private fun SimilarCard(
                 .background(ChinoBg2),
         )
         Column(modifier = Modifier.padding(8.dp)) {
+            // MediaCard's h3 on the web: the heading face.
             Text(
                 text = item.title,
                 color = ChinoFg2,
@@ -1171,6 +1179,7 @@ private fun SimilarCard(
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                style = ChinoHeading,
             )
             // year • rating, rating in blue — matches web MediaCard.tsx
             // L222-230 (the same card "More like this" reuses on web).
