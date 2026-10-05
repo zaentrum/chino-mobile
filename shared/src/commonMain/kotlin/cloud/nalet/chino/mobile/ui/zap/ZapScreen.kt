@@ -28,13 +28,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.VerticalPager
@@ -75,7 +75,7 @@ import coil3.compose.AsyncImage
 import com.composables.icons.lucide.Bookmark
 import com.composables.icons.lucide.BookmarkCheck
 import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Maximize
+import com.composables.icons.lucide.Play
 import com.composables.icons.lucide.Volume2
 import com.composables.icons.lucide.VolumeX
 import com.composables.icons.lucide.Zap
@@ -234,78 +234,95 @@ private fun ZapCard(
                 onClick = onTapExpand,
             ),
     ) {
+        // A phone's portrait card is far taller than its 16:9 clip: the clip
+        // goes on top, full width and covered by nothing, with what it is and
+        // the actions under it. A card with no room under the clip (a tablet
+        // in landscape, a short window) keeps the clip full-bleed and lays the
+        // same info and actions over its foot.
+        val stacked = maxHeight >= maxWidth * 9f / 16f + STACKED_INFO_MIN
         // A card too short for the whole info overlay: a short window on a
         // large screen (a split, a desktop window), which the portrait lock
-        // does not shape there (ZapPortraitLock). A phone's portrait card, and
-        // a full-screen tablet's in either orientation, is taller than this.
-        val compact = maxHeight < 400.dp
+        // does not shape there (ZapPortraitLock).
+        val compact = !stacked && maxHeight < 400.dp
 
-        ZapPreviewPlayer(
-            masterUrl = card.masterUrl,
-            seekSec = card.seekSec,
-            muted = muted,
-            active = active,
-            modifier = Modifier.fillMaxSize(),
-            onPositionSec = onPositionSec,
-            onEnded = onComplete,
-            // A dead channel just shows the overlay; the next swipe moves on
-            // (the ScreenModel doesn't auto-advance on mobile — the user
-            // controls the pager). Bounded auto-skip is a TV-remote concern.
-            onError = {},
-            onFirstFrame = { hasFirstFrame = true },
-        )
-
-        // Cold-start image: full-bleed backdrop (poster fallback) layered over
-        // the player surface, covering its black pre-frame state during the
-        // 1-3s cold start, then fading out the moment the first frame renders.
-        // Sits below the action rail + info overlay (added after it), so those
-        // stay visible throughout. Hidden entirely once faded to keep it from
+        // The clip, and the cold-start image over it: full-bleed backdrop
+        // (poster fallback) covering the player surface's black pre-frame
+        // state during the 1-3s cold start, then fading out the moment the
+        // first frame renders. Hidden entirely once faded to keep it from
         // intercepting anything.
-        if (backdropAlpha > 0f) {
-            ZapColdStartBackdrop(
-                backdropUrl = card.backdropUrl,
-                posterUrl = card.posterUrl,
-                contentDescription = card.item.title,
-                modifier = Modifier.fillMaxSize().alpha(backdropAlpha),
+        val preview: @Composable (Modifier) -> Unit = { mod ->
+            Box(modifier = mod) {
+                ZapPreviewPlayer(
+                    masterUrl = card.masterUrl,
+                    seekSec = card.seekSec,
+                    muted = muted,
+                    active = active,
+                    modifier = Modifier.fillMaxSize(),
+                    onPositionSec = onPositionSec,
+                    onEnded = onComplete,
+                    // A dead channel just shows the overlay; the next swipe moves on
+                    // (the ScreenModel doesn't auto-advance on mobile — the user
+                    // controls the pager). Bounded auto-skip is a TV-remote concern.
+                    onError = {},
+                    onFirstFrame = { hasFirstFrame = true },
+                )
+                if (backdropAlpha > 0f) {
+                    ZapColdStartBackdrop(
+                        backdropUrl = card.backdropUrl,
+                        posterUrl = card.posterUrl,
+                        contentDescription = card.item.title,
+                        modifier = Modifier.fillMaxSize().alpha(backdropAlpha),
+                    )
+                }
+            }
+        }
+        val actions: @Composable () -> Unit = {
+            ZapActions(
+                muted = muted,
+                saved = saved,
+                onWatch = onTapExpand,
+                onToggleSave = onToggleSave,
+                onToggleMute = onToggleMute,
             )
         }
 
-        // Right-edge action rail (reels-style): mute + save, vertically
-        // stacked above the info overlay. Each has its own clickable.
-        Column(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.navigationBars))
-                .padding(end = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            ActionButton(
-                icon = if (muted) Lucide.VolumeX else Lucide.Volume2,
-                label = if (muted) "Unmute" else "Mute",
-                onClick = onToggleMute,
-            )
-            ActionButton(
-                icon = if (saved) Lucide.BookmarkCheck else Lucide.Bookmark,
-                label = "Save",
-                tint = if (saved) ChinoCloudBlue else Color.White,
-                onClick = onToggleSave,
-            )
-            ActionButton(
-                icon = Lucide.Maximize,
-                label = "Watch",
-                onClick = onTapExpand,
+        if (stacked) {
+            Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+                preview(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                ZapInfo(
+                    item = card.item,
+                    compact = false,
+                    actions = actions,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 24.dp),
+                )
+            }
+        } else {
+            preview(Modifier.fillMaxSize())
+            // Over the clip's foot: a gradient scrim under the info.
+            ZapInfo(
+                item = card.item,
+                compact = compact,
+                actions = actions,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.6f to Color(0xCC000000),
+                            1f to Color(0xF2000000),
+                        ),
+                    )
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(start = 20.dp, end = 20.dp, top = if (compact) 32.dp else 64.dp, bottom = 24.dp),
             )
         }
-
-        // Bottom info overlay — gradient scrim + metadata, aligned bottom-start.
-        ZapInfoOverlay(
-            item = card.item,
-            compact = compact,
-            modifier = Modifier.align(Alignment.BottomStart),
-        )
     }
 }
+
+/** How much room a card needs under a full-width 16:9 clip for its info and
+ *  actions to stack below it rather than over it. */
+private val STACKED_INFO_MIN = 260.dp
 
 /**
  * Full-bleed cold-start image for a Zap card: the item's backdrop, cropped to
@@ -332,59 +349,72 @@ private fun ZapColdStartBackdrop(
     }
 }
 
+/** Watch from this scene — the primary — then save and sound, in the detail
+ *  page's button style (square corners, the blue primary). Each has its own
+ *  clickable, so a tap on one doesn't reach the card's tap-to-watch. */
 @Composable
-private fun ActionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    tint: Color = Color.White,
-    onClick: () -> Unit,
+private fun ZapActions(
+    muted: Boolean,
+    saved: Boolean,
+    onWatch: () -> Unit,
+    onToggleSave: () -> Unit,
+    onToggleMute: () -> Unit,
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = onClick,
-        ),
-    ) {
-        Box(
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
             modifier = Modifier
-                .size(48.dp)
+                .height(44.dp)
                 .clip(RectangleShape)
-                .background(Color.White.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center,
+                .background(ChinoCloudBlue)
+                .clickable(onClick = onWatch)
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = tint,
-                modifier = Modifier.size(24.dp),
-            )
+            Icon(imageVector = Lucide.Play, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Text(text = "Watch", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
-        Text(text = label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        ZapIconButton(
+            icon = if (saved) Lucide.BookmarkCheck else Lucide.Bookmark,
+            contentDescription = if (saved) "Saved" else "Save",
+            tint = if (saved) ChinoCloudBlue else Color.White,
+            onClick = onToggleSave,
+        )
+        ZapIconButton(
+            icon = if (muted) Lucide.VolumeX else Lucide.Volume2,
+            contentDescription = if (muted) "Unmute" else "Mute",
+            onClick = onToggleMute,
+        )
     }
 }
 
-/** [compact]: the card is too short for all of it — title on one line, the
- *  facts, no overview or hint. */
 @Composable
-private fun ZapInfoOverlay(item: Item, compact: Boolean, modifier: Modifier = Modifier) {
+private fun ZapIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    tint: Color = Color.White,
+    onClick: () -> Unit,
+) {
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    0.6f to Color(0xCC000000),
-                    1f to Color(0xF2000000),
-                ),
-            )
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(start = 20.dp, end = 88.dp, top = if (compact) 32.dp else 64.dp, bottom = 24.dp),
+        modifier = Modifier
+            .size(44.dp)
+            .clip(RectangleShape)
+            .background(Color.White.copy(alpha = 0.1f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        // The scrim spans the card; the text keeps a readable measure on a
-        // wide one (a tablet in landscape) instead of running across it.
+        Icon(imageVector = icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** What the card says of its title, and its [actions]: the Zap mark, the
+ *  title, the facts and the overview. [compact]: the card is too short for
+ *  all of it — the title on one line and the facts, no overview. */
+@Composable
+private fun ZapInfo(item: Item, compact: Boolean, actions: @Composable () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier = modifier) {
+        // The text keeps a readable measure on a wide card (a tablet)
+        // instead of running across it.
         Column(
             modifier = Modifier.widthIn(max = 560.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -430,12 +460,9 @@ private fun ZapInfoOverlay(item: Item, compact: Boolean, modifier: Modifier = Mo
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(
-                    text = "Tap to watch from here  ·  Swipe up for next",
-                    color = ChinoMuted,
-                    fontSize = 12.sp,
-                )
             }
+            Spacer(modifier = Modifier.height(4.dp))
+            actions()
         }
     }
 }

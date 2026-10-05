@@ -152,8 +152,12 @@ on Android the cards ahead are prefetched to exactly those bytes.
 
 On an Android phone Zap stays in portrait. On a large screen (smallest width
 600 dp and up) it turns with the device — Android 16 ignores an orientation
-lock there for an app targeting API 36 — and a card too short for its whole
-overlay keeps the title and the facts and leaves out the overview.
+lock there for an app targeting API 36. A card with room under its clip (a
+phone, a tablet upright) shows the clip on top, covered by nothing, with the
+title, the facts, the overview and the buttons — Watch, Save, Sound — under it;
+one without (a tablet on its side) lays them over the clip's foot, and a card
+too short for all of it keeps the title and the facts and leaves out the
+overview.
 
 ## Addons
 
