@@ -23,6 +23,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -116,8 +118,9 @@ class ZapScreen : Screen {
         // the Zap tab leaves composition (tab switch / nav away).
         DisposableEffect(Unit) { onDispose { model.closeSession() } }
 
-        // Reels feed = portrait only; rotating just letterboxes the teaser and
-        // breaks the overlay. Locked while Zap is on screen, restored on exit.
+        // Reels feed = portrait on a phone, where the card turned sideways is
+        // too short for its overlay; a large screen turns freely and the card
+        // lays out for it. Locked while Zap is on screen, restored on exit.
         ZapPortraitLock()
 
         // Lifted mute — unmuting once survives every swipe afterwards
@@ -218,7 +221,7 @@ private fun ZapCard(
         label = "zapBackdropFade",
     )
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
@@ -231,6 +234,12 @@ private fun ZapCard(
                 onClick = onTapExpand,
             ),
     ) {
+        // A card too short for the whole info overlay: a short window on a
+        // large screen (a split, a desktop window), which the portrait lock
+        // does not shape there (ZapPortraitLock). A phone's portrait card, and
+        // a full-screen tablet's in either orientation, is taller than this.
+        val compact = maxHeight < 400.dp
+
         ZapPreviewPlayer(
             masterUrl = card.masterUrl,
             seekSec = card.seekSec,
@@ -292,6 +301,7 @@ private fun ZapCard(
         // Bottom info overlay — gradient scrim + metadata, aligned bottom-start.
         ZapInfoOverlay(
             item = card.item,
+            compact = compact,
             modifier = Modifier.align(Alignment.BottomStart),
         )
     }
@@ -356,8 +366,10 @@ private fun ActionButton(
     }
 }
 
+/** [compact]: the card is too short for all of it — title on one line, the
+ *  facts, no overview or hint. */
 @Composable
-private fun ZapInfoOverlay(item: Item, modifier: Modifier = Modifier) {
+private fun ZapInfoOverlay(item: Item, compact: Boolean, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -369,9 +381,14 @@ private fun ZapInfoOverlay(item: Item, modifier: Modifier = Modifier) {
                 ),
             )
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(start = 20.dp, end = 88.dp, top = 64.dp, bottom = 24.dp),
+            .padding(start = 20.dp, end = 88.dp, top = if (compact) 32.dp else 64.dp, bottom = 24.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // The scrim spans the card; the text keeps a readable measure on a
+        // wide one (a tablet in landscape) instead of running across it.
+        Column(
+            modifier = Modifier.widthIn(max = 560.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             // Small Zap wordmark chip so the discovery mode reads as "Zap".
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(
@@ -387,7 +404,7 @@ private fun ZapInfoOverlay(item: Item, modifier: Modifier = Modifier) {
                 color = Color.White,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = 2,
+                maxLines = if (compact) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Row(
@@ -402,21 +419,23 @@ private fun ZapInfoOverlay(item: Item, modifier: Modifier = Modifier) {
                     Text(it.joinToString(" · "), color = ChinoMuted, fontSize = 13.sp)
                 }
             }
-            item.overview?.takeIf { it.isNotBlank() }?.let {
+            if (!compact) {
+                item.overview?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        text = it,
+                        color = ChinoFg2,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
-                    text = it,
-                    color = ChinoFg2,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
+                    text = "Tap to watch from here  ·  Swipe up for next",
+                    color = ChinoMuted,
+                    fontSize = 12.sp,
                 )
             }
-            Text(
-                text = "Tap to watch from here  ·  Swipe up for next",
-                color = ChinoMuted,
-                fontSize = 12.sp,
-            )
         }
     }
 }

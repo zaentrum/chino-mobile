@@ -80,14 +80,14 @@ val chinoAppId = (project.findProperty("chinoAppId") as? String) ?: "io.github.z
 
 android {
     namespace = "cloud.nalet.chino.mobile.android"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         // Single unified app id — no product flavors. Forks override via
         // -PchinoAppId; debug builds append ".debug" (see buildTypes below).
         applicationId = chinoAppId
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = ciVersionCode ?: 1
         versionName = "0.1.0"
         // AndroidJUnitRunner — invoked by `am instrument` to enumerate +
@@ -157,13 +157,6 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
-    }
-
-    lint {
-        // lintVitalRelease crashes under AGP 8.7 lint + Kotlin 2.1 analysis API.
-        // Lint is code-quality gating, not part of producing the artifact, so
-        // skip it on release builds to keep the AAB/APK build green.
-        checkReleaseBuilds = false
     }
 
     compileOptions {

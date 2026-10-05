@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -227,9 +228,20 @@ private fun selectStartAudio(player: ExoPlayer, tracks: Tracks) {
 @Composable
 actual fun ZapPortraitLock() {
     val context = LocalContext.current
-    DisposableEffect(Unit) {
-        val activity = generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
-            .firstOrNull { it is android.app.Activity } as? android.app.Activity
+    // Small screens only. On a large screen (smallest width 600dp and up)
+    // Android 16 ignores the orientation an app targeting API 36 asks for, so
+    // the feed turns with the device there anyway; earlier versions turn with
+    // it too rather than letterbox the whole app while Zap is open. A screen
+    // that changes size class (a foldable folding or unfolding) locks or
+    // unlocks again.
+    val largeScreen = LocalConfiguration.current.smallestScreenWidthDp >= 600
+    DisposableEffect(largeScreen) {
+        val activity = if (largeScreen) {
+            null
+        } else {
+            generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+                .firstOrNull { it is android.app.Activity } as? android.app.Activity
+        }
         val original = activity?.requestedOrientation
         activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         onDispose {

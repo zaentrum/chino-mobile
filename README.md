@@ -18,7 +18,7 @@ published build.
 - Ktor 3 client + kotlinx.serialization for the API
 - Voyager for navigation
 - Coil 3 for image loading
-- Android: Gradle 8.11, AGP 8.7, minSdk 24, target 35, Material 3, Media3 player
+- Android: Gradle 8.11, AGP 8.9, minSdk 24, target 36, Material 3, Media3 player
 - iOS: deployment target 15.0, SwiftUI host, XcodeGen-generated `.xcodeproj`
 
 ## App ids
@@ -148,6 +148,11 @@ was; only a title played on the fly steps down its quality ladder.
 Zap's cards start on the master's first variant and the audio it starts
 with — what chino-stream lists first for the device's caps, and warms — and
 on Android the cards ahead are prefetched to exactly those bytes.
+
+On an Android phone Zap stays in portrait. On a large screen (smallest width
+600 dp and up) it turns with the device — Android 16 ignores an orientation
+lock there for an app targeting API 36 — and a card too short for its whole
+overlay keeps the title and the facts and leaves out the overview.
 
 ## Tests
 

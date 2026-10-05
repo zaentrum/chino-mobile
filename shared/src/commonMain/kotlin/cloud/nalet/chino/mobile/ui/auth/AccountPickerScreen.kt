@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -137,7 +138,9 @@ class AccountPickerScreen : Screen {
                 contentPadding = PaddingValues(outerPad),
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
-                modifier = Modifier.fillMaxSize(),
+                // Edge to edge, the heading starts below the status bar (and
+                // App's accent strip over it), as on Profile.
+                modifier = Modifier.fillMaxSize().statusBarsPadding(),
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column {

@@ -43,10 +43,12 @@ expect fun ZapPreviewPlayer(
 )
 
 /**
- * Locks the Zap feed to portrait while it is composed (a vertical reels feed
- * has no meaningful landscape layout — rotating just letterboxes the teaser and
- * breaks the overlay), restoring the previous orientation on exit. Android sets
- * the host Activity's requestedOrientation; iOS is a no-op.
+ * Locks the Zap feed to portrait on a phone while it is composed (a phone
+ * turned sideways leaves the card too short for its overlay), restoring the
+ * previous orientation on exit. Large screens (smallest width 600dp and up)
+ * are not locked — Android 16 ignores the request there for an app targeting
+ * API 36 — so the card lays out in any orientation and window shape. Android
+ * sets the host Activity's requestedOrientation; iOS is a no-op.
  */
 @Composable
 expect fun ZapPortraitLock()
