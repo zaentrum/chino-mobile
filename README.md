@@ -59,7 +59,7 @@ shared/                         KMP library
     data/ServerConfigStore.kt   persisted Add-Server config
     data/slots/, data/notices/  what addons add: slot rows and notices (see Addons)
     ui/onboarding/AddServerScreen.kt  bring-your-own-server entry point
-    ui/...                      auth / home / browse / detail / person / search / player / settings / notices
+    ui/...                      auth / home / browse / detail / person / search / player / trailer / settings / notices
   src/commonTest/...            shared unit tests (JVM + iOS simulator)
   src/androidUnitTest/...       Android-only unit tests on the JVM (Media3's track selection)
   src/androidMain/...           DataStore-backed stores, Ktor OkHttp engine, Media3 player
@@ -158,6 +158,22 @@ screen, blown up, blurred and dimmed (Android; iOS shows the backdrop) — with
 the title, the year and rating and three lines of the overview small at its
 foot, and Save and Watch beside them at the right edge. Zap plays with
 sound: the phone's volume is the mute.
+
+## Trailers
+
+A title's trailer plays in the app when the server has one — one of the
+title's extras, packaged for streaming (`extras` in the item detail; a
+trailer before a teaser, the title's own before a season's). The detail
+page's Trailer button, on movies and series alike, opens a trailer screen
+(`ui/trailer/`): it plays the extra's `play_path` with the stream token and
+the device's caps from the start, with sound, on the platform's own player
+and controls — Media3's PlayerView on Android, AVPlayerViewController on iOS
+— and closes at its end or on Back. A trailer writes no progress and marks
+nothing watched, so Continue Watching is left alone. One the server no
+longer has says "Trailer not available" and offers the title's YouTube link
+when there is one. Without a trailer of its own, the button opens that link
+outside the app, as before. The Home hero takes titles with either, those
+with a trailer of their own first.
 
 ## Addons
 
