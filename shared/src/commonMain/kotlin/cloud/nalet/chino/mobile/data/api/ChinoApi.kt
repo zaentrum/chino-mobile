@@ -326,6 +326,32 @@ class ChinoApi(private val http: HttpClient) {
         http.post(href)
     }
 
+    /** GET /v1/notices: `{notices, unread, available}`, a 200 whether or not
+     *  portal-api answered — [cloud.nalet.chino.mobile.data.notices.noticesAnswer]
+     *  reads it. The bearer is loaded afresh first ([forgetBearer]), as for
+     *  [deleteMe]: what a person was told is theirs, so the list is asked for
+     *  with the bearer of the account signed in now — on a switch, never the
+     *  one signed in before it. */
+    suspend fun notices(): JsonElement {
+        http.forgetBearer()
+        return http.get("v1/notices").body()
+    }
+
+    /** POST /v1/notices/{id}/read: one of the person's notices, read. */
+    suspend fun readNotice(id: String) {
+        http.post("v1/notices/${noticeSegment(id)}/read")
+    }
+
+    /** POST /v1/notices/read-all: every notice of the person, read. */
+    suspend fun readAllNotices() {
+        http.post("v1/notices/read-all")
+    }
+
+    /** DELETE /v1/notices/{id}: one of the person's notices, deleted. */
+    suspend fun deleteNotice(id: String) {
+        http.delete("v1/notices/${noticeSegment(id)}")
+    }
+
     /** Files a bug report — chino-api opens (or dedup-appends to) a
      *  ticket on the connected server's issue system and answers 201 (new) / 200 (duplicate, comment
      *  appended). Multipart: "report" JSON part + optional "screenshot"
@@ -370,6 +396,16 @@ class ChinoApi(private val http: HttpClient) {
  *  a request body, so ContentNegotiation doesn't apply). explicitNulls=false
  *  omits the optional title/fingerprint instead of sending JSON nulls. */
 private val feedbackJson = Json { explicitNulls = false }
+
+/** A notice's id as a path segment: letters, digits and dashes, as chino-api
+ *  takes them (portal-api's are UUIDs). Anything else — which could read as
+ *  more than one segment — is not sent at all. */
+private fun noticeSegment(id: String): String {
+    require(NOTICE_ID.matches(id)) { "not a notice id" }
+    return id
+}
+
+private val NOTICE_ID = Regex("^[A-Za-z0-9-]{1,64}$")
 
 @Serializable
 data class Episode(

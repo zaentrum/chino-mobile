@@ -12,6 +12,7 @@ import cloud.nalet.chino.mobile.data.auth.PlatformTokenStoreFactory
 import cloud.nalet.chino.mobile.data.auth.StreamTokenManager
 import cloud.nalet.chino.mobile.data.auth.TokenManager
 import cloud.nalet.chino.mobile.data.auth.TokenStore
+import cloud.nalet.chino.mobile.data.notices.NoticesRepository
 import cloud.nalet.chino.mobile.data.telemetry.Telemetry
 import cloud.nalet.chino.mobile.feedback.BugReporter
 import cloud.nalet.chino.mobile.feedback.PendingReportStore
@@ -202,6 +203,12 @@ class AppContainer(
     /** Lists-aware companion to [userFlags] — backs the multiple-named-
      *  watchlists surface + the detail add-to-list picker. */
     val watchlists: WatchlistsRepository by lazy { WatchlistsRepository(chinoApi, appScope) }
+
+    /** What addons told the signed-in person — the bell's count and the list
+     *  it opens. Asked for by the poll beside the navigator
+     *  (ui/notices/NoticesPolling), which forgets them whenever the
+     *  signed-in account changes. */
+    val notices: NoticesRepository by lazy { NoticesRepository(chinoApi, appScope) }
 
     val telemetry: Telemetry by lazy {
         Telemetry(
