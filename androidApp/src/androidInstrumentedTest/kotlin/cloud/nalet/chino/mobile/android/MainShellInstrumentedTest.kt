@@ -15,13 +15,14 @@ import org.junit.runner.RunWith
  * Smoke test for the production `MainActivity` mounted on a real device or
  * emulator. Boots the activity, waits for the
  * AppContainer's off-main snapshot read to finish, then asserts that the
- * shell chrome is composed with the four expected elements:
+ * shell chrome is composed with the expected elements:
  *  - inline SearchField pill (text "Search movies, shows…")
- *  - Lucide.Bell IconCell (contentDescription "Watchlist")
  *  - Either the Avatar (when an account is active) or the fallback
  *    User-icon IconCell (contentDescription "Account")
  *  - "Home" rail-button (contentDescription) — confirms the SideRail
  *    composes on the tablet's wide-layout branch
+ * The notices bell is not asserted: it shows only on a server whose notices
+ * are available.
  *
  * Color-of-pixel assertions live in a separate screenshot golden test
  * (Roborazzi) — the Compose UI Test framework reads the semantics tree,
@@ -51,7 +52,7 @@ class MainShellInstrumentedTest {
     }
 
     @Test
-    fun mainShell_topBar_hasSearchPillAndWatchlistBell() {
+    fun mainShell_topBar_hasSearchPill() {
         // Requires the device to already have an active account so the
         // shell mounts (not the AuthScreen). The tablet at 5559 was
         // signed in as build_test earlier in this session, so this is
@@ -61,7 +62,6 @@ class MainShellInstrumentedTest {
                 .fetchSemanticsNodes().isNotEmpty()
         }
         rule.onNodeWithText("Search movies, shows…").assertIsDisplayed()
-        rule.onNodeWithContentDescription("Watchlist").assertIsDisplayed()
     }
 
     @Test

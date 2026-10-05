@@ -15,3 +15,8 @@ expect fun formatDeviceDate(date: CatalogDate): String
 
 /** Today in the device's calendar day, as a catalog date (YYYY-MM-DD). */
 expect fun todayCatalogDate(): String
+
+/** How far the device's time zone is ahead of UTC at [epochMillis], in
+ *  milliseconds, summer time included: what puts an instant on the device's
+ *  calendar day. */
+expect fun utcOffsetMillis(epochMillis: Long): Long

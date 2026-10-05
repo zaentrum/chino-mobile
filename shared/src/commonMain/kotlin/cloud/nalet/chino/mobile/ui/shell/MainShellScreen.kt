@@ -40,7 +40,6 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
-import com.composables.icons.lucide.Bell
 import com.composables.icons.lucide.Bookmark
 import com.composables.icons.lucide.Film
 import com.composables.icons.lucide.House
@@ -78,9 +77,10 @@ import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.ui.components.Avatar
 import cloud.nalet.chino.mobile.ui.detail.DetailScreen
 import cloud.nalet.chino.mobile.ui.home.HomeSection
+import cloud.nalet.chino.mobile.ui.notices.NoticesBell
+import cloud.nalet.chino.mobile.ui.notices.NoticesScreen
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
 import cloud.nalet.chino.mobile.ui.settings.SettingsSection
-import cloud.nalet.chino.mobile.ui.watchlist.WatchlistScreen
 import cloud.nalet.chino.mobile.ui.zap.InstallZapPrefetcher
 import cloud.nalet.chino.mobile.ui.zap.ZapAppStartWarm
 
@@ -206,8 +206,6 @@ private fun SectionContent(
             pageTitle = "Shows",
             onItemSelected = onItemSelected,
         )
-        // Same composable the bell-pushed WatchlistScreen renders — the
-        // section path just embeds it under the shell TopBar.
         Section.Watchlist -> cloud.nalet.chino.mobile.ui.watchlist.WatchlistSection()
         Section.Settings -> SettingsSection()
     }
@@ -221,9 +219,7 @@ enum class Section(val label: String, val icon: ImageVector) {
     Home("Home", Lucide.House),
     Movies("Movies", Lucide.Film),
     Series("Series", Lucide.Tv),
-    // Watchlist — the cross-platform hub of per-list poster shelves. The
-    // TopBar bell keeps working as a secondary entry point and lands on the
-    // same WatchlistSection surface.
+    // Watchlist — the cross-platform hub of per-list poster shelves.
     Watchlist("Watchlist", Lucide.Bookmark),
     // Zap — the vertical reels discovery mode (web flavour). Lucide Zap glyph
     // matches chino-web's ZapSection icon. Renders its own full-bleed pager
@@ -502,11 +498,9 @@ private fun TopBar(searchQuery: String, onSearchChange: (String) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                IconCell(
-                    icon = Lucide.Bell,
-                    contentDescription = "Watchlist",
-                    onClick = { nav.push(WatchlistScreen()) },
-                )
+                // What addons told the person, counted — where they look
+                // first. No bell on a server whose notices are not available.
+                NoticesBell(onClick = { nav.push(NoticesScreen()) })
                 val acct = activeAccount
                 if (acct != null) {
                     Avatar(

@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -60,9 +59,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
-import cafe.adriel.voyager.core.screen.uniqueScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
@@ -94,21 +90,9 @@ import com.composables.icons.lucide.Trash2
  *         with rename / delete header actions (hidden for the default list)
  *         and a back affordance returning to the hub.
  *
- * [WatchlistSection] backs BOTH entry points: the shell's Watchlist nav
- * section (MainShellScreen) and this bell-pushed Voyager screen.
+ * The shell's Watchlist nav section (MainShellScreen) embeds it below its
+ * TopBar, which carries the status-bar inset.
  */
-class WatchlistScreen : Screen {
-    override val key: ScreenKey = uniqueScreenKey
-
-    @Composable
-    override fun Content() {
-        // Pushed over the whole window (TopBar bell) — this path owns the
-        // status-bar inset. The section-embedded path sits below the shell
-        // TopBar, which already carries the inset, so it passes no modifier.
-        WatchlistSection(modifier = Modifier.statusBarsPadding())
-    }
-}
-
 @Composable
 fun WatchlistSection(modifier: Modifier = Modifier) {
     val nav = LocalNavigator.currentOrThrow

@@ -48,3 +48,5 @@ actual fun todayCatalogDate(): String {
     val day = now.get(Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
     return "${now.get(Calendar.YEAR)}-$month-$day"
 }
+
+actual fun utcOffsetMillis(epochMillis: Long): Long = TimeZone.getDefault().getOffset(epochMillis).toLong()

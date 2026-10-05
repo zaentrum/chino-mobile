@@ -12,7 +12,10 @@ import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSDateFormatterLongStyle
 import platform.Foundation.NSDateFormatterNoStyle
 import platform.Foundation.NSLocale
+import platform.Foundation.NSTimeZone
 import platform.Foundation.currentLocale
+import platform.Foundation.dateWithTimeIntervalSince1970
+import platform.Foundation.localTimeZone
 import platform.Foundation.preferredLanguages
 
 /** Settings → General → Language & Region, most preferred first. */
@@ -48,3 +51,6 @@ actual fun todayCatalogDate(): String {
     val day = today.day.toString().padStart(2, '0')
     return "${today.year}-$month-$day"
 }
+
+actual fun utcOffsetMillis(epochMillis: Long): Long =
+    NSTimeZone.localTimeZone.secondsFromGMTForDate(NSDate.dateWithTimeIntervalSince1970(epochMillis / 1000.0)) * 1000L
