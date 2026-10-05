@@ -11,14 +11,14 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 sealed interface HomeUiState {
     data object Loading : HomeUiState
     data class Ready(
-        /** Hero rotation pool — top-rated movies, picked separately from the
-         *  Top Rated row so the hero stays fresh even if the user is browsing
-         *  the same titles below. */
+        /** Hero rotation pool — the newest movies and series with a trailer,
+         *  shuffled, as chino-web picks it (pickHeroPool). */
         val heroPool: List<Item>,
         val continueWatching: List<ContinueWatchingItem>,
         val nextUp: List<ContinueWatchingItem>,
@@ -126,6 +126,49 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
         }
     }
 
+    /**
+     * The hero's pool as chino-web picks it (pickHeroPool): the newest movies
+     * and series, those whose details name a trailer, shuffled, eight. One
+     * details fetch per candidate, all in parallel — so it is kept for an
+     * hour per server and account (HeroPoolCache), as web keeps it per
+     * session. Empty when the server has no such title: no hero, as on web.
+     */
+    private suspend fun heroPool(): List<Item> = coroutineScope {
+        val api = container.chinoApi
+        val key = container.config.apiBaseUrl + "|" + (container.accountStore.activeAccountId.first() ?: "")
+        HeroPoolCache.get(key)?.let { return@coroutineScope it }
+        val movies = async {
+            runCatching { api.listItems(limit = HERO_CANDIDATES, type = "movie", sort = "newest").items }.getOrDefault(emptyList())
+        }
+        val series = async {
+            runCatching { api.listItems(limit = HERO_CANDIDATES, type = "series", sort = "newest").items }.getOrDefault(emptyList())
+        }
+        val candidates = movies.await().map { it.copy(kind = it.kind ?: "movie") } +
+            series.await().map { it.copy(kind = it.kind ?: "series") }
+        val details = candidates
+            .map { candidate -> async { runCatching { api.getItem(candidate.id) }.getOrNull() } }
+            .mapNotNull { it.await() }
+            .associateBy { it.id }
+        pickHeroPool(candidates, details).also { HeroPoolCache.put(key, it) }
+    }
+
+    /**
+     * Where Play on a hero title goes: a movie plays itself; a series plays
+     * its episode (episodeToPlay), else opens its page — chino-web's
+     * usePlayTitle. [then] gets the episode id, or null for the page.
+     */
+    fun seriesEpisode(seriesId: String, then: (String?) -> Unit) {
+        screenModelScope.launch {
+            val api = container.chinoApi
+            val episode = coroutineScope {
+                val continueWatching = async { runCatching { api.continueWatching().items }.getOrDefault(emptyList()) }
+                val seasons = async { runCatching { api.seriesEpisodes(seriesId).seasons }.getOrDefault(emptyList()) }
+                episodeToPlay(seriesId, continueWatching.await(), seasons.await())
+            }
+            then(episode)
+        }
+    }
+
     private fun load() {
         screenModelScope.launch {
             _state.value = try {
@@ -165,40 +208,7 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                             ).items
                         }.getOrDefault(emptyList())
                     }
-                    val heroDef = async {
-                        runCatching {
-                            // Match chino-web's hero pool size of 8 — keeps
-                            // the pagination dot row from getting too long
-                            // on items with many high-rated entries.
-                            val list = container.chinoApi.listItems(
-                                limit = 8,
-                                type = "movie",
-                                sort = "rating",
-                                ratingMin = 8.0,
-                                unwatched = true,
-                            ).items
-                            // /v1/items (list) returns a slim shape WITHOUT
-                            // the overview/description field — chino-api
-                            // keeps the list endpoint lightweight. chino-web
-                            // works around this in useHeroPool by issuing a
-                            // /v1/items/{id} detail fetch for each hero
-                            // candidate (useHeroPool.ts L89) and copying
-                            // the full overview onto the entry. Without
-                            // this enrichment HeroBanner skips the overview
-                            // Text (null branch) and the middle column is
-                            // empty. Detail calls run in parallel so the
-                            // slowest single call gates the hero, not the
-                            // sum across all 8.
-                            list.map { item ->
-                                async {
-                                    runCatching {
-                                        val detail = container.chinoApi.getItem(item.id)
-                                        item.copy(overview = detail.overview ?: item.overview)
-                                    }.getOrDefault(item)
-                                }
-                            }.map { it.await() }
-                        }.getOrDefault(emptyList())
-                    }
+                    val heroDef = async { heroPool() }
                     val cwDef = async {
                         runCatching {
                             container.chinoApi.continueWatching().items

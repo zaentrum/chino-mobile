@@ -685,6 +685,9 @@ data class ContinueWatchingItem(
     @SerialName("season_number") val seasonNumber: Int? = null,
     @SerialName("episode_number") val episodeNumber: Int? = null,
     val type: String? = null,
+    /** The series an episode belongs to: what Play on a series finds its
+     *  episode by (episodeToPlay). */
+    @SerialName("parent_id") val parentId: String? = null,
     // The CW feed embeds the full catalogue item, so year/rating are
     // already on the wire; parsed for the movie meta line ("year • rating")
     // to match chino-web's CW cards.

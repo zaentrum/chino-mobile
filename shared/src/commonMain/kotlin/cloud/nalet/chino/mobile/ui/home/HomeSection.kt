@@ -64,6 +64,16 @@ fun HomeSection(
             s,
             onItemSelected,
             onPlay,
+            // The hero holds series too, and a series is not itself
+            // playable: it plays its episode, else opens its page
+            // (chino-web's usePlayTitle).
+            onPlayHero = { id ->
+                if (s.heroPool.firstOrNull { it.id == id }?.kind == "series") {
+                    model.seriesEpisode(id) { episode -> if (episode != null) onPlay(episode) else onItemSelected(id) }
+                } else {
+                    onPlay(id)
+                }
+            },
             onRemoveFromContinueWatching = model::removeFromContinueWatching,
             onToggleWatched = model::toggleWatched,
             onNavigateToSection = onNavigateToSection,
@@ -76,6 +86,7 @@ private fun ReadyContent(
     s: HomeUiState.Ready,
     onItemSelected: (String) -> Unit,
     onPlay: (String) -> Unit,
+    onPlayHero: (String) -> Unit,
     onRemoveFromContinueWatching: (String) -> Unit,
     onToggleWatched: (String) -> Unit,
     onNavigateToSection: ((String) -> Unit)? = null,
@@ -97,7 +108,7 @@ private fun ReadyContent(
                 baseUrl = s.baseUrl,
                 streamToken = s.streamToken,
                 onMoreInfo = onItemSelected,
-                onPlay = onPlay,
+                onPlay = onPlayHero,
             )
         }
         if (s.continueWatching.isNotEmpty()) {
