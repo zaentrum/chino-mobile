@@ -169,7 +169,7 @@ private fun ReadyContent(
         }
         if (s.topRated.isNotEmpty()) {
             MediaRow(
-                title = "Top Rated",
+                title = "Top rated",
                 items = s.topRated,
                 baseUrl = s.baseUrl,
                 streamToken = s.streamToken,
@@ -201,7 +201,7 @@ private fun ContinueWatchingShelf(
     baseUrl: String,
     streamToken: String,
     showProgress: Boolean,
-    title: String = "Continue Watching",
+    title: String = "Continue watching",
     onItemClick: (String) -> Unit,
     onRemoveFromContinueWatching: ((String) -> Unit)? = null,
     onToggleWatched: ((String) -> Unit)? = null,
