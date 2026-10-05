@@ -71,6 +71,7 @@ import cloud.nalet.chino.mobile.ui.detail.DetailScreen
 import cloud.nalet.chino.mobile.ui.detail.MetaBlock
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.ChevronDown
@@ -214,11 +215,13 @@ private fun PersonContent(
                 PersonHeader(person = person, portraitUrl = portraitUrl, facts = facts, wide = wide)
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
+                // The web's h2, in the heading face.
                 Text(
                     text = "Filmography",
                     color = Color.White,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
+                    style = ChinoHeading,
                     modifier = Modifier.padding(top = 8.dp),
                 )
             }
@@ -287,12 +290,14 @@ private fun PersonPicture(name: String, portraitUrl: String?, portraitWidth: Dp,
 @Composable
 private fun NameBlock(person: PersonDetail, nameSize: TextUnit, modifier: Modifier = Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // The web's h1, in the heading face.
         Text(
             text = person.name,
             color = Color.White,
             fontSize = nameSize,
             lineHeight = (nameSize.value * 1.15f).sp,
             fontWeight = FontWeight.Bold,
+            style = ChinoHeading,
         )
         Text(text = titleCount(person.items.size), color = ChinoMuted, fontSize = 14.sp)
     }
