@@ -57,6 +57,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.utcOffsetMillis
@@ -184,11 +185,13 @@ private fun NoticesHeader(unread: Int, onBack: () -> Unit, onReadAll: () -> Unit
                 modifier = Modifier.size(20.dp),
             )
         }
+        // The web panel's h2, in the heading face; a page title's size here.
         Text(
             text = "Notices",
             color = Color.White,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
+            style = ChinoHeading,
             modifier = Modifier.weight(1f),
         )
         if (unread > 0) {

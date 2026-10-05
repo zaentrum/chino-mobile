@@ -25,6 +25,7 @@ import cloud.nalet.chino.mobile.data.notices.badgeText
 import cloud.nalet.chino.mobile.data.notices.bellLabel
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoMono
 import com.composables.icons.lucide.Bell
 import com.composables.icons.lucide.Lucide
 
@@ -56,7 +57,8 @@ fun NoticesBell(onClick: () -> Unit) {
         )
         if (badge.isNotEmpty()) {
             // In the cell's corner, over the bell's: the cell clips what
-            // reaches past it. The bell already says how many.
+            // reaches past it. The bell already says how many. The count is
+            // in mono, the web's font-mono.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -66,7 +68,7 @@ fun NoticesBell(onClick: () -> Unit) {
                     .clearAndSetSemantics {},
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = badge, color = ChinoBg, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(text = badge, color = ChinoBg, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, style = ChinoMono)
             }
         }
     }
