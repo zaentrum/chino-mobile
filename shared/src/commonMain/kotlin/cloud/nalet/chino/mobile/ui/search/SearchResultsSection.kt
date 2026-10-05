@@ -58,8 +58,10 @@ import cloud.nalet.chino.mobile.data.api.Person
 import cloud.nalet.chino.mobile.data.api.artworkUrl
 import cloud.nalet.chino.mobile.data.api.catalogueMessage
 import cloud.nalet.chino.mobile.data.model.Item
+import cloud.nalet.chino.mobile.data.slots.SLOT_SEARCH_EMPTY
 import cloud.nalet.chino.mobile.ui.person.PersonAvatar
 import cloud.nalet.chino.mobile.ui.person.titleCount
+import cloud.nalet.chino.mobile.ui.slots.ExtensionSlot
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Lucide
 import kotlinx.coroutines.delay
@@ -82,6 +84,9 @@ import kotlinx.coroutines.flow.asStateFlow
  * A "Cast & crew" people section (GET /v1/people?q=…, same debounce) renders
  * above the title grid: name + "· N titles" + their portrait (initials without
  * one). Tapping a person opens the Person / Filmography surface.
+ *
+ * A search that finds no titles and no people shows what addons contribute
+ * to the `search.empty` slot, the query carried as {q} ([ExtensionSlot]).
  */
 @Composable
 fun SearchResultsSection(
@@ -184,6 +189,15 @@ fun SearchResultsSection(
                         streamToken = token,
                         onClick = { onItemSelected(item.id) },
                     )
+                }
+                // No titles and no people: what addons offer for a search
+                // that found nothing — nothing on a server without them. Not
+                // after a failed search: a catalogue that could not be asked
+                // is not one without the title.
+                if (s.items.isEmpty() && people.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        ExtensionSlot(slot = SLOT_SEARCH_EMPTY, vars = mapOf("q" to query))
+                    }
                 }
             }
         }
