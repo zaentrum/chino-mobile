@@ -24,6 +24,12 @@ ICONS = {
  "Pause":"pause","RotateCcw":"rotate-ccw","RotateCw":"rotate-cw","Settings2":"settings-2",
  "SkipForward":"skip-forward","ChevronUp":"chevron-up",
  "PictureInPicture2":"picture-in-picture-2","TriangleAlert":"triangle-alert",
+ # The portal's icon palette, the names an addon's slot row may give its
+ # button (ui/extensions; Tv, Settings and Gauge are above), and the notices'.
+ "Library":"library","Radar":"radar","Download":"download","Music":"music",
+ "Clapperboard":"clapperboard","LayoutGrid":"layout-grid","Server":"server","Boxes":"boxes",
+ "Globe":"globe","Wrench":"wrench","FileText":"file-text","Image":"image","ListVideo":"list-video",
+ "Users":"users","Database":"database","Puzzle":"puzzle","CheckCheck":"check-check",
 }
 BASE="https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/{}.svg"
 

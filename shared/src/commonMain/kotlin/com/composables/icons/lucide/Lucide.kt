@@ -207,3 +207,71 @@ public val Lucide.PictureInPicture2: ImageVector
 private var _triangleAlert: ImageVector? = null
 public val Lucide.TriangleAlert: ImageVector
     get() = _triangleAlert ?: lucide("TriangleAlert", listOf("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01")).also { _triangleAlert = it }
+
+private var _library: ImageVector? = null
+public val Lucide.Library: ImageVector
+    get() = _library ?: lucide("Library", listOf("m16 6 4 14", "M12 6v14", "M8 8v12", "M4 4v16")).also { _library = it }
+
+private var _radar: ImageVector? = null
+public val Lucide.Radar: ImageVector
+    get() = _radar ?: lucide("Radar", listOf("M19.07 4.93A10 10 0 0 0 6.99 3.34", "M4 6h.01", "M2.29 9.62A10 10 0 1 0 21.31 8.35", "M16.24 7.76A6 6 0 1 0 8.23 16.67", "M12 18h.01", "M17.99 11.66A6 6 0 0 1 15.77 16.67", "M10,12 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0", "m13.41 10.59 5.66-5.66")).also { _radar = it }
+
+private var _download: ImageVector? = null
+public val Lucide.Download: ImageVector
+    get() = _download ?: lucide("Download", listOf("M12 15V3", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5")).also { _download = it }
+
+private var _music: ImageVector? = null
+public val Lucide.Music: ImageVector
+    get() = _music ?: lucide("Music", listOf("M9 18V5l12-2v13", "M3,18 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0", "M15,16 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0")).also { _music = it }
+
+private var _clapperboard: ImageVector? = null
+public val Lucide.Clapperboard: ImageVector
+    get() = _clapperboard ?: lucide("Clapperboard", listOf("m12.296 3.464 3.02 3.956", "M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z", "M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", "m6.18 5.276 3.1 3.899")).also { _clapperboard = it }
+
+private var _layoutGrid: ImageVector? = null
+public val Lucide.LayoutGrid: ImageVector
+    get() = _layoutGrid ?: lucide("LayoutGrid", listOf("M4,3 h5 a1,1 0 0 1 1,1 v5 a1,1 0 0 1 -1,1 h-5 a1,1 0 0 1 -1,-1 v-5 a1,1 0 0 1 1,-1 Z", "M15,3 h5 a1,1 0 0 1 1,1 v5 a1,1 0 0 1 -1,1 h-5 a1,1 0 0 1 -1,-1 v-5 a1,1 0 0 1 1,-1 Z", "M15,14 h5 a1,1 0 0 1 1,1 v5 a1,1 0 0 1 -1,1 h-5 a1,1 0 0 1 -1,-1 v-5 a1,1 0 0 1 1,-1 Z", "M4,14 h5 a1,1 0 0 1 1,1 v5 a1,1 0 0 1 -1,1 h-5 a1,1 0 0 1 -1,-1 v-5 a1,1 0 0 1 1,-1 Z")).also { _layoutGrid = it }
+
+private var _server: ImageVector? = null
+public val Lucide.Server: ImageVector
+    get() = _server ?: lucide("Server", listOf("M4,2 h16 a2,2 0 0 1 2,2 v4 a2,2 0 0 1 -2,2 h-16 a2,2 0 0 1 -2,-2 v-4 a2,2 0 0 1 2,-2 Z", "M4,14 h16 a2,2 0 0 1 2,2 v4 a2,2 0 0 1 -2,2 h-16 a2,2 0 0 1 -2,-2 v-4 a2,2 0 0 1 2,-2 Z", "M6,6 L6.01,6", "M6,18 L6.01,18")).also { _server = it }
+
+private var _boxes: ImageVector? = null
+public val Lucide.Boxes: ImageVector
+    get() = _boxes ?: lucide("Boxes", listOf("M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z", "m7 16.5-4.74-2.85", "m7 16.5 5-3", "M7 16.5v5.17", "M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z", "m17 16.5-5-3", "m17 16.5 4.74-2.85", "M17 16.5v5.17", "M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z", "M12 8 7.26 5.15", "m12 8 4.74-2.85", "M12 13.5V8")).also { _boxes = it }
+
+private var _globe: ImageVector? = null
+public val Lucide.Globe: ImageVector
+    get() = _globe ?: lucide("Globe", listOf("M2,12 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0", "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20")).also { _globe = it }
+
+private var _wrench: ImageVector? = null
+public val Lucide.Wrench: ImageVector
+    get() = _wrench ?: lucide("Wrench", listOf("M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z")).also { _wrench = it }
+
+private var _fileText: ImageVector? = null
+public val Lucide.FileText: ImageVector
+    get() = _fileText ?: lucide("FileText", listOf("M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z", "M14 2v5a1 1 0 0 0 1 1h5", "M10 9H8", "M16 13H8", "M16 17H8")).also { _fileText = it }
+
+private var _image: ImageVector? = null
+public val Lucide.Image: ImageVector
+    get() = _image ?: lucide("Image", listOf("M5,3 h14 a2,2 0 0 1 2,2 v14 a2,2 0 0 1 -2,2 h-14 a2,2 0 0 1 -2,-2 v-14 a2,2 0 0 1 2,-2 Z", "M7,9 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0", "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21")).also { _image = it }
+
+private var _listVideo: ImageVector? = null
+public val Lucide.ListVideo: ImageVector
+    get() = _listVideo ?: lucide("ListVideo", listOf("M21 5H3", "M10 12H3", "M10 19H3", "M15 12.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z")).also { _listVideo = it }
+
+private var _users: ImageVector? = null
+public val Lucide.Users: ImageVector
+    get() = _users ?: lucide("Users", listOf("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M16 3.128a4 4 0 0 1 0 7.744", "M22 21v-2a4 4 0 0 0-3-3.87", "M5,7 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0")).also { _users = it }
+
+private var _database: ImageVector? = null
+public val Lucide.Database: ImageVector
+    get() = _database ?: lucide("Database", listOf("M3,5 a9,3 0 1,0 18,0 a9,3 0 1,0 -18,0", "M3 5V19A9 3 0 0 0 21 19V5", "M3 12A9 3 0 0 0 21 12")).also { _database = it }
+
+private var _puzzle: ImageVector? = null
+public val Lucide.Puzzle: ImageVector
+    get() = _puzzle ?: lucide("Puzzle", listOf("M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z")).also { _puzzle = it }
+
+private var _checkCheck: ImageVector? = null
+public val Lucide.CheckCheck: ImageVector
+    get() = _checkCheck ?: lucide("CheckCheck", listOf("M18 6 7 17l-5-5", "m22 10-7.5 7.5L13 16")).also { _checkCheck = it }
