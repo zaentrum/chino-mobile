@@ -2,6 +2,7 @@ package cloud.nalet.chino.mobile.ui.player
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 /** chino-web's languages.test.ts cases: codes as one language, the menu's
@@ -221,11 +222,47 @@ class LanguagesTest {
     }
 
     @Test
-    fun theAudioChipThreeLettersADashForNoDialogueAudioForNoLanguage() {
+    fun theAudioChipTheIso6392TCodeADashForNoDialogueAudioForNoLanguage() {
         assertEquals(
-            listOf("ENG", "GER", "FRE", "ENG", "POR", "—", "—", "Audio", "Audio", "Audio"),
-            listOf("eng", "ger", "fre", "en-US", "pt-BR", "zxx", "ZXX", "und", "", null).map { audioChipLabel(it) },
+            listOf("ENG", "DEU", "DEU", "DEU", "FRA", "NLD", "ZHO", "ZHO", "ENG", "POR", "HEB", "FIL"),
+            listOf("eng", "ger", "deu", "de", "fre", "dut", "chi", "zh-Hant", "en-US", "pt-BR", "iw", "fil").map { audioChipLabel(it) },
         )
+        assertEquals(
+            listOf("—", "—", "MUL", "MIS", "Audio", "Audio", "Audio"),
+            listOf("zxx", "ZXX", "mul", "mis", "und", "", null).map { audioChipLabel(it) },
+        )
+    }
+
+    @Test
+    fun theAudioChipNeverCutsANameShortJapaneseIsNotJapMalayMalayalamAndMalteseAreThree() {
+        for (code in listOf("jpn", "JPN", "ja", "ja-JP")) {
+            assertEquals("JPN", audioChipLabel(code), code)
+            assertNotEquals("JAP", audioChipLabel(code), code)
+        }
+        val malay = listOf("msa", "may", "ms").map { audioChipLabel(it) }
+        val malayalam = listOf("mal", "ml").map { audioChipLabel(it) }
+        val maltese = listOf("mlt", "mt").map { audioChipLabel(it) }
+        assertEquals(listOf("MSA", "MSA", "MSA", "MAL", "MAL", "MLT", "MLT"), malay + malayalam + maltese)
+        assertEquals(3, (malay + malayalam + maltese).toSet().size)
+    }
+
+    @Test
+    fun mulIsMultipleLanguagesMisOtherLanguageAndNeitherALanguageToFollow() {
+        assertEquals("Multiple languages", languageName("mul"))
+        assertEquals("Multiple languages", languageName("MUL"))
+        assertEquals("Other language", languageName("mis"))
+        assertEquals("", normalizeLang("mul"))
+        assertEquals("", normalizeLang("mis"))
+        assertNull(defaultSubtitleLang(audioLang = "mul", subtitlePref = "eng"))
+        assertEquals(
+            listOf("Multiple languages", "Other language", "Multiple languages · Original"),
+            audioLabels(listOf(AudioLabelInput("mul", name = "mul"), AudioLabelInput("mis"), AudioLabelInput("mul", name = "Original"))),
+        )
+        assertEquals(
+            listOf("Multiple languages", "Other language · Signs"),
+            subtitleLabels(listOf(SubtitleLabelInput("mul"), SubtitleLabelInput("mis", title = "Signs"))),
+        )
+        assertEquals("Multiple languages", languageOrLabel("mul", "mul"))
     }
 
     @Test

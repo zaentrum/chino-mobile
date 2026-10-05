@@ -36,6 +36,9 @@ private val T_TO_1 = mapOf(
     "uzb" to "uz", "vie" to "vi", "yid" to "yi", "zho" to "zh", "zul" to "zu",
 )
 
+// ISO 639-1 -> 639-2/T: the table above the other way round.
+private val ONE_TO_T = T_TO_1.entries.associate { (t, one) -> one to t }
+
 // Withdrawn 639-1 codes still found in the wild.
 private val OLD_1 = mapOf("iw" to "he", "in" to "id", "ji" to "yi")
 
@@ -49,6 +52,15 @@ const val NO_DIALOGUE = "No dialogue"
 
 /** What a track is called whose language is not known ("und", none). */
 const val UNKNOWN_LANGUAGE = "Unknown"
+
+// The codes for no one language that still say what a track is in, and what
+// such a track is called: no dialogue ("zxx"), several languages ("mul"), a
+// language ISO 639 has no code for ("mis").
+private val NOT_ONE_LANGUAGE = mapOf(
+    "zxx" to NO_DIALOGUE,
+    "mul" to "Multiple languages",
+    "mis" to "Other language",
+)
 
 // The English name of each normalised language (639-1, else 639-2/T).
 private val NAMES = mapOf(
@@ -91,8 +103,11 @@ private val PRIMARY = Regex("^[a-z]{2,3}$")
 
 private fun subtags(code: String): List<String> = code.trim().replace('_', '-').split('-')
 
+/** The code's language subtag, lower-cased ("pt" of "PT_br"); "" for none. */
+private fun primarySubtag(code: String?): String = code?.let { subtags(it).first().lowercase() }.orEmpty()
+
 /** Whether the code is "zxx": no linguistic content, no dialogue. */
-fun isNoDialogue(code: String?): Boolean = code != null && subtags(code).first().lowercase() == "zxx"
+fun isNoDialogue(code: String?): Boolean = primarySubtag(code) == "zxx"
 
 /**
  * The language a code names, as one comparable key: the 639-1 code where there
@@ -126,9 +141,10 @@ fun languageTag(code: String?): String {
 
 /** The language's English name ("ger" -> "German", "pt-BR" -> "Brazilian
  *  Portuguese"); the code as it came when there is no name for it; "No
- *  dialogue" for "zxx", "Unknown" for none. */
+ *  dialogue" for "zxx", "Multiple languages" for "mul", "Other language" for
+ *  "mis", "Unknown" for none. */
 fun languageName(code: String?): String {
-    if (isNoDialogue(code)) return NO_DIALOGUE
+    NOT_ONE_LANGUAGE[primarySubtag(code)]?.let { return it }
     val tag = languageTag(code)
     if (tag.isEmpty()) return UNKNOWN_LANGUAGE
     VARIANT_NAMES[tag]?.let { return it }
@@ -154,8 +170,10 @@ data class SubtitleLabelInput(
 
 private val CODE_LIKE = Regex("^[a-z]{2,3}([-_][a-z0-9]+)*$", RegexOption.IGNORE_CASE)
 
-/** Whether the code says what the track is in: a language, or no dialogue. */
-private fun hasLanguage(code: String?): Boolean = normalizeLang(code).isNotEmpty() || isNoDialogue(code)
+/** Whether the code says what the track is in: a language, no dialogue,
+ *  several languages or one with no code. */
+private fun hasLanguage(code: String?): Boolean =
+    normalizeLang(code).isNotEmpty() || primarySubtag(code) in NOT_ONE_LANGUAGE
 
 /** A title that is only a language code: the track's own again ("eng" on
  *  English), or one that names no language ("und"). */
@@ -292,13 +310,19 @@ fun audioLabels(tracks: List<AudioLabelInput>): List<String> {
     return numbered(labels, key)
 }
 
-/** The audio chip's three letters for the track playing: its language's name
- *  cut to three ("ENG", "GER"), "—" for no dialogue (zxx), "Audio" for a track
- *  tagged with no language. */
+/** The audio chip for the track playing: its language's ISO 639-2/T code
+ *  ("ENG", "DEU", "JPN"; the code as tagged where the table has none), "MUL"
+ *  for several languages and "MIS" for one with no code, "—" for no dialogue
+ *  (zxx), "Audio" for a track tagged with no language. Never a name cut short:
+ *  Japanese is not "JAP", and Malay, Malayalam and Maltese are three. As
+ *  chino-web's chip reads. */
 fun audioChipLabel(code: String?): String {
-    if (isNoDialogue(code)) return "—"
+    val primary = primarySubtag(code)
+    if (primary == "zxx") return "—"
+    if (primary in NOT_ONE_LANGUAGE) return primary.uppercase()
     val lang = normalizeLang(code)
-    return if (lang.isEmpty()) "Audio" else languageName(lang).take(3).uppercase()
+    if (lang.isEmpty()) return "Audio"
+    return (if (lang.length == 2) ONE_TO_T[lang] ?: lang else lang).uppercase()
 }
 
 /**

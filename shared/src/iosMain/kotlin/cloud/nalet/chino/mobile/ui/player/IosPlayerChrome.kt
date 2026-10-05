@@ -705,9 +705,10 @@ internal fun ChromeButton(icon: ImageVector, onClick: () -> Unit, variant: Chrom
  *  picture (where they would only restart the auto-hide timer). */
 private fun Modifier.absorbStrayTaps(): Modifier = pointerInput(Unit) { detectTapGestures(onTap = { }) }
 
-/** The playing audio's language as three letters ("ENG", "GER"), "—" for a
- *  film without dialogue (zxx), "Audio" for a track in no language — web's
- *  chip ([audioChipLabel]); the whole name to a screen reader. */
+/** The playing audio's language as its ISO 639-2/T code ("ENG", "DEU",
+ *  "JPN"), "—" for a film without dialogue (zxx), "Audio" for a track in no
+ *  language — web's chip ([audioChipLabel]); the whole name to a screen
+ *  reader. */
 @Composable
 private fun AudioLangChip(language: String, enabled: Boolean, accent: Boolean, onClick: () -> Unit) {
     val description = "Audio: ${languageName(language)}"

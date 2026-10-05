@@ -2239,9 +2239,9 @@ private fun ChromeButton(
     }
 }
 
-/** Compact pill chip showing the current audio track's language in three
- *  letters (e.g. "ENG", "GER"), "—" for a film without dialogue (zxx), or
- *  "Audio" for a track that names no language ("und", or no tag at all) —
+/** Compact pill chip showing the current audio track's language as its ISO
+ *  639-2/T code (e.g. "ENG", "DEU", "JPN"), "—" for a film without dialogue
+ *  (zxx), or "Audio" for a track that names no language ("und", or no tag) —
  *  [audioChipLabel], as chino-web's audio chip reads; the whole name to a
  *  screen reader. When `enabled` (multi-track file), tapping
  *  the chip opens the AudioMenuCard via the shared OpenPopover state.
