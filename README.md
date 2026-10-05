@@ -173,7 +173,8 @@ nothing watched, so Continue Watching is left alone. One the server no
 longer has says "Trailer not available" and offers the title's YouTube link
 when there is one. Without a trailer of its own, the button opens that link
 outside the app, as before. The Home hero takes titles with either, those
-with a trailer of their own first.
+with a trailer of their own first, and has the same Trailer button after
+Play and More Info.
 
 ## Addons
 
