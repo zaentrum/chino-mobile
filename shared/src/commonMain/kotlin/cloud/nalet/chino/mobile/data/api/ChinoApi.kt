@@ -24,6 +24,7 @@ import io.ktor.http.contentType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 
 /**
  * Mirrors chino-api/internal/http/router.go and chino-androidtv's ChinoApi
@@ -301,6 +302,29 @@ class ChinoApi(private val http: HttpClient) {
         http.get("v1/items/$id/play/trickplay/thumbnails.vtt") {
             parameter("stream", streamToken)
         }.bodyAsText()
+
+    // ---- What addons add ----------------------------------------------------
+    // Two seams an addon plugs into with its own words: slot rows (buttons a
+    // client draws in a named place) and notices (what an addon told the
+    // signed-in person). chino-api reads both from portal-api with the
+    // viewer's bearer, best effort, and keeps nothing; the app reads what it
+    // is given field by field (data/slots, data/notices).
+
+    /** GET /v1/extensions?slot=: the rows addons contribute to [slot], as
+     *  chino-api serves them — an array, empty when none does or portal-api
+     *  does not answer. Raw JSON: [cloud.nalet.chino.mobile.data.slots.slotButtons]
+     *  reads each row on its own, so one it cannot use costs only itself. */
+    suspend fun extensions(slot: String): JsonElement =
+        http.get("v1/extensions") { parameter("slot", slot) }.body()
+
+    /** POSTs a slot action to [href], which
+     *  [cloud.nalet.chino.mobile.data.slots.slotActionUrl] checked: the
+     *  portal's app proxy on this server. With the bearer, as every call, and
+     *  no body. The client follows no redirect of a POST, so the bearer goes
+     *  nowhere the check did not see; anything but a 2xx throws. */
+    suspend fun sendSlotAction(href: String) {
+        http.post(href)
+    }
 
     /** Files a bug report — chino-api opens (or dedup-appends to) a
      *  ticket on the connected server's issue system and answers 201 (new) / 200 (duplicate, comment
