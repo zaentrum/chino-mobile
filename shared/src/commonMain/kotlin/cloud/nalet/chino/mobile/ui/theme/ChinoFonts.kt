@@ -11,6 +11,7 @@ import chino_mobile.shared.generated.resources.JetBrainsMono_Bold
 import chino_mobile.shared.generated.resources.JetBrainsMono_ExtraBold
 import chino_mobile.shared.generated.resources.JetBrainsMono_Medium
 import chino_mobile.shared.generated.resources.JetBrainsMono_Regular
+import chino_mobile.shared.generated.resources.JetBrainsMono_SemiBold
 import chino_mobile.shared.generated.resources.Res
 import org.jetbrains.compose.resources.Font
 
@@ -32,10 +33,14 @@ fun ChinoInterFamily(): FontFamily = FontFamily(
     Font(Res.font.Inter_Bold, FontWeight.Bold),
 )
 
+/** JetBrains Mono in the weights chino-web's index.html loads (500 to 800),
+ *  and Regular. SemiBold is the web's `font-semibold` heading: without it,
+ *  a 600 matched the Bold file. */
 @Composable
 fun ChinoMonoFamily(): FontFamily = FontFamily(
     Font(Res.font.JetBrainsMono_Regular, FontWeight.Normal),
     Font(Res.font.JetBrainsMono_Medium, FontWeight.Medium),
+    Font(Res.font.JetBrainsMono_SemiBold, FontWeight.SemiBold),
     Font(Res.font.JetBrainsMono_Bold, FontWeight.Bold),
     Font(Res.font.JetBrainsMono_ExtraBold, FontWeight.ExtraBold),
 )
