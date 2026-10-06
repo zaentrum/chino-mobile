@@ -21,9 +21,15 @@ import cafe.adriel.voyager.core.screen.Screen
  *   here") so the full player picks up at the teaser's scene. -1 (default)
  *   means "use the saved resume position" (the pre-Zap behaviour). Ignored
  *   when [fromStart] is true.
+ * @param extraId one of [itemId]'s extras to play instead of the title — its
+ *   trailer, from the Trailer button of the detail page and the Home hero:
+ *   the player's extra mode ([PlayerMode.Extra]), the same controls and
+ *   menus, from the head, and nothing of the title's read or written. Null
+ *   (default) plays the title.
  */
 expect class PlayerScreen(
     itemId: String,
     fromStart: Boolean = false,
     resumeSec: Int = -1,
+    extraId: String? = null,
 ) : Screen

@@ -65,6 +65,7 @@ actual class PlayerScreen actual constructor(
     private val itemId: String,
     private val fromStart: Boolean,
     private val resumeSec: Int,
+    private val extraId: String?,
 ) : Screen {
     override val key: ScreenKey = uniqueScreenKey
 

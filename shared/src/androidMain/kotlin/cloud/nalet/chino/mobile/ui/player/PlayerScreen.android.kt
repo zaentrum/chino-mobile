@@ -149,11 +149,20 @@ import kotlin.math.roundToLong
  *
  * Fullscreen: WindowInsetsControllerCompat hide(systemBars); restored
  * on DisposableEffect.onDispose so back-nav doesn't leak the immersive flag.
+ *
+ * Extra mode ([extraId], [PlayerMode.Extra]): one of the title's extras — its
+ * trailer — in this same player, chrome, menus and gestures: its master from
+ * the title's detail ([loadExtraPlayback]), the quality ladder read off it,
+ * from the head with sound. Nothing of the title's is read or written — no
+ * progress, watched, segments, trickplay, sidecars, episodes or prewarm, and
+ * of the telemetry one trailer_play. The screen closes at the end; a master
+ * that is not there says "Trailer not available" with the title's link.
  */
 actual class PlayerScreen actual constructor(
     private val itemId: String,
     private val fromStart: Boolean,
     private val resumeSec: Int,
+    private val extraId: String?,
 ) : Screen {
     override val key: ScreenKey = uniqueScreenKey
 
@@ -161,6 +170,7 @@ actual class PlayerScreen actual constructor(
     override fun Content() {
         val container = LocalAppContainer.current
         val nav = LocalNavigator.currentOrThrow
+        val playerMode = PlayerMode.of(extraId)
 
         // Own the system-back explicitly: pop exactly once and CONSUME the
         // event. Voyager 1.1.0-beta03's implicit Navigator BackHandler can
@@ -170,37 +180,69 @@ actual class PlayerScreen actual constructor(
         // player from the stack once, so the next back on Detail falls through
         // to the shell instead of replaying. `var` so a guard stops a double
         // pop if recomposition re-enters before the screen leaves composition.
+        // The chrome's Back, the error screens and an extra's end close it the
+        // same way — an extra's end and a Back can come together — and only
+        // while the player is the screen on top.
         var popped by remember { mutableStateOf(false) }
-        BackHandler(enabled = true) {
-            if (!popped) {
+        val close: () -> Unit = {
+            if (!popped && nav.lastItem === this@PlayerScreen) {
                 popped = true
                 nav.pop()
             }
         }
+        BackHandler(enabled = true, onBack = close)
 
         var ready: PlayState? by remember { mutableStateOf(null) }
         var error: String? by remember { mutableStateOf(null) }
-        LaunchedEffect(itemId, fromStart, resumeSec) {
+        // An extra that is not there: gone from the detail, or its master
+        // answers 404 (at the load, or once playing).
+        var notAvailable: ExtraPlayback.NotAvailable? by remember { mutableStateOf(null) }
+        LaunchedEffect(itemId, fromStart, resumeSec, extraId) {
             ready = null
             error = null
+            notAvailable = null
             try {
                 val token = container.streamTokenManager.valid()
                 val base = container.config.apiBaseUrl.trimEnd('/')
+                val caps = CodecCaps.queryParam
+                // An extra: the title's detail and the extra's master, and
+                // nothing else of the server's (PlayerMode.Extra) — what
+                // /play/info says of a title is read off the master.
+                val extra = extraId?.let { id ->
+                    when (val e = loadExtraPlayback(container.chinoApi, base, token, caps, itemId, id)) {
+                        is ExtraPlayback.Ready -> e
+                        is ExtraPlayback.NotAvailable -> {
+                            notAvailable = e
+                            return@LaunchedEffect
+                        }
+                    }
+                }
                 // The saved position matters only when neither "from start"
                 // nor a hand-off from Zap says where to begin. Null = it could
                 // not be read (resumeStartSec / mayWriteProgress below).
                 val handoff = !fromStart && resumeSec > 1
-                val saved = if (fromStart || handoff) {
+                val saved = if (!playerMode.progress || fromStart || handoff) {
                     null
                 } else {
                     runCatching { container.chinoApi.getProgress(itemId).positionSec }.getOrNull()
                 }
-                val caps = CodecCaps.queryParam
-                val info = runCatching { container.chinoApi.playInfo(itemId, caps = caps.ifEmpty { null }) }.getOrNull()
-                val item = runCatching { container.chinoApi.getItem(itemId) }.getOrNull()
-                val segs = runCatching { container.chinoApi.itemSegments(itemId).segments }.getOrDefault(emptyList())
-                val sidecarSubs = runCatching { container.chinoApi.itemSubtitles(itemId).subtitles }
-                    .getOrDefault(emptyList())
+                val info = if (playerMode.playInfo) {
+                    runCatching { container.chinoApi.playInfo(itemId, caps = caps.ifEmpty { null }) }.getOrNull()
+                } else {
+                    extra?.info
+                }
+                // The title's own detail; an extra's was its load's.
+                val item = if (extra == null) runCatching { container.chinoApi.getItem(itemId) }.getOrNull() else null
+                val segs = if (playerMode.segments) {
+                    runCatching { container.chinoApi.itemSegments(itemId).segments }.getOrDefault(emptyList())
+                } else {
+                    emptyList()
+                }
+                // A title's sidecars. An extra has none: its subtitles are the
+                // ones its master lists, which Media3 plays as it plays a
+                // title's renditions.
+                val sidecarSubs = (if (playerMode.sidecarSubtitles) runCatching { container.chinoApi.itemSubtitles(itemId).subtitles }.getOrNull() else null)
+                    .orEmpty()
                     // Sidecar URLs from chino-api are `/api/v1/play/subs/{id}.vtt`.
                     // chino-api's StreamMiddleware (auth/oidc.go L78-87)
                     // accepts `?stream=<signed-token>` minted by
@@ -222,7 +264,7 @@ actual class PlayerScreen actual constructor(
                 // Sibling episode resolution (TV pattern, ported). Series id
                 // lives on Item.parentId for episodes; for movies parentId is
                 // null and the prev/next chevrons stay disabled.
-                val seriesId = item?.parentId
+                val seriesId = item?.parentId?.takeIf { playerMode.episodes }
                 // Series title for the episode player heading. The episode Item
                 // doesn't carry the series name, so fetch the parent series item
                 // by id. Best-effort — a failed/absent fetch degrades the title
@@ -249,7 +291,7 @@ actual class PlayerScreen actual constructor(
                 // a 404 every play; an empty list degrades to time-only
                 // scrubbing. Mirrors chino-web's `info.mode !== 'packaged'`
                 // gate before fetching thumbnails.vtt.
-                val trickplay = if (info?.mode?.equals("packaged", ignoreCase = true) == true) {
+                val trickplay = if (playerMode.trickplay && info?.mode?.equals("packaged", ignoreCase = true) == true) {
                     runCatching { parseTrickplayVtt(container.chinoApi.trickplayVtt(itemId, token)) }
                         .getOrDefault(emptyList())
                 } else {
@@ -257,11 +299,12 @@ actual class PlayerScreen actual constructor(
                 }
                 // Where playback starts and whether this session may write its
                 // position: the shared resume rule, as the iOS player reads it.
-                // A barely started or finished title starts at the head.
+                // A barely started or finished title starts at the head; an
+                // extra always does, and writes nothing.
                 val resume = ResumeInput(
                     savedSec = saved,
                     durationSec = (info?.durationMs ?: item?.durationMs ?: 0L) / 1000.0,
-                    startOver = fromStart,
+                    startOver = fromStart || !playerMode.progress,
                     handoffSec = if (handoff) resumeSec else -1,
                 )
                 // The Settings languages as playback starts, and the audio
@@ -277,30 +320,35 @@ actual class PlayerScreen actual constructor(
                     currentQuality = streamQuality,
                     qualities = info?.qualities ?: emptyList(),
                     resumeMs = resumeStartSec(resume) * 1000L,
-                    writable = mayWriteProgress(resume),
+                    writable = playerMode.progress && mayWriteProgress(resume),
                     audioPref = settings.preferredAudioLang,
                     subtitlePref = settings.preferredSubLang,
                     firstAudioLang = firstAudio?.language,
-                    title = composePlayerTitle(item, seriesTitle),
+                    title = extra?.heading ?: composePlayerTitle(item, seriesTitle),
                     info = info,
                     segments = segs,
                     prevEpisodeId = prevId,
                     nextEpisodeId = nextId,
                     sidecarSubtitles = sidecarSubs,
                     trickplayCues = trickplay,
+                    playerMode = playerMode,
+                    extraId = extraId,
+                    extra = extra,
                 )
             } catch (e: Exception) {
                 error = "Playback failed: ${e.message ?: e::class.simpleName.orEmpty()}"
             }
         }
 
+        val missing = notAvailable
         when {
-            error != null -> ErrorState(message = error!!, itemId = itemId, onBack = { nav.pop() })
+            missing != null -> ExtraNotAvailable(title = missing.title, link = missing.link, onBack = close)
+            error != null -> ErrorState(message = error!!, itemId = itemId, extraId = extraId, onBack = close)
             ready == null -> LoadingState()
             else -> PlaybackSurface(
                 state = ready!!,
                 itemId = itemId,
-                onBack = { nav.pop() },
+                onBack = close,
                 // Home: reset the stack to the signed-in shell root. Same idiom
                 // the auth/profile flows use (replaceAll(MainShellScreen())),
                 // so it lands on Home regardless of how deep the stack is.
@@ -311,6 +359,11 @@ actual class PlayerScreen actual constructor(
                     nav.replace(PlayerScreen(itemId = newId, fromStart = true))
                 },
                 onPlaybackError = { error = it },
+                onExtraMissing = {
+                    val extra = ready?.extra
+                    notAvailable = ExtraPlayback.NotAvailable(title = extra?.item?.title, link = extra?.link)
+                },
+                onEnded = close,
             )
         }
     }
@@ -359,7 +412,19 @@ private data class PlayState(
      *  for non-packaged items (or when the fetch failed) — the scrubber
      *  then shows time/segment text only. */
     val trickplayCues: List<TrickplayCue>,
-)
+    /** What it plays, a title or one of its extras: what it reads and
+     *  writes ([PlayerMode]). */
+    val playerMode: PlayerMode,
+    /** The extra it plays in extra mode; null for a title. */
+    val extraId: String?,
+    /** The extra's master and what was read off it; null for a title. */
+    val extra: ExtraPlayback.Ready?,
+) {
+    /** The master at [quality]: a title's ([buildMasterUrl]), else the
+     *  extra's — `q` for a rung the viewer picked ([withQuality]). */
+    fun masterUrl(quality: String): String =
+        extra?.let { withQuality(it.masterUrl, quality) } ?: buildMasterUrl(base, itemId, streamToken, quality, caps)
+}
 
 private enum class OpenPopover { NONE, SPEED, AUDIO, CAPTIONS, INFO, VOLUME, QUALITY }
 
@@ -503,9 +568,10 @@ private fun LoadingState() {
  *  Web parity (PlayerPage.tsx terminal-error overlay): a secondary "Report
  *  a bug" opens the manual dialog pre-filled with the technical error
  *  string so the user can add what they were doing. Tap anywhere else
- *  still backs out, exactly as before. */
+ *  still backs out, exactly as before. [extraId] is the extra that failed,
+ *  in extra mode. */
 @Composable
-private fun ErrorState(message: String, itemId: String, onBack: () -> Unit) {
+private fun ErrorState(message: String, itemId: String, extraId: String?, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     // Same choreography as Settings: capture the screenshot BEFORE the
     // dialog mounts (a dialog over the screen would only photograph
@@ -544,7 +610,7 @@ private fun ErrorState(message: String, itemId: String, onBack: () -> Unit) {
         bugDraft?.let { draft ->
             BugReportDialog(
                 screenshot = draft.screenshot,
-                context = mapOf("screen" to "player", "itemId" to itemId),
+                context = playerReportContext(itemId, extraId),
                 // Same pre-fill template as web's player → BugReportDialog
                 // hand-off (PlayerPage.tsx L3494).
                 initialDescription = "Playback failed while watching this item." +
@@ -559,6 +625,14 @@ private fun ErrorState(message: String, itemId: String, onBack: () -> Unit) {
  *  dialog is open. Plain class on purpose — a data class would lint on
  *  ByteArray equals/hashCode. */
 private class PlayerBugDraft(val screenshot: ByteArray?)
+
+/** What a player's bug report says it was playing: the title, and the
+ *  extra in extra mode. */
+private fun playerReportContext(itemId: String, extraId: String?): Map<String, String> = buildMap {
+    put("screen", "player")
+    put("itemId", itemId)
+    extraId?.let { put("extraId", it) }
+}
 
 /** Hides system bars while mounted; restores on dispose. No-ops if the
  *  host LocalContext isn't an Activity (e.g. Compose preview). */
@@ -592,9 +666,21 @@ private fun PlaybackSurface(
     onHome: () -> Unit,
     onSwitchItem: (String) -> Unit,
     onPlaybackError: (String) -> Unit,
+    /** The extra's master answered 404 once playing (extra mode). */
+    onExtraMissing: () -> Unit,
+    /** Playback reached the end of what closes there ([PlayerMode.closesAtEnd]). */
+    onEnded: () -> Unit,
 ) {
     val context = LocalContext.current
     val container = LocalAppContainer.current
+    // The player's events, for a title; an extra's telemetry is its one
+    // trailer_play ([PlayerMode]).
+    fun playbackEvent(kind: String, extra: Map<String, String>) {
+        if (state.playerMode.playbackEvents) container.telemetry.event(kind, itemId = itemId, extra = extra)
+    }
+    // An extra's first playback, once per screen (a quality switch rebuilds
+    // the player, not the screen).
+    var trailerPlaySent by remember { mutableStateOf(false) }
 
     // Quality switching (mirrors TV's currentQuality + reloadKey). Changing
     // the rung rebuilds the master URL, which re-keys the ExoPlayer
@@ -610,9 +696,7 @@ private fun PlaybackSurface(
     // state.resumeMs" (first build / fresh mount). A quality switch stamps
     // the live position here right before bumping reloadKey.
     var pendingResumeMs by remember { mutableStateOf(-1L) }
-    val activeMasterUrl = remember(currentQuality, reloadKey) {
-        buildMasterUrl(state.base, state.itemId, state.streamToken, currentQuality, state.caps)
-    }
+    val activeMasterUrl = remember(currentQuality, reloadKey) { state.masterUrl(currentQuality) }
     // What this session has played, the only position it writes back — the
     // guard the iOS player saves through (PlaybackProgress.kt): never a
     // position before the resume seek has landed, never a seek target
@@ -839,7 +923,23 @@ private fun PlaybackSurface(
     DisposableEffect(player) {
         var subtitlesSet = false
         val listener = object : Player.Listener {
-            override fun onIsPlayingChanged(p: Boolean) { isPlaying = p }
+            override fun onIsPlayingChanged(p: Boolean) {
+                isPlaying = p
+                // An extra's one trailer_play, as the trailer screen sent it.
+                if (p && state.playerMode.trailerPlay && !trailerPlaySent) {
+                    trailerPlaySent = true
+                    container.telemetry.event(
+                        "trailer_play",
+                        itemId = itemId,
+                        extra = mapOf("extra_id" to state.extraId.orEmpty(), "local" to "true"),
+                    )
+                }
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                // An extra closes at its end; a title stays there (the
+                // up-next countdown, the chrome).
+                if (playbackState == Player.STATE_ENDED && state.playerMode.closesAtEnd) onEnded()
+            }
             override fun onTracksChanged(t: Tracks) {
                 audioTracks = collectAudioTracks(t)
                 // The sidecars, then the master's SUBTITLES renditions that
@@ -883,14 +983,20 @@ private fun PlaybackSurface(
                 val http = e.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException
                 val manifestMissing = http?.responseCode == 404 &&
                     (http.dataSpec.uri.toString().contains(".m3u8"))
+                // An extra whose master is gone: "Trailer not available",
+                // with the title's link — nothing to retry, nothing to report.
+                if (manifestMissing && state.extra != null) {
+                    onExtraMissing()
+                    return
+                }
                 if (!manifestMissing) {
                     val atMs = player.currentPosition.coerceAtLeast(0L)
+                    // An extra is packaged (its info says so): retried in place.
                     when (val recovery = recoveries.next(state.info?.mode, currentQuality, atMs)) {
                         PlaybackRecovery.RetryInPlace -> {
-                            container.telemetry.event(
+                            playbackEvent(
                                 "retry",
-                                itemId = itemId,
-                                extra = mapOf("in_place" to "true", "at" to (atMs / 1000).toString(), "error" to e.errorCodeName),
+                                mapOf("in_place" to "true", "at" to (atMs / 1000).toString(), "error" to e.errorCodeName),
                             )
                             // Media3 prepares the same source again from the
                             // position it failed at.
@@ -898,10 +1004,9 @@ private fun PlaybackSurface(
                             return
                         }
                         is PlaybackRecovery.StepDown -> {
-                            container.telemetry.event(
+                            playbackEvent(
                                 "quality_fallback",
-                                itemId = itemId,
-                                extra = mapOf("from" to currentQuality, "to" to recovery.quality, "error" to e.errorCodeName),
+                                mapOf("from" to currentQuality, "to" to recovery.quality, "error" to e.errorCodeName),
                             )
                             // As a quality switch: rebuilt at the new rung,
                             // seeked to where this one failed.
@@ -941,11 +1046,7 @@ private fun PlaybackSurface(
                             name = e.errorCodeName,
                             message = e.message,
                         ),
-                        context = mapOf(
-                            "itemId" to itemId,
-                            "positionSec" to positionSec,
-                            "screen" to "player",
-                        ),
+                        context = playerReportContext(itemId, state.extraId) + ("positionSec" to positionSec),
                         screenshot = shot,
                     )
                 }
@@ -980,13 +1081,12 @@ private fun PlaybackSurface(
                 val playedMs = player.currentPosition
                 guard.played(playedMs / 1000.0)
                 val credits = inCredits(state.segments, playedMs)
-                if (!markedWatched && reachedWatched(playedMs, durationMs, credits)) {
+                if (state.playerMode.watched && !markedWatched && reachedWatched(playedMs, durationMs, credits)) {
                     markedWatched = true
                     container.appScope.launch { runCatching { container.chinoApi.postWatched(itemId) } }
-                    container.telemetry.event(
+                    playbackEvent(
                         "mark_watched",
-                        itemId = itemId,
-                        extra = mapOf("at" to (playedMs / 1000).toString(), "via" to if (credits) "credits" else "p95"),
+                        mapOf("at" to (playedMs / 1000).toString(), "via" to if (credits) "credits" else "p95"),
                     )
                 }
             }
@@ -1112,7 +1212,7 @@ private fun PlaybackSurface(
                 container.chinoApi.prewarm(nextId, caps = state.caps.ifEmpty { null }, quality = "high")
             }
         }
-        container.telemetry.event("binge_prewarm", itemId = itemId, extra = mapOf("next_item" to nextId))
+        playbackEvent("binge_prewarm", mapOf("next_item" to nextId))
     }
 
     // Auto-play-next countdown: arms when we're in credits/near-end OR inside a
@@ -1157,11 +1257,7 @@ private fun PlaybackSurface(
     val switchQuality: (String) -> Unit = remember(player) {
         { rung ->
             if (rung != currentQuality) {
-                container.telemetry.event(
-                    "quality_switch",
-                    itemId = itemId,
-                    extra = mapOf("from" to currentQuality, "to" to rung),
-                )
+                playbackEvent("quality_switch", mapOf("from" to currentQuality, "to" to rung))
                 pendingResumeMs = player.currentPosition.coerceAtLeast(0L)
                 currentQuality = rung
                 reloadKey += 1
@@ -1378,11 +1474,7 @@ private fun PlaybackSurface(
                 label = skipSegmentLabel(skipSeg.kind),
                 onClick = {
                     seekTo(skipSeg.endMs)
-                    container.telemetry.event(
-                        "skip_segment",
-                        itemId = itemId,
-                        extra = mapOf("kind" to skipSeg.kind),
-                    )
+                    playbackEvent("skip_segment", mapOf("kind" to skipSeg.kind))
                 },
             )
         }
