@@ -925,7 +925,8 @@ private fun PlaybackSurface(
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(p: Boolean) {
                 isPlaying = p
-                // An extra's one trailer_play, as the trailer screen sent it.
+                // An extra's one trailer_play: the extra, and that it played
+                // from this server.
                 if (p && state.playerMode.trailerPlay && !trailerPlaySent) {
                     trailerPlaySent = true
                     container.telemetry.event(

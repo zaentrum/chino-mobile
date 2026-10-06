@@ -599,8 +599,8 @@ private fun IosPlaybackSurface(
             )
         }
 
-        // An extra's missing master is the trailer's message (above), not
-        // this panel.
+        // An extra's missing master is "Trailer not available" (above),
+        // not this panel.
         if (failure != null && !(failure.notFound && state.extra != null)) {
             PlaybackFailurePanel(
                 title = failure.title,

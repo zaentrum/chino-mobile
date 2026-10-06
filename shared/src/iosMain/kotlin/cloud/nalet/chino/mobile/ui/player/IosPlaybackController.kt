@@ -208,7 +208,8 @@ internal class IosPlaybackController(
         pipActive = engine.pipActive
         if (s.startSeekDone && s.firstFrame && !started) started = true
         if (started && s.playing) guard.played(s.positionMs / 1000.0)
-        // An extra's one trailer_play, as the trailer screen sent it.
+        // An extra's one trailer_play: the extra, and that it played from
+        // this server.
         if (state.mode.trailerPlay && !trailerPlaySent && started && s.playing) {
             trailerPlaySent = true
             telemetry.event("trailer_play", itemId = itemId, extra = mapOf("extra_id" to state.extraId.orEmpty(), "local" to "true"))

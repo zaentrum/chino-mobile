@@ -460,7 +460,7 @@ private fun Double.toMs(): Long = (this * 1000).toLong()
 
 /** The failed item's master playlist answered 404, so there is nothing to
  *  stream: its error log says so, or CoreMedia's HTTP 404 (-12938) is in its
- *  error. The player's rule, and the trailer's. */
+ *  error. The player's rule, a title's and an extra's. */
 @OptIn(ExperimentalForeignApi::class)
 internal fun AVPlayerItem.masterPlaylistMissing(): Boolean {
     val events = errorLog()?.events.orEmpty().filterIsInstance<AVPlayerItemErrorLogEvent>()
