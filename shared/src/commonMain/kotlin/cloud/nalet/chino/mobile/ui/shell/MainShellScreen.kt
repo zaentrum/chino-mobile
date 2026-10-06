@@ -57,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -122,7 +123,12 @@ class MainShellScreen : Screen {
         // files that fail to submit survive for the next launch.
         androidx.compose.runtime.LaunchedEffect(Unit) { container.bugReporter.flushPending() }
 
-        var section by remember { mutableStateOf(Section.Home) }
+        // Saveable: a title opened from Movies or Series covers the shell,
+        // and Back lands on that tab again, not on Home. Voyager keeps a
+        // screen's saveable state while it is in the stack, and the activity
+        // keeps it through a recreation or the process being killed. Home
+        // (replaceAll) starts a new shell, on Home.
+        var section by rememberSaveable { mutableStateOf(Section.Home) }
         // Lifted search state — drives both the TopBar SearchField and
         // the SearchResultsSection. Non-empty query hides the active
         // section and shows results inline (mirroring chino-web, where
