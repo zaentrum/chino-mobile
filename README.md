@@ -133,6 +133,8 @@ codec caps and the chosen quality, and play by the same rules in
   forced one, and a file's own default flag counts for nothing.
 - **Audio, quality, segments** — audio tracks, the quality ladder from
   `/play/info`, intro/recap/credits skipping and the next-episode countdown.
+  Without play info (it failed, or took more than 8 s) playback starts at
+  Auto, the master's own pick, never the top rung.
 
 The iOS player draws subtitles itself — sidecar files and the stream's text
 tracks, named by language ("English · SDH", "German (forced)"); image-based
