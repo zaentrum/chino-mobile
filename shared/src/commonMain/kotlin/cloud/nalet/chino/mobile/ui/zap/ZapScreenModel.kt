@@ -4,6 +4,7 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.currentTimeMillis
 import cloud.nalet.chino.mobile.data.AppContainer
+import cloud.nalet.chino.mobile.data.auth.StreamTokenManager
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -182,6 +183,7 @@ class ZapScreenModel(
     fun onPageSettled(index: Int) {
         val card = cards.getOrNull(index) ?: return
         if (index == lastActiveIndex) return
+        resignIfTokenTurned()
 
         // Classify + report the outgoing card (only when moving forward or
         // back to a genuinely different card).
@@ -266,6 +268,46 @@ class ZapScreenModel(
      * platforms without a prefetcher (iOS). This is the CLIENT side of the warm
      * — [prewarmNext] still tells the SERVER to transcode the right segment.
      */
+    /** Zap is in the foreground again: its cards' links re-signed if the
+     *  stream token has turned over meanwhile. */
+    fun onResume() = resignIfTokenTurned()
+
+    /**
+     * The cards' links signed with the stream token valid now, when it has
+     * turned over: asked as a card settles and as Zap comes back to the
+     * foreground ([StreamTokenManager.valid] by the wall clock). Zap left
+     * open - or in the background overnight - kept cards whose links carried
+     * a token past its 6 h, and their clips answered 401. A rebuilt card
+     * keeps what was learned of it; the ones ahead are prefetched again,
+     * with their new links.
+     */
+    private fun resignIfTokenTurned() {
+        screenModelScope.launch {
+            val fresh = runCatching { container.streamTokenManager.valid() }.getOrNull() ?: return@launch
+            if (fresh == token) return@launch
+            token = fresh
+            for (i in cards.indices) cards[i] = cards[i].resigned()
+            prefetched.clear()
+            if (_state.value is ZapUiState.Active) _state.value = ZapUiState.Active(cards.toList())
+            prefetchAhead(lastActiveIndex.coerceAtLeast(0))
+        }
+    }
+
+    /** This card with its links built again, with the current token. */
+    private fun ZapCardState.resigned(): ZapCardState =
+        ZapCardState(
+            item = item,
+            masterUrl = buildMasterUrl(item.id),
+            seekSec = seekSec,
+            source = source,
+            backdropUrl = buildBackdropUrl(item.id),
+            posterUrl = buildPosterUrl(item.id),
+        ).also {
+            it.features = features
+            it.activeSince = activeSince
+            it.currentPositionSec = currentPositionSec
+        }
+
     private fun prefetchAhead(fromIndex: Int) {
         val upcoming = ArrayList<ZapPrefetchCard>(PREFETCH_AHEAD)
         var i = fromIndex + 1

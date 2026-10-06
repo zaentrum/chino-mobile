@@ -31,6 +31,7 @@ import cloud.nalet.chino.mobile.ui.player.LocalAutoCloseGuard
 import cloud.nalet.chino.mobile.ui.shell.LogoMark
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoTheme
+import cloud.nalet.chino.mobile.ui.theme.SignedAppImages
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -113,6 +114,8 @@ fun App(
         LocalAppRestart provides restart,
         LocalAutoCloseGuard provides autoCloseGuard,
     ) {
+        // Images signed with a stream token valid as they are fetched.
+        SignedAppImages(container)
         ChinoTheme {
             val snapshot = boot
             Box(modifier = Modifier.fillMaxSize()) {

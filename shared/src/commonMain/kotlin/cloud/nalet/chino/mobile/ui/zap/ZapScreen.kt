@@ -57,6 +57,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -112,6 +114,9 @@ class ZapScreen : Screen {
         // so Voyager never calls onDispose — fire session-end + final dwell when
         // the Zap tab leaves composition (tab switch / nav away).
         DisposableEffect(Unit) { onDispose { model.closeSession() } }
+        // Back in the foreground - after a night, its cards' token may be
+        // past its 6 h: re-signed (ZapScreenModel.onResume).
+        LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.onResume() }
 
         // Reels feed = portrait on a phone, where the card turned sideways is
         // too short for its overlay; a large screen turns freely and the card
