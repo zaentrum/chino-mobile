@@ -315,8 +315,10 @@ actual class PlayerScreen actual constructor(
                 val nextId = if (idx in 0 until flatEpisodes.size - 1) flatEpisodes[idx + 1].id else null
                 // Default rung follows the server's recommendation (mirrors TV's
                 // `quality ?: info?.defaultQuality ?: "high"`); the quality
-                // picker overrides it at runtime via a player rebuild.
-                val streamQuality = info?.defaultQuality ?: "high"
+                // picker overrides it at runtime via a player rebuild. Without
+                // play info - it failed or timed out - Auto, the master's pick
+                // (startQuality), not the top rung.
+                val streamQuality = startQuality(info)
                 // Trickplay scrub-preview cues — only packaged items have the
                 // sprite tree (the analyzer emits it alongside the CMAF). For
                 // transcode/passthrough/remux we skip the fetch so we don't log

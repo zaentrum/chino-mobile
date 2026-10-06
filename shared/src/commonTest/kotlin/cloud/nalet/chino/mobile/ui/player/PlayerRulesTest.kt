@@ -140,7 +140,21 @@ class PlayerRulesTest {
         val packaged = qualityLadder(PlayInfo(mode = "packaged", defaultQuality = "v0"))
         assertFalse(packaged.pickable)
         assertEquals("v0", packaged.initial)
-        assertEquals("high", qualityLadder(null).initial)
+        // Without play info the master decides (startQuality).
+        assertEquals(AUTO_QUALITY, qualityLadder(null).initial)
+    }
+
+    @Test
+    fun withoutPlayInfoTheStartIsAutoNeverTheTopRung() {
+        // /play/info failed or ran out of its 8 s: the master decides what
+        // the device is served, from its caps.
+        assertEquals(AUTO_QUALITY, startQuality(null))
+        assertFalse(qualityLadder(null).pickable)
+        // With play info: the server's default, else the on-the-fly top.
+        assertEquals("medium", startQuality(PlayInfo(mode = "transcode", defaultQuality = "medium")))
+        assertEquals(AUTO_QUALITY, startQuality(PlayInfo(mode = "packaged", defaultQuality = AUTO_QUALITY)))
+        assertEquals("high", startQuality(PlayInfo(mode = "transcode")))
+        assertEquals("high", startQuality(PlayInfo(mode = "transcode", defaultQuality = " ")))
     }
 
     @Test
@@ -149,9 +163,15 @@ class PlayerRulesTest {
             "https://media.example.org/api/v1/items/m1/play/master.m3u8?stream=tok&caps=avc,aac,mp3&q=high",
             buildMasterUrl("https://media.example.org/api/", "m1", "tok", "high", "avc,aac,mp3"),
         )
+        // Auto asks for no rung: the master decides, a passthrough's stream
+        // copy included (chino-stream copies only without a q or at high).
         assertEquals(
-            "https://media.example.org/api/v1/items/e1/play/master.m3u8?stream=tok&q=auto",
+            "https://media.example.org/api/v1/items/e1/play/master.m3u8?stream=tok",
             buildMasterUrl("https://media.example.org/api", "e1", "tok", AUTO_QUALITY, ""),
+        )
+        assertEquals(
+            "https://media.example.org/api/v1/items/e1/play/master.m3u8?stream=tok&caps=avc&q=v1",
+            buildMasterUrl("https://media.example.org/api", "e1", "tok", "v1", "avc"),
         )
     }
 }
