@@ -80,7 +80,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.model.Item
-import cloud.nalet.chino.mobile.ui.player.LocalAutoCloseBackGuard
+import cloud.nalet.chino.mobile.ui.player.LocalAutoCloseGuard
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
 import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
 import cloud.nalet.chino.mobile.ui.trailer.trailerChoice
@@ -114,7 +114,7 @@ class DetailScreen(private val itemId: String) : Screen {
     override fun Content() {
         val nav = LocalNavigator.currentOrThrow
         val container = LocalAppContainer.current
-        val backGuard = LocalAutoCloseBackGuard.current
+        val closeGuard = LocalAutoCloseGuard.current
         val model = remember(itemId) { DetailScreenModel(container, itemId) }
         val state by model.state.collectAsState()
         val watchlist by container.userFlags.watchlist.collectAsState()
@@ -158,8 +158,10 @@ class DetailScreen(private val itemId: String) : Screen {
                         episodeResume = s.episodeResume,
                         // Not the moment after the player closed by itself
                         // over this page: its Back sat where this one is, and
-                        // the tap was meant for it (AutoCloseBackGuard).
-                        onBack = { if (!backGuard.ignoresBack()) nav.pop() },
+                        // the press was meant for it. A tap then is held off
+                        // before it gets here (AutoCloseGuard); this is for
+                        // one by TalkBack or a keyboard.
+                        onBack = { if (!closeGuard.holdsInput()) nav.pop() },
                         // Home: reset the stack to the signed-in shell root — the
                         // same idiom the auth/profile flows use. Lands on Home no
                         // matter how deep the detail stack is.

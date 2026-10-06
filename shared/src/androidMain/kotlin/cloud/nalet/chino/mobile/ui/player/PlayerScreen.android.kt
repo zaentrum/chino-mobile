@@ -170,7 +170,7 @@ actual class PlayerScreen actual constructor(
     override fun Content() {
         val container = LocalAppContainer.current
         val nav = LocalNavigator.currentOrThrow
-        val backGuard = LocalAutoCloseBackGuard.current
+        val closeGuard = LocalAutoCloseGuard.current
         val playerMode = PlayerMode.of(extraId)
 
         // Own the system-back explicitly: pop exactly once and CONSUME the
@@ -184,20 +184,20 @@ actual class PlayerScreen actual constructor(
         // The chrome's Back, the error screens and an extra's end close it the
         // same way — an extra's end and a Back can come together — and only
         // while the player is the screen on top.
+        // The guard hears how: closed by itself, at an extra's end, the screen
+        // it returns to holds off Back and taps for a moment, which the viewer
+        // may have meant for the player; closed by the viewer, nothing
+        // (AutoCloseGuard).
         var popped by remember { mutableStateOf(false) }
-        val close: () -> Unit = {
+        val closeAs: (PlayerClose) -> Unit = { how ->
             if (!popped && nav.lastItem === this@PlayerScreen) {
                 popped = true
+                closeGuard.playerClosed(how)
                 nav.pop()
             }
         }
-        // Closing by itself, at an extra's end: for a moment the screen it
-        // returns to ignores Back, which the viewer may have pressed for the
-        // player (AutoCloseBackGuard). A Back that closes it arms nothing.
-        val closeByItself: () -> Unit = {
-            if (!popped && nav.lastItem === this@PlayerScreen) backGuard.playerClosedItself()
-            close()
-        }
+        val close: () -> Unit = { closeAs(PlayerClose.ByViewer) }
+        val closeByItself: () -> Unit = { closeAs(PlayerClose.ByItself) }
         BackHandler(enabled = true, onBack = close)
 
         var ready: PlayState? by remember { mutableStateOf(null) }

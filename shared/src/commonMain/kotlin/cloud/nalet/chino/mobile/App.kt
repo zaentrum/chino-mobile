@@ -25,9 +25,9 @@ import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
 import cloud.nalet.chino.mobile.ui.notices.NoticesPolling
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
-import cloud.nalet.chino.mobile.ui.player.AutoCloseBackGuard
-import cloud.nalet.chino.mobile.ui.player.IgnoreBackAfterAutoClose
-import cloud.nalet.chino.mobile.ui.player.LocalAutoCloseBackGuard
+import cloud.nalet.chino.mobile.ui.player.AutoCloseGuard
+import cloud.nalet.chino.mobile.ui.player.HoldInputAfterAutoClose
+import cloud.nalet.chino.mobile.ui.player.LocalAutoCloseGuard
 import cloud.nalet.chino.mobile.ui.shell.LogoMark
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoTheme
@@ -103,14 +103,15 @@ fun App(
             BootState(accounts = accts, serverConfigured = configured)
         }
     }
-    // The player arms it as it closes by itself; the screen it returns to
-    // ignores Back for a moment (AutoCloseBackGuard).
-    val autoCloseBackGuard = remember { AutoCloseBackGuard() }
+    // The player tells it how it closed; after it closed by itself, the
+    // screen it returns to holds off Back and taps for a moment
+    // (AutoCloseGuard).
+    val autoCloseGuard = remember { AutoCloseGuard() }
     CompositionLocalProvider(
         LocalAppContainer provides container,
         LocalSignInLauncher provides signInLauncher,
         LocalAppRestart provides restart,
-        LocalAutoCloseBackGuard provides autoCloseBackGuard,
+        LocalAutoCloseGuard provides autoCloseGuard,
     ) {
         ChinoTheme {
             val snapshot = boot
@@ -130,10 +131,11 @@ fun App(
                         else -> MainShellScreen()
                     }
                     Navigator(initialScreen)
-                    // After the navigator, so it comes before the navigator's
-                    // Back: one meant for the player as it closed by itself
-                    // does not leave the screen it returned to.
-                    IgnoreBackAfterAutoClose(autoCloseBackGuard)
+                    // After the navigator, so it is drawn over it and comes
+                    // before the navigator's Back: a Back or a tap meant for
+                    // the player as it closed by itself does nothing to the
+                    // screen it returned to.
+                    HoldInputAfterAutoClose(autoCloseGuard)
                     // What addons told the signed-in person, asked for beside
                     // the navigator — whichever screen it shows — while the
                     // app is in the foreground.

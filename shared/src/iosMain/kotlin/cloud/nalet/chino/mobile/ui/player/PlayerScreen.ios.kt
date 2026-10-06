@@ -82,7 +82,7 @@ actual class PlayerScreen actual constructor(
     override fun Content() {
         val container = LocalAppContainer.current
         val nav = LocalNavigator.currentOrThrow
-        val backGuard = LocalAutoCloseBackGuard.current
+        val closeGuard = LocalAutoCloseGuard.current
         var loadAttempt by remember { mutableStateOf(0) }
         var state by remember { mutableStateOf<IosPlayState?>(null) }
         var loadError by remember { mutableStateOf<String?>(null) }
@@ -92,15 +92,18 @@ actual class PlayerScreen actual constructor(
         var notAvailable by remember { mutableStateOf<ExtraPlayback.NotAvailable?>(null) }
         // Back, the panels and an extra's end close it the same way — an
         // extra's end and a Back can come together — and only while the
-        // player is the screen on top.
-        val close: () -> Unit = { if (nav.lastItem === this@PlayerScreen) nav.pop() }
-        // Closing by itself, at an extra's end: for a moment the page it
-        // returns to ignores its Back, which sits where the player's does
-        // (AutoCloseBackGuard). Back closing the player arms nothing.
-        val closeByItself: () -> Unit = {
-            if (nav.lastItem === this@PlayerScreen) backGuard.playerClosedItself()
-            close()
+        // player is the screen on top. The guard hears how: closed by itself,
+        // the page it returns to holds off Back and taps for a moment — its
+        // Back sits where the player's does; closed by the viewer, nothing
+        // (AutoCloseGuard).
+        val closeAs: (PlayerClose) -> Unit = { how ->
+            if (nav.lastItem === this@PlayerScreen) {
+                closeGuard.playerClosed(how)
+                nav.pop()
+            }
         }
+        val close: () -> Unit = { closeAs(PlayerClose.ByViewer) }
+        val closeByItself: () -> Unit = { closeAs(PlayerClose.ByItself) }
 
         LaunchedEffect(itemId, fromStart, resumeSec, extraId, loadAttempt) {
             state = null
