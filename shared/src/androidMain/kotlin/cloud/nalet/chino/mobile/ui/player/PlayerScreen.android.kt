@@ -298,13 +298,9 @@ actual class PlayerScreen actual constructor(
                 // transcode/passthrough/remux we skip the fetch so we don't log
                 // a 404 every play; an empty list degrades to time-only
                 // scrubbing. Mirrors chino-web's `info.mode !== 'packaged'`
-                // gate before fetching thumbnails.vtt.
-                val trickplay = if (playerMode.trickplay && info?.mode?.equals("packaged", ignoreCase = true) == true) {
-                    runCatching { parseTrickplayVtt(container.chinoApi.trickplayVtt(itemId, token)) }
-                        .getOrDefault(emptyList())
-                } else {
-                    emptyList()
-                }
+                // gate before fetching thumbnails.vtt. Asked for once the
+                // player is up, below.
+                val wantsTrickplay = playerMode.trickplay && info?.mode?.equals("packaged", ignoreCase = true) == true
                 // Where playback starts and whether this session may write its
                 // position: the shared resume rule, as the iOS player reads it.
                 // A barely started or finished title starts at the head; an
@@ -338,11 +334,21 @@ actual class PlayerScreen actual constructor(
                     prevEpisodeId = prevId,
                     nextEpisodeId = nextId,
                     sidecarSubtitles = sidecarSubs,
-                    trickplayCues = trickplay,
+                    trickplayCues = emptyList(),
                     playerMode = playerMode,
                     extraId = extraId,
                     extra = extra,
                 )
+                // The scrub previews once the player is up, not before it: a
+                // title's thumbnails.vtt can take chino-stream many seconds
+                // (21 s for Big Buck Bunny's, past the client's 10 s read
+                // timeout), and the player was not even built until it had
+                // answered. Until they land the scrubber shows the time alone.
+                if (wantsTrickplay) {
+                    val cues = runCatching { parseTrickplayVtt(container.chinoApi.trickplayVtt(itemId, token)) }
+                        .getOrDefault(emptyList())
+                    if (cues.isNotEmpty()) ready = ready?.copy(trickplayCues = cues)
+                }
             } catch (e: Exception) {
                 error = "Playback failed: ${e.message ?: e::class.simpleName.orEmpty()}"
             }

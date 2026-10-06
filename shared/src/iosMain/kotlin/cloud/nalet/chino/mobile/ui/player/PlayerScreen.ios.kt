@@ -129,7 +129,15 @@ actual class PlayerScreen actual constructor(
                         }
                     }
                 }
-                state = loadPlayState(container, itemId, fromStart, resumeSec, extraId, extra)
+                val loaded = loadPlayState(container, itemId, fromStart, resumeSec, extraId, extra)
+                state = loaded
+                // The scrub previews once the player is up, not before it: a
+                // title's thumbnails.vtt can take chino-stream many seconds
+                // (21 s for Big Buck Bunny's), and the player waited for them
+                // to start at all. Until they land the scrubber shows the
+                // time alone.
+                val cues = loadTrickplay(container, loaded)
+                if (cues.isNotEmpty()) state = state?.copy(trickplayCues = cues)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -261,14 +269,6 @@ private suspend fun loadPlayState(
     val episodes = async {
         seriesId?.let { sid -> runCatching { api.seriesEpisodes(sid).seasons.flatMap { s -> s.episodes } }.getOrNull() }.orEmpty()
     }
-    // Scrub thumbnails exist for packaged titles only (web's gate).
-    val trickplay = async {
-        if (mode.trickplay && playInfo?.mode.equals("packaged", ignoreCase = true)) {
-            runCatching { parseTrickplayVtt(api.trickplayVtt(itemId, token)) }.getOrDefault(emptyList())
-        } else {
-            emptyList()
-        }
-    }
 
     // An extra's length is its own, never the title's.
     val durationMs = playInfo?.durationMs ?: it?.durationMs?.takeIf { extra == null } ?: 0L
@@ -313,7 +313,8 @@ private suspend fun loadPlayState(
             }
             if (se.isEmpty()) e.title else "$se · ${e.title}"
         },
-        trickplayCues = trickplay.await(),
+        // Asked for once the player is up (loadTrickplay).
+        trickplayCues = emptyList(),
         artworkUrl = artworkUrl(apiBase, it?.posterUrl ?: it?.backdropUrl, token),
         mode = mode,
         extraId = extraId,
@@ -321,6 +322,14 @@ private suspend fun loadPlayState(
         subtitlePref = settings.preferredSubLang,
         audioPref = settings.preferredAudioLang,
     )
+}
+
+/** The scrub previews of [state]'s title: packaged titles only (web's
+ *  gate), nothing for an extra or when they cannot be read. */
+private suspend fun loadTrickplay(container: AppContainer, state: IosPlayState): List<TrickplayCue> {
+    if (!state.mode.trickplay || !state.info?.mode.equals("packaged", ignoreCase = true)) return emptyList()
+    return runCatching { parseTrickplayVtt(container.chinoApi.trickplayVtt(state.itemId, state.streamToken)) }
+        .getOrDefault(emptyList())
 }
 
 @OptIn(ExperimentalForeignApi::class)
