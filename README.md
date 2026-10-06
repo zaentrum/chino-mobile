@@ -163,18 +163,24 @@ sound: the phone's volume is the mute.
 
 A title's trailer plays in the app when the server has one — one of the
 title's extras, packaged for streaming (`extras` in the item detail; a
-trailer before a teaser, the title's own before a season's). The detail
-page's Trailer button, on movies and series alike, opens a trailer screen
-(`ui/trailer/`): it plays the extra's `play_path` with the stream token and
-the device's caps from the start, with sound, on the platform's own player
-and controls — Media3's PlayerView on Android, AVPlayerViewController on iOS
-— and closes at its end or on Back. A trailer writes no progress and marks
-nothing watched, so Continue Watching is left alone. One the server no
-longer has says "Trailer not available" and offers the title's YouTube link
-when there is one. Without a trailer of its own, the button opens that link
-outside the app, as before. The Home hero takes titles with either, those
-with a trailer of their own first, and has the same Trailer button after
-Play and More Info.
+trailer before a teaser, the title's own before a season's: `ui/trailer/`).
+The detail page's Trailer button, on movies and series alike, opens it in
+the player movies and episodes play in, in its extra mode
+(`ui/player/PlayerMode.kt`): the same controls, menus and look — quality,
+audio, subtitles, speed, Playback info, and on iOS Picture in Picture and
+AirPlay — under "Sintel · Trailer". It plays the extra's `play_path` with
+the stream token and the device's caps from the start, with sound, and
+closes at its end or on Back. chino-api has no play info for an extra, so
+the quality ladder and the codecs are read off its master, as chino-stream
+reads a packaged title's; its subtitles are the ones its master lists. A
+trailer reads and writes nothing of the title's — no progress, watched mark,
+segments, scrub previews, next episode or prewarm, so Continue Watching is
+left alone — and of the telemetry sends one `trailer_play`. One the server
+no longer has says "Trailer not available" and offers the title's YouTube
+link when there is one. Without a trailer of its own, the button opens that
+link outside the app, as before. The Home hero takes titles with either,
+those with a trailer of their own first, and has the same Trailer button
+after Play and More Info.
 
 ## Addons
 
