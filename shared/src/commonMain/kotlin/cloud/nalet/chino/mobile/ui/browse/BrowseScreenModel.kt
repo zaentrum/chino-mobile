@@ -6,6 +6,7 @@ import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.catalogueMessage
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.paging.Paged
+import cloud.nalet.chino.mobile.data.paging.loadFirstPages
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +50,11 @@ class BrowseScreenModel(
     /** The filters the grid starts with: the ones it showed before a title
      *  opened from it covered the shell (BrowseSection keeps them). */
     initialFilter: BrowseQuery = BrowseQuery(),
+    /** The rows the grid had loaded before the process was killed
+     *  (BrowseSection keeps the count): its first load asks for as many
+     *  again, page by page, before it shows any, so the grid can scroll
+     *  back to where it was. */
+    private val initialRows: Int = 0,
     private val pageSize: Int = 48,
 ) : ScreenModel {
     private val _state = MutableStateFlow(BrowseUiState(filter = initialFilter))
@@ -65,7 +71,7 @@ class BrowseScreenModel(
             val streamToken = runCatching { container.streamTokenManager.valid() }.getOrDefault("")
             _state.update { it.copy(genres = genres, baseUrl = baseUrl, streamToken = streamToken) }
         }
-        reload(_state.value.filter)
+        reload(_state.value.filter, rows = initialRows)
     }
 
     fun setFilter(q: BrowseQuery) {
@@ -139,20 +145,23 @@ class BrowseScreenModel(
         }
     }
 
-    private fun reload(q: BrowseQuery) {
+    /** From the first page with the filters [q]; [rows] > 0 asks for the
+     *  pages after it too, until that many are in (loadFirstPages). */
+    private fun reload(q: BrowseQuery, rows: Int = 0) {
         loadJob?.cancel()
         _state.update {
             it.copy(filter = q, paged = Paged(), loading = true, loadMoreFailed = false, error = null)
         }
         loadJob = screenModelScope.launch {
-            val page = attempt { fetchPage(q, offset = 0) }
+            val pages = attempt { loadFirstPages(rows, pageSize, Item::id) { offset -> fetchPage(q, offset) } }
             _state.update { current ->
                 if (current.filter != q) return@update current
-                page.fold(
-                    onSuccess = { rows ->
+                pages.fold(
+                    onSuccess = { first ->
                         current.copy(
-                            paged = Paged<Item>().append(rows, pageSize, Item::id),
+                            paged = first.paged,
                             loading = false,
+                            loadMoreFailed = first.laterPageFailed,
                             error = null,
                         )
                     },

@@ -48,6 +48,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -71,6 +72,7 @@ import com.composables.icons.lucide.EllipsisVertical
 import com.composables.icons.lucide.Eye
 import com.composables.icons.lucide.EyeOff
 import com.composables.icons.lucide.Lucide
+import kotlinx.coroutines.flow.first
 
 /**
  * Browse grid for a single content type. Mirrors chino-web's
@@ -96,15 +98,38 @@ fun BrowseSection(
     // process being killed. The model starts from them; a change goes to
     // both.
     var filter by rememberSaveable(type, stateSaver = BrowseQuerySaver) { mutableStateOf(BrowseQuery()) }
+    // How many rows the grid has loaded, saveable as the filters are: after
+    // the process was killed, the model asks for as many again before it
+    // shows any, so the titles are there to scroll back to.
+    var loadedRows by rememberSaveable(type) { mutableIntStateOf(0) }
     // The shell's own, one per tab: a title opened from the grid covers the
     // shell, and back from it the grid has its pages and scrolls back to
     // where it was, nothing asked again; it goes, its requests with it, when
     // the shell leaves the stack (Home starts a new one).
-    val model = screen.rememberScreenModel(tag = type) { BrowseScreenModel(container, type, initialFilter = filter) }
+    val model = screen.rememberScreenModel(tag = type) {
+        BrowseScreenModel(container, type, initialFilter = filter, initialRows = loadedRows)
+    }
     val state by model.state.collectAsState()
+    LaunchedEffect(state.items.size) { if (state.items.isNotEmpty()) loadedRows = state.items.size }
     // Saveable: the shell keeps it, as the filters, while the other grid
     // tab or the search results show (MainShellScreen).
     val gridState = rememberLazyGridState()
+    // After the process was killed the grid has its scroll back but not yet
+    // its titles. Laid out over the header rows alone it would lose the
+    // position to them, so it waits for the model's first load - the pages
+    // it had - and its first layout is where it was.
+    var awaitingTitles by remember {
+        mutableStateOf(
+            state.items.isEmpty() &&
+                (gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0),
+        )
+    }
+    if (awaitingTitles) {
+        LaunchedEffect(model) {
+            model.state.first { !it.loading }
+            awaitingTitles = false
+        }
+    }
 
     // Tail-sentinel: when the last visible item is within ~6 rows of
     // the end, fetch the next page. Mirrors chino-web's
@@ -130,6 +155,15 @@ fun BrowseSection(
         maxWidth < 900.dp -> 4
         maxWidth < 1200.dp -> 5
         else -> 6
+    }
+    if (awaitingTitles) {
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(color = ChinoCloudBlue)
+        }
+        return@BoxWithConstraints
     }
     LazyVerticalGrid(
         state = gridState,
