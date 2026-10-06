@@ -154,24 +154,14 @@ class MainShellScreen : Screen {
                     else -> section = Section.Home
                 }
             }
-            if (isWide) {
-                WideLayout(
-                    section = section,
-                    onChange = { section = it },
-                    searchQuery = searchQuery,
-                    onSearchChange = { searchQuery = it },
-                ) {
-                    SectionContent(this@MainShellScreen, section, gridTabs, container, searchQuery, onNavigateToSection)
-                }
-            } else {
-                NarrowLayout(
-                    section = section,
-                    onChange = { section = it },
-                    searchQuery = searchQuery,
-                    onSearchChange = { searchQuery = it },
-                ) {
-                    SectionContent(this@MainShellScreen, section, gridTabs, container, searchQuery, onNavigateToSection)
-                }
+            ShellLayout(
+                isWide = isWide,
+                section = section,
+                onChange = { section = it },
+                searchQuery = searchQuery,
+                onSearchChange = { searchQuery = it },
+            ) {
+                SectionContent(this@MainShellScreen, section, gridTabs, container, searchQuery, onNavigateToSection)
             }
         }
     }
@@ -256,10 +246,20 @@ enum class Section(val label: String, val icon: ImageVector) {
     Settings("Settings", Lucide.Settings),
 }
 
-/* ────────────────────────────  Wide layout  ──────────────────────────── */
+/* ────────────────────────────  Layout  ──────────────────────────── */
 
+/**
+ * The shell's chrome around [content]: wide, the side rail at the left;
+ * narrow, the bottom bar at the foot; the top bar over the content either
+ * way. [content] has the same place in the composition in both, so a change
+ * of width - a phone turned, the bottom bar giving way to the side rail -
+ * keeps the section as it was: a grid its pages, filters and scroll. Two
+ * layouts, each with the content in its own place, made it new on every
+ * turn.
+ */
 @Composable
-private fun WideLayout(
+private fun ShellLayout(
+    isWide: Boolean,
     section: Section,
     onChange: (Section) -> Unit,
     searchQuery: String,
@@ -267,13 +267,16 @@ private fun WideLayout(
     content: @Composable () -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
-        SideRail(active = section, onChange = onChange)
-        Column(modifier = Modifier.fillMaxHeight().fillMaxWidth()) {
+        if (isWide) SideRail(active = section, onChange = onChange)
+        Column(modifier = Modifier.fillMaxHeight().weight(1f)) {
             TopBar(searchQuery = searchQuery, onSearchChange = onSearchChange)
-            Box(modifier = Modifier.fillMaxSize()) { content() }
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) { content() }
+            if (!isWide) BottomNav(active = section, onChange = onChange)
         }
     }
 }
+
+/* ────────────────────────────  Wide: side rail  ──────────────────────────── */
 
 @Composable
 private fun SideRail(active: Section, onChange: (Section) -> Unit) {
@@ -398,22 +401,7 @@ private fun RailButton(section: Section, isActive: Boolean, onClick: () -> Unit)
     }
 }
 
-/* ────────────────────────────  Narrow layout  ──────────────────────────── */
-
-@Composable
-private fun NarrowLayout(
-    section: Section,
-    onChange: (Section) -> Unit,
-    searchQuery: String,
-    onSearchChange: (String) -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        TopBar(searchQuery = searchQuery, onSearchChange = onSearchChange)
-        Box(modifier = Modifier.fillMaxWidth().weight(1f)) { content() }
-        BottomNav(active = section, onChange = onChange)
-    }
-}
+/* ────────────────────────────  Narrow: bottom bar  ──────────────────────────── */
 
 @Composable
 private fun BottomNav(active: Section, onChange: (Section) -> Unit) {
