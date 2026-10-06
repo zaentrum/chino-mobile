@@ -82,7 +82,6 @@ import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
 import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
-import cloud.nalet.chino.mobile.ui.trailer.TrailerScreen
 import cloud.nalet.chino.mobile.ui.trailer.trailerChoice
 import coil3.compose.AsyncImage
 import com.composables.icons.lucide.ArrowLeft
@@ -164,9 +163,10 @@ class DetailScreen(private val itemId: String) : Screen {
                             nav.push(PlayerScreen(itemId = effectiveId, fromStart = fromStart))
                         },
                         // The shown title's trailer from this server — the
-                        // series' when an episode redirected here.
+                        // series' when an episode redirected here — in the
+                        // player's extra mode.
                         onPlayTrailer = { extraId ->
-                            nav.push(TrailerScreen(itemId = effectiveId, extraId = extraId))
+                            nav.push(PlayerScreen(itemId = effectiveId, extraId = extraId))
                         },
                         // Plain tap: when the item is in NO list, add it to the
                         // default list (casual users never see the picker); when

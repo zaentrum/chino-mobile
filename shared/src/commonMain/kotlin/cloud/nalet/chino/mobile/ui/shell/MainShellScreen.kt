@@ -81,7 +81,6 @@ import cloud.nalet.chino.mobile.ui.notices.NoticesBell
 import cloud.nalet.chino.mobile.ui.notices.NoticesScreen
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
 import cloud.nalet.chino.mobile.ui.settings.SettingsSection
-import cloud.nalet.chino.mobile.ui.trailer.TrailerScreen
 import cloud.nalet.chino.mobile.ui.zap.InstallZapPrefetcher
 import cloud.nalet.chino.mobile.ui.zap.ZapAppStartWarm
 
@@ -193,7 +192,8 @@ private fun SectionContent(
             onItemSelected = onItemSelected,
             onPlay = onPlay,
             onNavigateToSection = onNavigateToSection,
-            onPlayTrailer = { id, extraId -> nav.push(TrailerScreen(itemId = id, extraId = extraId)) },
+            // The hero title's trailer, in the player's extra mode.
+            onPlayTrailer = { id, extraId -> nav.push(PlayerScreen(itemId = id, extraId = extraId)) },
         )
         Section.Zap -> cloud.nalet.chino.mobile.ui.zap.ZapScreen().Content()
         Section.Movies -> cloud.nalet.chino.mobile.ui.browse.BrowseSection(
