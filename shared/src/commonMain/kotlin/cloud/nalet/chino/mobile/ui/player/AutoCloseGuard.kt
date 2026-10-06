@@ -12,6 +12,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
 import kotlinx.coroutines.delay
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -78,9 +79,9 @@ val LocalAutoCloseGuard = staticCompositionLocalOf<AutoCloseGuard> {
  * Holds off Back and taps while [guard] does ([AutoCloseGuard.holdsInput]),
  * on whichever screen the player returned to — the title's page, or Home,
  * where Back would leave the app: a layer over the screen takes every touch,
- * and the system Back is ignored ([IgnoreSystemBack]). App() composes it
- * after the Navigator: drawn over it, and its Back handler comes before the
- * navigator's, while a player opened on top comes before it again.
+ * and the system Back is ignored. App() composes it after the Navigator:
+ * drawn over it, and its Back handler comes before the navigator's, while a
+ * player opened on top comes before it again.
  */
 @Composable
 fun HoldInputAfterAutoClose(guard: AutoCloseGuard) {
@@ -92,7 +93,10 @@ fun HoldInputAfterAutoClose(guard: AutoCloseGuard) {
         delay(guard.remaining())
         held = false
     }
-    IgnoreSystemBack(enabled = held)
+    // Composed for as long as the app is, held or not, so its place among
+    // the Back handlers stays where App() put it. A Back meant for the
+    // player: ignored.
+    SystemBackHandler(enabled = held) {}
     if (held) {
         // Invisible, and nothing to TalkBack: a touch anywhere lands here
         // and goes no further, a press that lasts past the moment included.
@@ -109,9 +113,3 @@ fun HoldInputAfterAutoClose(guard: AutoCloseGuard) {
         )
     }
 }
-
-/** Ignores the system Back while [enabled]. Android holds its back button and
- *  gesture; iOS has neither and is a no-op — the page's own Back asks the
- *  guard there. */
-@Composable
-expect fun IgnoreSystemBack(enabled: Boolean)

@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.api.Watchlist
+import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
@@ -78,6 +79,10 @@ fun AddToListSheet(
 ) {
     var addingNew by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+    // The sheet is drawn in the page's own window: without this the system
+    // Back went past it to the navigator and left the page, sheet and all.
+    // Back closes the sheet, as a tap on the scrim does.
+    SystemBackHandler(onBack = onDismiss)
 
     Box(
         modifier = Modifier
