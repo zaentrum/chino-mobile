@@ -528,7 +528,11 @@ private fun OverlayIconButton(
     }
 }
 
-/** year • runtime • ⭐ rating • TYPE chip — matches DetailPage.tsx L136-158. */
+/** year • runtime • ⭐ rating • TYPE chip — matches DetailPage.tsx L136-158.
+ *  It wraps, as the web's `flex flex-wrap items-center gap-3` does, where a
+ *  phone is too narrow for it at a large font size: one line gave the last
+ *  of it no room, the type chip a letter a line. A bullet stays with the
+ *  fact after it, so a line never ends on one. */
 @Composable
 private fun MetaRow(item: Item) {
     val runtimeMin = item.durationMs?.let { (it / 60_000L).toInt() } ?: 0
@@ -537,39 +541,52 @@ private fun MetaRow(item: Item) {
         runtimeMin >= 60 -> "${runtimeMin / 60}h ${runtimeMin % 60}m"
         else -> "${runtimeMin}m"
     }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    FlowRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item.year?.let {
-            Text(it.toString(), color = ChinoFg2, fontSize = 14.sp)
+            Text(it.toString(), color = ChinoFg2, fontSize = 14.sp, modifier = Modifier.align(Alignment.CenterVertically))
         }
         runtimeText?.let {
-            if (item.year != null) Bullet()
-            Text(it, color = ChinoFg2, fontSize = 14.sp)
+            Row(
+                modifier = Modifier.align(Alignment.CenterVertically),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (item.year != null) Bullet()
+                Text(it, color = ChinoFg2, fontSize = 14.sp)
+            }
         }
         item.rating?.let { r ->
-            if (item.year != null || runtimeText != null) Bullet()
             Row(
+                modifier = Modifier.align(Alignment.CenterVertically),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(
-                    imageVector = Lucide.Star,
-                    contentDescription = null,
-                    tint = ChinoCloudBlue,
-                    modifier = Modifier.size(16.dp),
-                )
-                Text(
-                    text = ((r * 10).toInt() / 10.0).toString(),
-                    color = ChinoFg2,
-                    fontSize = 14.sp,
-                )
+                if (item.year != null || runtimeText != null) Bullet()
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Icon(
+                        imageVector = Lucide.Star,
+                        contentDescription = null,
+                        tint = ChinoCloudBlue,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = ((r * 10).toInt() / 10.0).toString(),
+                        color = ChinoFg2,
+                        fontSize = 14.sp,
+                    )
+                }
             }
         }
         item.kind?.takeIf { it.isNotBlank() }?.let {
             Box(
                 modifier = Modifier
+                    .align(Alignment.CenterVertically)
                     .clip(RectangleShape)
                     .background(Color.White.copy(alpha = 0.1f))
                     .padding(horizontal = 8.dp, vertical = 2.dp),
