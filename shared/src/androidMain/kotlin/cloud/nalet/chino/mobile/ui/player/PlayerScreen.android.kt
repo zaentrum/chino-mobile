@@ -170,6 +170,7 @@ actual class PlayerScreen actual constructor(
     override fun Content() {
         val container = LocalAppContainer.current
         val nav = LocalNavigator.currentOrThrow
+        val backGuard = LocalAutoCloseBackGuard.current
         val playerMode = PlayerMode.of(extraId)
 
         // Own the system-back explicitly: pop exactly once and CONSUME the
@@ -189,6 +190,13 @@ actual class PlayerScreen actual constructor(
                 popped = true
                 nav.pop()
             }
+        }
+        // Closing by itself, at an extra's end: for a moment the screen it
+        // returns to ignores Back, which the viewer may have pressed for the
+        // player (AutoCloseBackGuard). A Back that closes it arms nothing.
+        val closeByItself: () -> Unit = {
+            if (!popped && nav.lastItem === this@PlayerScreen) backGuard.playerClosedItself()
+            close()
         }
         BackHandler(enabled = true, onBack = close)
 
@@ -363,7 +371,7 @@ actual class PlayerScreen actual constructor(
                     val extra = ready?.extra
                     notAvailable = ExtraPlayback.NotAvailable(title = extra?.item?.title, link = extra?.link)
                 },
-                onEnded = close,
+                onEnded = closeByItself,
             )
         }
     }

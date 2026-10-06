@@ -82,6 +82,7 @@ actual class PlayerScreen actual constructor(
     override fun Content() {
         val container = LocalAppContainer.current
         val nav = LocalNavigator.currentOrThrow
+        val backGuard = LocalAutoCloseBackGuard.current
         var loadAttempt by remember { mutableStateOf(0) }
         var state by remember { mutableStateOf<IosPlayState?>(null) }
         var loadError by remember { mutableStateOf<String?>(null) }
@@ -93,6 +94,13 @@ actual class PlayerScreen actual constructor(
         // extra's end and a Back can come together — and only while the
         // player is the screen on top.
         val close: () -> Unit = { if (nav.lastItem === this@PlayerScreen) nav.pop() }
+        // Closing by itself, at an extra's end: for a moment the page it
+        // returns to ignores its Back, which sits where the player's does
+        // (AutoCloseBackGuard). Back closing the player arms nothing.
+        val closeByItself: () -> Unit = {
+            if (nav.lastItem === this@PlayerScreen) backGuard.playerClosedItself()
+            close()
+        }
 
         LaunchedEffect(itemId, fromStart, resumeSec, extraId, loadAttempt) {
             state = null
@@ -147,7 +155,7 @@ actual class PlayerScreen actual constructor(
                 onExtraMissing = {
                     notAvailable = ExtraPlayback.NotAvailable(title = ready.extra?.item?.title, link = ready.extra?.link)
                 },
-                onEnded = close,
+                onEnded = closeByItself,
             )
         }
         reportDraft?.let { tech ->
