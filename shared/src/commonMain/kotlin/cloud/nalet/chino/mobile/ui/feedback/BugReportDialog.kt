@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.api.FeedbackResponse
 import cloud.nalet.chino.mobile.data.api.ApiStatusException
+import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
 import com.composables.icons.lucide.Bug
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Lucide
@@ -130,6 +131,11 @@ fun BugReportDialog(
             }
         }
     }
+
+    // Drawn in the screen's own window: the system Back closes it, as a tap
+    // on the scrim does, rather than going past it and leaving the screen -
+    // and, as the scrim, not while the report is being sent.
+    SystemBackHandler(onBack = { if (!submitting) onDismiss() })
 
     Box(
         modifier = Modifier

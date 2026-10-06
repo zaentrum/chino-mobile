@@ -66,6 +66,7 @@ import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.data.auth.LocalSignInLauncher
 import cloud.nalet.chino.mobile.ui.components.Avatar
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
+import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
 import com.composables.icons.lucide.LogOut
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
@@ -309,6 +310,9 @@ private fun AddAccountTile(signing: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun ConfirmRemoveDialog(account: Account, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    // Drawn in the screen's own window: the system Back closes it, as a tap
+    // on the scrim does, rather than going past it and leaving the screen.
+    SystemBackHandler(onBack = onDismiss)
     // Full-screen scrim + centered card. Compose-MP has no Material AlertDialog
     // in commonMain without pulling the material3 Dialog (which works, but a
     // hand-rolled scrim keeps the dark-canvas styling consistent with the rest

@@ -69,6 +69,7 @@ import cloud.nalet.chino.mobile.ui.components.MediaCard
 import cloud.nalet.chino.mobile.ui.components.MediaRow
 import cloud.nalet.chino.mobile.ui.components.episodeBadgeFor
 import cloud.nalet.chino.mobile.ui.detail.DetailScreen
+import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Pencil
@@ -448,6 +449,9 @@ internal fun NameListDialog(
     var name by remember { mutableStateOf(initial) }
     val trimmed = name.trim()
     val valid = trimmed.length in 1..60
+    // Drawn in the screen's own window: the system Back closes it, as a tap
+    // on the scrim does, rather than going past it and leaving the screen.
+    SystemBackHandler(onBack = onDismiss)
 
     Box(
         modifier = Modifier
@@ -519,6 +523,9 @@ private fun ConfirmDeleteListDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // Drawn in the screen's own window: the system Back closes it, as a tap
+    // on the scrim does, rather than going past it and leaving the screen.
+    SystemBackHandler(onBack = onDismiss)
     Box(
         modifier = Modifier
             .fillMaxSize()
