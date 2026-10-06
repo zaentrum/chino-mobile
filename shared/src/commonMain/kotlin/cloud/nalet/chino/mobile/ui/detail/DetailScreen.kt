@@ -281,6 +281,9 @@ private fun ReadyContent(
             backdropHeight = backdropH,
             topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
         )
+        // A phone's episode rows where the hero stacks (the page under 600dp,
+        // isWideDetail below); a tablet's stay as they are.
+        val compactEpisodes = maxWidth < 600.dp
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -433,6 +436,7 @@ private fun ReadyContent(
                         episodeWatched = episodeWatched,
                         episodeResume = episodeResume,
                         focusEpisodeId = ready.focusEpisodeId,
+                        compact = compactEpisodes,
                         onEpisodePlay = { id -> onEpisodePlay?.invoke(id) },
                         onToggleEpisodeWatched = onToggleEpisodeWatched,
                         onEpisodeAddToList = { id -> onEpisodeAddToList?.invoke(id) },
@@ -823,6 +827,8 @@ private fun EpisodesSection(
     /** When set, the season containing this episode is auto-expanded and the
      *  row is scrolled into view + highlighted (episode-detail redirect). */
     focusEpisodeId: String?,
+    /** A phone's rows ([EpisodeRow]'s compact). */
+    compact: Boolean,
     onEpisodePlay: (String) -> Unit,
     onToggleEpisodeWatched: (episodeId: String, currentlyWatched: Boolean) -> Unit,
     onEpisodeAddToList: (String) -> Unit,
@@ -846,6 +852,7 @@ private fun EpisodesSection(
                 episodeResume = episodeResume,
                 focusEpisodeId = if (containsFocus) focusEpisodeId else null,
                 initiallyExpanded = containsFocus,
+                compact = compact,
                 onEpisodePlay = onEpisodePlay,
                 onToggleEpisodeWatched = onToggleEpisodeWatched,
                 onEpisodeAddToList = onEpisodeAddToList,
@@ -863,6 +870,7 @@ private fun SeasonRow(
     episodeResume: Map<String, EpisodeResume>,
     focusEpisodeId: String?,
     initiallyExpanded: Boolean,
+    compact: Boolean,
     onEpisodePlay: (String) -> Unit,
     onToggleEpisodeWatched: (episodeId: String, currentlyWatched: Boolean) -> Unit,
     onEpisodeAddToList: (String) -> Unit,
@@ -926,6 +934,7 @@ private fun SeasonRow(
                         watched = epWatched,
                         resume = episodeResume[ep.id],
                         focused = ep.id == focusEpisodeId,
+                        compact = compact,
                         onClick = { onEpisodePlay(ep.id) },
                         onToggleWatched = { onToggleEpisodeWatched(ep.id, epWatched) },
                         onAddToList = { onEpisodeAddToList(ep.id) },
@@ -950,6 +959,11 @@ private fun EpisodeRow(
     /** True when this row is the redirect target — highlighted (ChinoAccent
      *  ring + tint) and scrolled into view once on first composition. */
     focused: Boolean = false,
+    /** A phone's row: a smaller still, and the title on a line of its own
+     *  under the number and the runtime. The tablet's one line left a 360dp
+     *  phone's title no room at all and wrapped a 320dp one's runtime a
+     *  letter a line. */
+    compact: Boolean = false,
     onClick: () -> Unit,
     onToggleWatched: () -> Unit,
     onAddToList: () -> Unit = {},
@@ -989,7 +1003,9 @@ private fun EpisodeRow(
     ) {
         Box(
             modifier = Modifier
-                .width(160.dp)
+                // On a phone as wide as a phone's poster card, and tall enough
+                // to keep the watched and add-to-list chips apart.
+                .width(if (compact) 128.dp else 160.dp)
                 .aspectRatio(16f / 9f)
                 .clip(RectangleShape)
                 .background(ChinoBg2),
@@ -1073,26 +1089,64 @@ private fun EpisodeRow(
                 episode.seasonNumber?.let { "S${it.toString().padStart(2, '0')}" },
                 episode.episodeNumber?.let { "E${it.toString().padStart(2, '0')}" },
             ).joinToString("")
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (epNum.isNotEmpty()) {
-                    Text(text = epNum, color = ChinoCloudBlue, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Text(text = "·", color = ChinoMuted, fontSize = 13.sp)
+            val epRuntimeMin = episode.durationMs?.let { (it / 60_000L).toInt() } ?: 0
+            if (compact) {
+                // A phone: the number, and the runtime at the trailing edge —
+                // under it where even the two do not fit — then the title with
+                // the column to itself, on up to two lines.
+                if (epNum.isNotEmpty() || epRuntimeMin > 0) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        if (epNum.isNotEmpty()) {
+                            Text(
+                                text = epNum,
+                                color = ChinoCloudBlue,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.align(Alignment.CenterVertically),
+                            )
+                        }
+                        if (epRuntimeMin > 0) {
+                            Text(
+                                text = "${epRuntimeMin}m",
+                                color = ChinoMuted,
+                                fontSize = 12.sp,
+                                modifier = Modifier.align(Alignment.CenterVertically),
+                            )
+                        }
+                    }
                 }
                 Text(
                     text = episode.title,
-                    // Web dims a watched episode's title to #8b949e.
                     color = if (watched) ChinoMuted else Color.White,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
                 )
-                // Runtime pinned to the trailing edge (web's `ml-auto`); the
-                // title's weight(1f) above eats the slack between them.
-                val epRuntimeMin = episode.durationMs?.let { (it / 60_000L).toInt() } ?: 0
-                if (epRuntimeMin > 0) {
-                    Text(text = "${epRuntimeMin}m", color = ChinoMuted, fontSize = 12.sp)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (epNum.isNotEmpty()) {
+                        Text(text = epNum, color = ChinoCloudBlue, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text(text = "·", color = ChinoMuted, fontSize = 13.sp)
+                    }
+                    Text(
+                        text = episode.title,
+                        // Web dims a watched episode's title to #8b949e.
+                        color = if (watched) ChinoMuted else Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    // Runtime pinned to the trailing edge (web's `ml-auto`); the
+                    // title's weight(1f) above eats the slack between them.
+                    if (epRuntimeMin > 0) {
+                        Text(text = "${epRuntimeMin}m", color = ChinoMuted, fontSize = 12.sp)
+                    }
                 }
             }
             // Subtle resume meta line for in-progress rows. Click behaviour
