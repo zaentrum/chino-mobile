@@ -127,6 +127,7 @@ import com.composables.icons.lucide.SkipForward
 import com.composables.icons.lucide.Volume2
 import com.composables.icons.lucide.VolumeX
 import com.composables.icons.lucide.X
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -229,27 +230,46 @@ actual class PlayerScreen actual constructor(
                 // nor a hand-off from Zap says where to begin. Null = it could
                 // not be read (resumeStartSec / mayWriteProgress below).
                 val handoff = !fromStart && resumeSec > 1
-                val saved = if (!playerMode.progress || fromStart || handoff) {
-                    null
-                } else {
-                    runCatching { container.chinoApi.getProgress(itemId).positionSec }.getOrNull()
+                // The title's requests at once, as the iOS player asks them,
+                // not one after another: a server that holds them up costs the
+                // start one wait, not one per request. chino-stream sat on
+                // Agent 327's play info and on its segments for 21 s each, and
+                // in turn each took the client's 10 s read timeout - 20 s
+                // before the player was built.
+                val savedAsk = async {
+                    if (!playerMode.progress || fromStart || handoff) {
+                        null
+                    } else {
+                        runCatching { container.chinoApi.getProgress(itemId).positionSec }.getOrNull()
+                    }
                 }
-                val info = if (playerMode.playInfo) {
-                    runCatching { container.chinoApi.playInfo(itemId, caps = caps.ifEmpty { null }) }.getOrNull()
-                } else {
-                    extra?.info
+                val infoAsk = async {
+                    if (playerMode.playInfo) {
+                        runCatching { container.chinoApi.playInfo(itemId, caps = caps.ifEmpty { null }) }.getOrNull()
+                    } else {
+                        extra?.info
+                    }
                 }
                 // The title's own detail; an extra's was its load's.
-                val item = if (extra == null) runCatching { container.chinoApi.getItem(itemId) }.getOrNull() else null
-                val segs = if (playerMode.segments) {
-                    runCatching { container.chinoApi.itemSegments(itemId).segments }.getOrDefault(emptyList())
-                } else {
-                    emptyList()
+                val itemAsk = async { if (extra == null) runCatching { container.chinoApi.getItem(itemId) }.getOrNull() else null }
+                val segsAsk = async {
+                    if (playerMode.segments) {
+                        runCatching { container.chinoApi.itemSegments(itemId).segments }.getOrDefault(emptyList())
+                    } else {
+                        emptyList()
+                    }
                 }
                 // A title's sidecars. An extra has none: its subtitles are the
                 // ones its master lists, which Media3 plays as it plays a
                 // title's renditions.
-                val sidecarSubs = (if (playerMode.sidecarSubtitles) runCatching { container.chinoApi.itemSubtitles(itemId).subtitles }.getOrNull() else null)
+                val subsAsk = async {
+                    if (playerMode.sidecarSubtitles) runCatching { container.chinoApi.itemSubtitles(itemId).subtitles }.getOrNull() else null
+                }
+                val saved = savedAsk.await()
+                val info = infoAsk.await()
+                val item = itemAsk.await()
+                val segs = segsAsk.await()
+                val sidecarSubs = subsAsk.await()
                     .orEmpty()
                     // Sidecar URLs from chino-api are `/api/v1/play/subs/{id}.vtt`.
                     // chino-api's StreamMiddleware (auth/oidc.go L78-87)
@@ -277,8 +297,11 @@ actual class PlayerScreen actual constructor(
                 // doesn't carry the series name, so fetch the parent series item
                 // by id. Best-effort — a failed/absent fetch degrades the title
                 // to "S01E02 · {episodeTitle}".
-                val seriesTitle = seriesId?.let { sid ->
-                    runCatching { container.chinoApi.getItem(sid).title }.getOrNull()
+                // The series' title and its episodes, at once.
+                val seriesTitleAsk = async {
+                    seriesId?.let { sid ->
+                        runCatching { container.chinoApi.getItem(sid).title }.getOrNull()
+                    }
                 }
                 val flatEpisodes = seriesId?.let { sid ->
                     runCatching {
@@ -286,6 +309,7 @@ actual class PlayerScreen actual constructor(
                             .flatMap { it.episodes }
                     }.getOrDefault(emptyList())
                 } ?: emptyList()
+                val seriesTitle = seriesTitleAsk.await()
                 val idx = flatEpisodes.indexOfFirst { it.id == itemId }
                 val prevId = if (idx > 0) flatEpisodes[idx - 1].id else null
                 val nextId = if (idx in 0 until flatEpisodes.size - 1) flatEpisodes[idx + 1].id else null
