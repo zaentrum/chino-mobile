@@ -170,7 +170,10 @@ the player movies and episodes play in, in its extra mode
 audio, subtitles, speed, Playback info, and on iOS Picture in Picture and
 AirPlay — under "Sintel · Trailer". It plays the extra's `play_path` with
 the stream token and the device's caps from the start, with sound, and
-closes at its end or on Back. chino-api has no play info for an extra, so
+closes at its end or on Back. After it closes at its end, the screen it
+returns to ignores Back and taps for a second
+(`ui/player/AutoCloseGuard.kt`), so a press meant for the player does
+nothing there. chino-api has no play info for an extra, so
 the quality ladder and the codecs are read off its master, as chino-stream
 reads a packaged title's; its subtitles are the ones its master lists. A
 trailer reads and writes nothing of the title's — no progress, watched mark,
