@@ -19,10 +19,13 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
 import cloud.nalet.chino.mobile.ui.theme.PosterImage
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyRow
@@ -1003,88 +1006,75 @@ private fun EpisodeRow(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            modifier = Modifier
-                // On a phone as wide as a phone's poster card, and tall enough
-                // to keep the watched and add-to-list chips apart.
-                .width(if (compact) 128.dp else 160.dp)
-                .aspectRatio(16f / 9f)
-                .clip(RectangleShape)
-                .background(ChinoBg2),
-        ) {
-            AsyncImage(
-                model = "$baseUrl/v1/items/${episode.id}/backdrop?stream=$streamToken",
-                contentDescription = episode.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+        // The still, and its chips over it: beside it rather than in it, as
+        // the still clips and their touch targets reach past it
+        // (EpisodeStillChip). The box is the still's size.
+        Box {
+            Box(
+                modifier = Modifier
+                    // On a phone as wide as a phone's poster card, and tall enough
+                    // to keep the watched and add-to-list chips apart.
+                    .width(if (compact) 128.dp else 160.dp)
+                    .aspectRatio(16f / 9f)
+                    .clip(RectangleShape)
+                    .background(ChinoBg2),
+            ) {
+                AsyncImage(
+                    model = "$baseUrl/v1/items/${episode.id}/backdrop?stream=$streamToken",
+                    contentDescription = episode.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                // In-progress rows: thin accent progress bar along the bottom of
+                // the thumbnail (same idiom as the Continue Watching card
+                // overlay). Canonical cross-client styling: 4dp, ChinoBorder
+                // track, accent fill. Only rendered when an effective duration
+                // exists to compute a fraction against.
+                if (resume != null && effectiveDurationSec != null) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .background(ChinoBorder),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(
+                                    (resume.positionSec.toFloat() / effectiveDurationSec.toFloat())
+                                        .coerceIn(0f, 1f),
+                                )
+                                .height(4.dp)
+                                .background(ChinoCloudBlue),
+                        )
+                    }
+                }
+            }
             // Per-episode watched toggle (web: EpisodesList.tsx watched pip).
             // Always rendered so a watched episode keeps a visible green
             // check; unwatched rows get a subtle dark Eye chip the user can
             // tap to mark watched. The tap is consumed here so it doesn't
             // also fire the row's open-player click.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .size(24.dp)
-                    .clip(RectangleShape)
-                    .background(if (watched) ChinoGreen else Color(0x99000000))
-                    .clickable(onClick = onToggleWatched),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = if (watched) Lucide.Check else Lucide.Eye,
-                    contentDescription = if (watched) "Mark episode as unwatched" else "Mark episode as watched",
-                    tint = Color.White,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
+            EpisodeStillChip(
+                icon = if (watched) Lucide.Check else Lucide.Eye,
+                contentDescription = if (watched) "Mark episode as unwatched" else "Mark episode as watched",
+                background = if (watched) ChinoGreen else Color(0x99000000),
+                top = true,
+                onClick = onToggleWatched,
+                modifier = Modifier.align(Alignment.TopEnd),
+            )
             // Per-episode add-to-list "+" chip (bottom-end, mirroring the
             // watched pip's styling). Opens the add-to-list picker targeting
             // THIS episode; the tap is consumed here so it doesn't also fire
             // the row's open-player click.
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(6.dp)
-                    .size(24.dp)
-                    .clip(RectangleShape)
-                    .background(Color(0x99000000))
-                    .clickable(onClick = onAddToList),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Lucide.Plus,
-                    contentDescription = "Add episode to list",
-                    tint = Color.White,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
-            // In-progress rows: thin accent progress bar along the bottom of
-            // the thumbnail (same idiom as the Continue Watching card
-            // overlay). Canonical cross-client styling: 4dp, ChinoBorder
-            // track, accent fill. Only rendered when an effective duration
-            // exists to compute a fraction against.
-            if (resume != null && effectiveDurationSec != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .background(ChinoBorder),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(
-                                (resume.positionSec.toFloat() / effectiveDurationSec.toFloat())
-                                    .coerceIn(0f, 1f),
-                            )
-                            .height(4.dp)
-                            .background(ChinoCloudBlue),
-                    )
-                }
-            }
+            EpisodeStillChip(
+                icon = Lucide.Plus,
+                contentDescription = "Add episode to list",
+                background = Color(0x99000000),
+                top = false,
+                onClick = onAddToList,
+                modifier = Modifier.align(Alignment.BottomEnd),
+            )
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
             val epNum = listOfNotNull(
@@ -1177,6 +1167,51 @@ private fun EpisodeRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+/**
+ * One of an episode still's chips (web: EpisodesList.tsx's pips): 24dp, 6dp
+ * in from the still's [top] end corner, else its bottom end one — and a 48dp
+ * touch target. On a phone's 72dp still the two chips' centres are 36dp
+ * apart, so each target is the chip's 48dp square moved 6dp away from the
+ * other: the two meet halfway and never overlap, reaching 12dp past the
+ * still into the row's padding and 6dp past its end edge, short of the text.
+ * The ripple stays on the chip, as before.
+ */
+@Composable
+private fun EpisodeStillChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    background: Color,
+    top: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .offset(x = 6.dp, y = if (top) (-12).dp else 12.dp)
+            .size(48.dp)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .offset(y = if (top) 6.dp else (-6).dp)
+                .size(24.dp)
+                .clip(RectangleShape)
+                .background(background)
+                .indication(interaction, LocalIndication.current),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = Color.White,
+                modifier = Modifier.size(14.dp),
+            )
         }
     }
 }
