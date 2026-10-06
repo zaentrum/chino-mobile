@@ -5,6 +5,7 @@ import cloud.nalet.chino.mobile.data.model.ItemsPage
 import cloud.nalet.chino.mobile.data.model.Me
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.timeout
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.request.delete
 import io.ktor.client.request.forms.MultiPartFormDataContent
@@ -287,6 +288,10 @@ class ChinoApi(private val http: HttpClient) {
     suspend fun playInfo(id: String, caps: String? = null): PlayInfo =
         http.get("v1/items/$id/play/info") {
             caps?.let { parameter("caps", it) }
+            // The player's start waits for it: [PLAY_INFO_TIMEOUT_MS] in all,
+            // a slow trickle of an answer included, then it starts without
+            // it, in Auto (qualityLadder).
+            timeout { requestTimeoutMillis = PLAY_INFO_TIMEOUT_MS }
         }.body()
 
     /** Raw WebVTT trickplay (scrub-preview thumbnail) cue file for a
@@ -648,6 +653,10 @@ data class PackagedIdsResponse(val ids: List<String> = emptyList())
 
 @Serializable
 data class GenresResponse(val genres: List<String> = emptyList())
+
+/** How long the player's start waits for /play/info, all of it: chino-stream
+ *  held a title's for 21 s on the demo while its storage stalled. */
+const val PLAY_INFO_TIMEOUT_MS = 8_000L
 
 @Serializable
 data class StreamTokenResponse(

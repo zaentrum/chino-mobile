@@ -47,6 +47,7 @@ internal fun HttpClientConfig<*>.chinoApiClient(
     renewedToken: suspend () -> String?,
 ) {
     install(ContentNegotiation) { json(ChinoJson) }
+    apiTimeouts()
     install(Auth) {
         bearer {
             // refresh_token is opaque to Ktor's Auth plugin — it never sends
@@ -63,6 +64,25 @@ internal fun HttpClientConfig<*>.chinoApiClient(
     }
     defaultRequest {
         url.takeFrom(URLBuilder().takeFrom(apiBaseUrl))
+    }
+}
+
+/** An API call's time to reach the server, and the longest it may wait for
+ *  the next byte of the answer ([apiTimeouts]). */
+internal const val API_CONNECT_TIMEOUT_MS = 5_000L
+internal const val API_SOCKET_TIMEOUT_MS = 8_000L
+
+/**
+ * Explicit timeouts for an API client, the same on Android and iOS: 5 s to
+ * connect, 8 s without a byte of the answer. Without them a server that holds
+ * a call up held the app for the platform's default - OkHttp's 10 s read
+ * timeout, NSURLSession's 60 s. Streams and segments keep the players' own
+ * policy: Media3's client and AVPlayer fetch them, not this one.
+ */
+internal fun HttpClientConfig<*>.apiTimeouts() {
+    install(HttpTimeout) {
+        connectTimeoutMillis = API_CONNECT_TIMEOUT_MS
+        socketTimeoutMillis = API_SOCKET_TIMEOUT_MS
     }
 }
 
@@ -134,6 +154,9 @@ object HttpClientFactory {
      *  Keycloak rejects with `unauthorized_client`. */
     fun createUnauthenticated(config: AppConfig): HttpClient = HttpClient {
         install(ContentNegotiation) { json(ChinoJson) }
+        // Every API call waits on it when the bearer is renewed: the API's
+        // budget.
+        apiTimeouts()
         install(Logging) {
             level = if (config.isBeta) LogLevel.INFO else LogLevel.NONE
         }
