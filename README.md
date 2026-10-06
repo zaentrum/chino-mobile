@@ -171,7 +171,7 @@ audio, subtitles, speed, Playback info, and on iOS Picture in Picture and
 AirPlay — under "Sintel · Trailer". It plays the extra's `play_path` with
 the stream token and the device's caps from the start, with sound, and
 closes at its end or on Back. After it closes at its end, the screen it
-returns to ignores Back and taps for a second
+returns to ignores Back, taps and accessibility actions for a second
 (`ui/player/AutoCloseGuard.kt`), so a press meant for the player does
 nothing there. chino-api has no play info for an extra, so
 the quality ladder and the codecs are read off its master, as chino-stream
