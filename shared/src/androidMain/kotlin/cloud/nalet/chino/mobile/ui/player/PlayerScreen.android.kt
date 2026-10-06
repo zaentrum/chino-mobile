@@ -757,8 +757,10 @@ private fun PlaybackSurface(
         }
     }
 
+    // On the app's one connection pool (SharedConnections): the master goes
+    // over a connection the API calls just used, not a new one.
     val streamClient = remember {
-        okhttp3.OkHttpClient.Builder()
+        cloud.nalet.chino.mobile.data.api.SharedConnections.client.newBuilder()
             .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
             // 120s (was 45s): under nas001 NFS read contention a single packaged
             // segment can stall well past 45s; the short timeout ABORTED the fetch

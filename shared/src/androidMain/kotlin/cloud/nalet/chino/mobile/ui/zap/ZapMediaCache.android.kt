@@ -54,13 +54,14 @@ object ZapMediaCache {
 
     /**
      * One OkHttp client shared by the player upstream and the prefetcher so
-     * connection pooling / TLS sessions are reused across both paths. Timeouts
-     * mirror the player's existing stream client.
+     * connection pooling / TLS sessions are reused across both paths - on the
+     * app's one connection pool (SharedConnections), the API's and the full
+     * player's too. Timeouts mirror the player's existing stream client.
      */
     fun httpClient(): okhttp3.OkHttpClient {
         sharedClient?.let { return it }
         return synchronized(this) {
-            sharedClient ?: okhttp3.OkHttpClient.Builder()
+            sharedClient ?: cloud.nalet.chino.mobile.data.api.SharedConnections.client.newBuilder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(45, TimeUnit.SECONDS)
                 .build()

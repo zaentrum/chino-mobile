@@ -4,6 +4,7 @@ import cloud.nalet.chino.mobile.AppConfig
 import cloud.nalet.chino.mobile.data.auth.TokenManager
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
+import io.ktor.client.engine.HttpClientEngineConfig
 import io.ktor.client.plugins.HttpResponseValidator
 import io.ktor.client.plugins.auth.Auth
 import io.ktor.client.plugins.auth.authProvider
@@ -66,6 +67,16 @@ internal fun HttpClientConfig<*>.chinoApiClient(
 }
 
 /**
+ * Puts the client on the connections the app streams over, where the
+ * platform's player shares its client's: Android's one OkHttp connection
+ * pool, the API's, the player's and Zap's alike, so the player's first
+ * request goes over a connection the API calls just used - a fresh one to
+ * the same server cost the player about a second each time it opened. iOS
+ * leaves the engine as it is: AVPlayer fetches on its own stack.
+ */
+internal expect fun HttpClientEngineConfig.shareConnections()
+
+/**
  * Drops the bearer the Auth plugin holds. The plugin keeps what loadTokens
  * returned first (until a 401 renews it), so after the active account
  * changes it would go on sending the previous one's token; the next request
@@ -80,6 +91,9 @@ object HttpClientFactory {
      *  tokens through [TokenManager] which is multi-account aware — switching
      *  the active account in AccountStore propagates here without rewiring. */
     fun create(config: AppConfig, tokenManager: TokenManager): HttpClient = HttpClient {
+        // On the connections the player streams over, so its first request
+        // to the server goes over one these calls just used (shareConnections).
+        engine { shareConnections() }
         chinoApiClient(
             apiBaseUrl = config.apiBaseUrl,
             accessToken = { tokenManager.validAccessToken() },
