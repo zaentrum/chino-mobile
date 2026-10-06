@@ -138,11 +138,13 @@ class MainShellScreen : Screen {
         // Saveable, as the tab is: back from a title opened from the
         // results, the search is as it was.
         var searchQuery by rememberSaveable { mutableStateOf("") }
-        // The grid tabs' own saveable state - a grid's scroll, its filters -
-        // kept while another tab or the search results show: back on Movies
-        // or Series, the grid is where it was left. Their models are the
-        // shell's (BrowseSection), so the titles are there to scroll back to.
-        val gridTabs = rememberSaveableStateHolder()
+        // Each tab's own saveable state - its scroll, a grid's filters - kept
+        // while another tab or the search results show: back on a tab, it is
+        // where it was left. The grids' models are the shell's
+        // (BrowseSection), so their titles are there at once; Home and
+        // Watchlist load theirs again and scroll back once they are in.
+        // Not Zap: it starts a new session each time it opens.
+        val tabStates = rememberSaveableStateHolder()
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             val isWide = maxWidth >= 600.dp
             // #150: lets a Home rail's "See all" tile switch the active
@@ -161,7 +163,7 @@ class MainShellScreen : Screen {
                 searchQuery = searchQuery,
                 onSearchChange = { searchQuery = it },
             ) {
-                SectionContent(this@MainShellScreen, section, gridTabs, container, searchQuery, onNavigateToSection)
+                SectionContent(this@MainShellScreen, section, tabStates, container, searchQuery, onNavigateToSection)
             }
         }
     }
@@ -172,8 +174,8 @@ private fun SectionContent(
     /** The shell itself: the screen its sections' models belong to. */
     screen: Screen,
     section: Section,
-    /** Keeps each grid tab's saveable state while it is not showing. */
-    gridTabs: SaveableStateHolder,
+    /** Keeps each tab's saveable state while it is not showing (not Zap's). */
+    tabStates: SaveableStateHolder,
     container: cloud.nalet.chino.mobile.data.AppContainer,
     searchQuery: String,
     onNavigateToSection: (String) -> Unit,
@@ -196,16 +198,18 @@ private fun SectionContent(
         return
     }
     when (section) {
-        Section.Home -> HomeSection(
-            container,
-            onItemSelected = onItemSelected,
-            onPlay = onPlay,
-            onNavigateToSection = onNavigateToSection,
-            // The hero title's trailer, in the player's extra mode.
-            onPlayTrailer = { id, extraId -> nav.push(PlayerScreen(itemId = id, extraId = extraId)) },
-        )
+        Section.Home -> tabStates.SaveableStateProvider(Section.Home.name) {
+            HomeSection(
+                container,
+                onItemSelected = onItemSelected,
+                onPlay = onPlay,
+                onNavigateToSection = onNavigateToSection,
+                // The hero title's trailer, in the player's extra mode.
+                onPlayTrailer = { id, extraId -> nav.push(PlayerScreen(itemId = id, extraId = extraId)) },
+            )
+        }
         Section.Zap -> cloud.nalet.chino.mobile.ui.zap.ZapScreen().Content()
-        Section.Movies -> gridTabs.SaveableStateProvider(Section.Movies.name) {
+        Section.Movies -> tabStates.SaveableStateProvider(Section.Movies.name) {
             cloud.nalet.chino.mobile.ui.browse.BrowseSection(
                 container = container,
                 screen = screen,
@@ -214,7 +218,7 @@ private fun SectionContent(
                 onItemSelected = onItemSelected,
             )
         }
-        Section.Series -> gridTabs.SaveableStateProvider(Section.Series.name) {
+        Section.Series -> tabStates.SaveableStateProvider(Section.Series.name) {
             cloud.nalet.chino.mobile.ui.browse.BrowseSection(
                 container = container,
                 screen = screen,
@@ -223,8 +227,12 @@ private fun SectionContent(
                 onItemSelected = onItemSelected,
             )
         }
-        Section.Watchlist -> cloud.nalet.chino.mobile.ui.watchlist.WatchlistSection()
-        Section.Settings -> SettingsSection()
+        Section.Watchlist -> tabStates.SaveableStateProvider(Section.Watchlist.name) {
+            cloud.nalet.chino.mobile.ui.watchlist.WatchlistSection()
+        }
+        Section.Settings -> tabStates.SaveableStateProvider(Section.Settings.name) {
+            SettingsSection()
+        }
     }
 }
 

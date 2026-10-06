@@ -111,8 +111,8 @@ fun BrowseSection(
     }
     val state by model.state.collectAsState()
     LaunchedEffect(state.items.size) { if (state.items.isNotEmpty()) loadedRows = state.items.size }
-    // Saveable: the shell keeps it, as the filters, while the other grid
-    // tab or the search results show (MainShellScreen).
+    // Saveable: the shell keeps it, as the filters, while another tab or
+    // the search results show (MainShellScreen).
     val gridState = rememberLazyGridState()
     // After the process was killed the grid has its scroll back but not yet
     // its titles. Laid out over the header rows alone it would lose the
