@@ -184,9 +184,9 @@ class DetailScreen(private val itemId: String) : Screen {
                         episodeResume = s.episodeResume,
                         // Not the moment after the player closed by itself
                         // over this page: its Back sat where this one is, and
-                        // the press was meant for it. A tap then is held off
-                        // before it gets here (AutoCloseGuard); this is for
-                        // one by TalkBack or a keyboard.
+                        // the press was meant for it. A tap or a TalkBack
+                        // action then is held off before it gets here
+                        // (AutoCloseGuard); this is for one from a keyboard.
                         onBack = { if (!closeGuard.holdsInput()) nav.pop() },
                         // Home: reset the stack to the signed-in shell root — the
                         // same idiom the auth/profile flows use. Lands on Home no

@@ -12,6 +12,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
 import kotlinx.coroutines.delay
 import kotlin.time.Duration
@@ -76,15 +77,18 @@ val LocalAutoCloseGuard = staticCompositionLocalOf<AutoCloseGuard> {
 }
 
 /**
- * Holds off Back and taps while [guard] does ([AutoCloseGuard.holdsInput]),
- * on whichever screen the player returned to — the title's page, or Home,
- * where Back would leave the app: a layer over the screen takes every touch,
- * and the system Back is ignored. App() composes it after the Navigator:
- * drawn over it, and its Back handler comes before the navigator's, while a
- * player opened on top comes before it again.
+ * Holds off Back, taps and accessibility actions while [guard] does
+ * ([AutoCloseGuard.holdsInput]), on whichever screen the player returned to
+ * in [content] — the title's page, or Home, where Back would leave the app:
+ * a layer over it takes every touch, the system Back is ignored, and the
+ * screen has no semantics, so TalkBack, Switch Access and Voice Access have
+ * nothing on it to focus or act on — they act through its semantics, which
+ * no touch reaches. App() wraps the Navigator in it: its Back handler,
+ * composed after the Navigator, comes before the navigator's, while a player
+ * opened on top comes before it again.
  */
 @Composable
-fun HoldInputAfterAutoClose(guard: AutoCloseGuard) {
+fun HoldInputAfterAutoClose(guard: AutoCloseGuard, content: @Composable () -> Unit) {
     // Read here, so the hold is on in the frame the player closes in — the
     // one that takes the player away — and off once the moment is over.
     val closedAt = guard.closedAt
@@ -93,9 +97,14 @@ fun HoldInputAfterAutoClose(guard: AutoCloseGuard) {
         delay(guard.remaining())
         held = false
     }
-    // Composed for as long as the app is, held or not, so its place among
-    // the Back handlers stays where App() put it. A Back meant for the
-    // player: ignored.
+    // The screen's semantics, gone for the moment and back after it; the
+    // screen itself, its state and its layout as ever.
+    Box(modifier = Modifier.fillMaxSize().then(if (held) Modifier.clearAndSetSemantics {} else Modifier)) {
+        content()
+    }
+    // Composed after the content and for as long as the app is, held or not,
+    // so its place among the Back handlers stays after the navigator's. A
+    // Back meant for the player: ignored.
     SystemBackHandler(enabled = held) {}
     if (held) {
         // Invisible, and nothing to TalkBack: a touch anywhere lands here

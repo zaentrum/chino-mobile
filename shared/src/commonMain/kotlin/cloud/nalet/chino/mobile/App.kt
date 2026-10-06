@@ -130,12 +130,12 @@ fun App(
                         snapshot.accounts.accounts.size >= 2 -> AccountPickerScreen()
                         else -> MainShellScreen()
                     }
-                    Navigator(initialScreen)
-                    // After the navigator, so it is drawn over it and comes
-                    // before the navigator's Back: a Back or a tap meant for
-                    // the player as it closed by itself does nothing to the
-                    // screen it returned to.
-                    HoldInputAfterAutoClose(autoCloseGuard)
+                    // Around the navigator: a Back, a tap or an accessibility
+                    // action meant for the player as it closed by itself does
+                    // nothing to the screen it returned to.
+                    HoldInputAfterAutoClose(autoCloseGuard) {
+                        Navigator(initialScreen)
+                    }
                     // What addons told the signed-in person, asked for beside
                     // the navigator — whichever screen it shows — while the
                     // app is in the foreground.
