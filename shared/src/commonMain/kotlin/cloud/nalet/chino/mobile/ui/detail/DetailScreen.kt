@@ -56,10 +56,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +79,7 @@ import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import cafe.adriel.voyager.core.screen.uniqueScreenKey
@@ -101,6 +105,7 @@ import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Play
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.Star
+import kotlinx.coroutines.delay
 
 /**
  * Item detail page. Mirrors chino-web's DetailPage.tsx: full-bleed backdrop
@@ -118,7 +123,24 @@ class DetailScreen(private val itemId: String) : Screen {
         val nav = LocalNavigator.currentOrThrow
         val container = LocalAppContainer.current
         val closeGuard = LocalAutoCloseGuard.current
-        val model = remember(itemId) { DetailScreenModel(container, itemId) }
+        // The screen's own, for as long as the page is in the stack: the
+        // player over it takes the page out of the composition, and back on
+        // it the page is as it was, no spinner, no load again.
+        val model = rememberScreenModel { DetailScreenModel(container, itemId) }
+        // Back on the page — from the player above all, which may have marked
+        // the title or an episode watched or moved where it resumes: refreshed
+        // quietly (DetailScreenModel.refresh). Not on the way in, which loads.
+        // A moment first, for the player's last progress save, sent as it
+        // closed, to land.
+        var shownBefore by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(model) {
+            if (!shownBefore) {
+                shownBefore = true
+            } else {
+                delay(REFRESH_ON_RETURN_DELAY_MS)
+                model.refresh()
+            }
+        }
         val state by model.state.collectAsState()
         val watchlist by container.userFlags.watchlist.collectAsState()
         val likes by container.userFlags.likes.collectAsState()
@@ -484,6 +506,10 @@ private fun ReadyContent(
         }
     }
 }
+
+/** How long the page waits, back on it, before it refreshes quietly: the
+ *  player sends its last progress save as it closes. */
+private const val REFRESH_ON_RETURN_DELAY_MS = 500L
 
 /** Where the Back / Home row starts under the status bar, and how big its
  *  buttons are: the poster starts below them (heroOverlap). */
@@ -866,19 +892,23 @@ private fun EpisodesSection(
         )
         seasons.forEach { season ->
             val containsFocus = focusEpisodeId != null && season.episodes.any { it.id == focusEpisodeId }
-            SeasonRow(
-                season = season,
-                baseUrl = baseUrl,
-                streamToken = streamToken,
-                episodeWatched = episodeWatched,
-                episodeResume = episodeResume,
-                focusEpisodeId = if (containsFocus) focusEpisodeId else null,
-                initiallyExpanded = containsFocus,
-                compact = compact,
-                onEpisodePlay = onEpisodePlay,
-                onToggleEpisodeWatched = onToggleEpisodeWatched,
-                onEpisodeAddToList = onEpisodeAddToList,
-            )
+            // By its number, so what each season keeps (open or not) stays
+            // its own when a refresh brings another season.
+            key(season.season) {
+                SeasonRow(
+                    season = season,
+                    baseUrl = baseUrl,
+                    streamToken = streamToken,
+                    episodeWatched = episodeWatched,
+                    episodeResume = episodeResume,
+                    focusEpisodeId = if (containsFocus) focusEpisodeId else null,
+                    initiallyExpanded = containsFocus,
+                    compact = compact,
+                    onEpisodePlay = onEpisodePlay,
+                    onToggleEpisodeWatched = onToggleEpisodeWatched,
+                    onEpisodeAddToList = onEpisodeAddToList,
+                )
+            }
         }
     }
 }
@@ -897,7 +927,9 @@ private fun SeasonRow(
     onToggleEpisodeWatched: (episodeId: String, currentlyWatched: Boolean) -> Unit,
     onEpisodeAddToList: (String) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(initiallyExpanded) }
+    // Saveable: back on the page from the player, the season is open as it
+    // was, and the page's scroll lands where it was.
+    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -934,33 +966,36 @@ private fun SeasonRow(
         if (expanded) {
             Column(modifier = Modifier.padding(bottom = 8.dp)) {
                 season.episodes.forEachIndexed { index, ep ->
-                    // Full-bleed 1dp separator between rows, matching web's
-                    // `divide-y divide-[#21262d]` on the episodes card
-                    // (EpisodesList.tsx). No divider above the first row.
-                    if (index > 0) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(ChinoBorder2),
+                    // By its id, so what a row keeps stays its own.
+                    key(ep.id) {
+                        // Full-bleed 1dp separator between rows, matching web's
+                        // `divide-y divide-[#21262d]` on the episodes card
+                        // (EpisodesList.tsx). No divider above the first row.
+                        if (index > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(ChinoBorder2),
+                            )
+                        }
+                        // Effective episode watched state: optimistic override
+                        // (the user's tap this session) wins over the payload's
+                        // watched_at. Mirrors chino-web's EpisodeRow.
+                        val epWatched = episodeWatched[ep.id] ?: (ep.watchedAt != null)
+                        EpisodeRow(
+                            episode = ep,
+                            baseUrl = baseUrl,
+                            streamToken = streamToken,
+                            watched = epWatched,
+                            resume = episodeResume[ep.id],
+                            focused = ep.id == focusEpisodeId,
+                            compact = compact,
+                            onClick = { onEpisodePlay(ep.id) },
+                            onToggleWatched = { onToggleEpisodeWatched(ep.id, epWatched) },
+                            onAddToList = { onEpisodeAddToList(ep.id) },
                         )
                     }
-                    // Effective episode watched state: optimistic override
-                    // (the user's tap this session) wins over the payload's
-                    // watched_at. Mirrors chino-web's EpisodeRow.
-                    val epWatched = episodeWatched[ep.id] ?: (ep.watchedAt != null)
-                    EpisodeRow(
-                        episode = ep,
-                        baseUrl = baseUrl,
-                        streamToken = streamToken,
-                        watched = epWatched,
-                        resume = episodeResume[ep.id],
-                        focused = ep.id == focusEpisodeId,
-                        compact = compact,
-                        onClick = { onEpisodePlay(ep.id) },
-                        onToggleWatched = { onToggleEpisodeWatched(ep.id, epWatched) },
-                        onAddToList = { onEpisodeAddToList(ep.id) },
-                    )
                 }
             }
         }
@@ -979,7 +1014,7 @@ private fun EpisodeRow(
      *  The row's plain tap is unchanged (the player auto-resumes). */
     resume: EpisodeResume? = null,
     /** True when this row is the redirect target — highlighted (ChinoAccent
-     *  ring + tint) and scrolled into view once on first composition. */
+     *  ring + tint) and scrolled into view once per page. */
     focused: Boolean = false,
     /** A phone's row: a smaller still, and the title on a line of its own
      *  under the number and the runtime. The tablet's one line left a 360dp
@@ -999,11 +1034,14 @@ private fun EpisodeRow(
         else episode.durationMs?.let { (it / 1000L).toInt() }?.takeIf { it > 0 }
     }
     // Scroll the redirected episode into view within the detail's outer
-    // verticalScroll. Fires once after the row lands in composition.
+    // verticalScroll. Once per page, not each time the row is composed: back
+    // on the page from the player, it stays where it was scrolled.
     val bringIntoView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
-    if (focused) {
-        androidx.compose.runtime.LaunchedEffect(Unit) {
+    var broughtIntoView by rememberSaveable { mutableStateOf(false) }
+    if (focused && !broughtIntoView) {
+        LaunchedEffect(Unit) {
             bringIntoView.bringIntoView()
+            broughtIntoView = true
         }
     }
     Row(

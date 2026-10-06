@@ -6,6 +6,8 @@ import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.api.watchlistRefusal
 import cloud.nalet.chino.mobile.data.model.Item
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -169,77 +171,113 @@ class DetailScreenModel(
     private fun load() {
         screenModelScope.launch {
             _state.value = try {
-                coroutineScope {
-                    val tokenDef = async { container.streamTokenManager.valid() }
-                    val requested = container.chinoApi.getItem(itemId)
-                    // Episode redirect: if the target is an episode, render the
-                    // PARENT SERIES detail instead of a standalone episode page,
-                    // and remember the requested episode so the accordion
-                    // expands + scrolls + highlights it. Falls back to showing
-                    // the episode itself if the parent can't be resolved.
-                    val isEpisode = requested.kind == "episode" ||
-                        (requested.kind != "series" && requested.parentId != null)
-                    val parent = if (isEpisode) {
-                        requested.parentId?.let { pid ->
-                            runCatching { container.chinoApi.getItem(pid) }.getOrNull()
-                        }
-                    } else null
-                    val focusEpisodeId = if (parent != null) requested.id else null
-                    val item = parent ?: requested
-                    // Point the action-row toggles at whatever the page now
-                    // renders (the series when redirected). Re-warm the flag /
-                    // membership caches for that id so the icons seed correctly.
-                    if (item.id != displayItemId) {
-                        displayItemId = item.id
-                        launch { runCatching { container.watchlists.warmMemberships(listOf(item.id)) } }
-                    }
-                    val progressDef = async {
-                        runCatching { container.chinoApi.getProgress(item.id).positionSec }.getOrDefault(0)
-                    }
-                    val similarDef = async {
-                        runCatching { container.chinoApi.similar(item.id).items }.getOrDefault(emptyList())
-                    }
-                    // Per-episode resume state (series only, best-effort):
-                    // the episodes payload carries no progress fields, but the
-                    // continue-watching feed stamps position/duration on its
-                    // in-progress rows — episodes included. Keyed by episode
-                    // id, so lookups only ever hit this series' own rows.
-                    val continueDef = async {
-                        if (item.kind != "series") return@async emptyList<ContinueWatchingItem>()
-                        runCatching { container.chinoApi.continueWatching().items }.getOrDefault(emptyList())
-                    }
-                    val seasons = if (item.kind == "series") {
-                        runCatching { container.chinoApi.seriesEpisodes(item.id).seasons }
-                            .getOrDefault(emptyList())
-                    } else emptyList()
-                    // A row shows "Resume" where the player resumes it
-                    // (resumesAt): barely started and finished rows have
-                    // nothing to resume, nor have up-next substitutions
-                    // (position 0). The feed's duration, else the episode's
-                    // catalogue runtime — what the row draws its bar against
-                    // (web parity: a row the feed stamps duration<=0 stays).
-                    val runtimeSec = seasons.flatMap { it.episodes }
-                        .associate { it.id to (it.durationMs ?: 0L) / 1000L }
-                    val episodeResume = continueDef.await()
-                        .filter {
-                            val durationSec = if (it.durationSec > 0) it.durationSec.toLong() else runtimeSec[it.id] ?: 0L
-                            !it.upNext && resumesAt(it.positionSec, durationSec.toDouble())
-                        }
-                        .associate { it.id to EpisodeResume(it.positionSec, it.durationSec) }
-                    DetailUiState.Ready(
-                        item = item,
-                        resumePositionSec = progressDef.await(),
-                        baseUrl = container.config.apiBaseUrl.trimEnd('/'),
-                        streamToken = tokenDef.await(),
-                        seasons = seasons,
-                        similar = similarDef.await(),
-                        focusEpisodeId = focusEpisodeId,
-                        episodeResume = episodeResume,
-                    )
-                }
+                fetch()
             } catch (e: Exception) {
                 DetailUiState.Error(e.message ?: e::class.simpleName.orEmpty())
             }
         }
+    }
+
+    /** The quiet refresh under way; one at a time. */
+    private var refreshJob: Job? = null
+
+    /**
+     * The page again, quietly — back on it from the player, which may have
+     * marked the title or an episode watched or moved where it resumes. The
+     * first load's requests, without its spinner: the page stays as it is,
+     * expanded seasons and scroll and all, until the answer lands, and as it
+     * was when it fails. "More like this" is kept, not asked for again. The
+     * watched marks the viewer flipped before the refresh began are the
+     * server's now, so its answer shows; one flipped while it runs stays.
+     * Nothing before the first load has landed.
+     */
+    fun refresh() {
+        val shown = _state.value as? DetailUiState.Ready ?: return
+        if (refreshJob?.isActive == true) return
+        val watchedBefore = _watchedOverride.value
+        val episodesBefore = _episodeWatched.value
+        refreshJob = screenModelScope.launch {
+            val fresh = try {
+                fetch(similar = shown.similar)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@launch
+            }
+            _state.value = fresh
+            if (_watchedOverride.value == watchedBefore) _watchedOverride.value = null
+            _episodeWatched.value = _episodeWatched.value.filter { (id, watched) -> episodesBefore[id] != watched }
+        }
+    }
+
+    /** The page's detail as the server has it now. [similar]: the titles
+     *  "More like this" shows already, kept rather than asked for again. */
+    private suspend fun fetch(similar: List<Item>? = null): DetailUiState.Ready = coroutineScope {
+        val tokenDef = async { container.streamTokenManager.valid() }
+        val requested = container.chinoApi.getItem(itemId)
+        // Episode redirect: if the target is an episode, render the
+        // PARENT SERIES detail instead of a standalone episode page,
+        // and remember the requested episode so the accordion
+        // expands + scrolls + highlights it. Falls back to showing
+        // the episode itself if the parent can't be resolved.
+        val isEpisode = requested.kind == "episode" ||
+            (requested.kind != "series" && requested.parentId != null)
+        val parent = if (isEpisode) {
+            requested.parentId?.let { pid ->
+                runCatching { container.chinoApi.getItem(pid) }.getOrNull()
+            }
+        } else null
+        val focusEpisodeId = if (parent != null) requested.id else null
+        val item = parent ?: requested
+        // Point the action-row toggles at whatever the page now
+        // renders (the series when redirected). Re-warm the flag /
+        // membership caches for that id so the icons seed correctly.
+        if (item.id != displayItemId) {
+            displayItemId = item.id
+            launch { runCatching { container.watchlists.warmMemberships(listOf(item.id)) } }
+        }
+        val progressDef = async {
+            runCatching { container.chinoApi.getProgress(item.id).positionSec }.getOrDefault(0)
+        }
+        val similarDef = async {
+            similar ?: runCatching { container.chinoApi.similar(item.id).items }.getOrDefault(emptyList())
+        }
+        // Per-episode resume state (series only, best-effort):
+        // the episodes payload carries no progress fields, but the
+        // continue-watching feed stamps position/duration on its
+        // in-progress rows — episodes included. Keyed by episode
+        // id, so lookups only ever hit this series' own rows.
+        val continueDef = async {
+            if (item.kind != "series") return@async emptyList<ContinueWatchingItem>()
+            runCatching { container.chinoApi.continueWatching().items }.getOrDefault(emptyList())
+        }
+        val seasons = if (item.kind == "series") {
+            runCatching { container.chinoApi.seriesEpisodes(item.id).seasons }
+                .getOrDefault(emptyList())
+        } else emptyList()
+        // A row shows "Resume" where the player resumes it
+        // (resumesAt): barely started and finished rows have
+        // nothing to resume, nor have up-next substitutions
+        // (position 0). The feed's duration, else the episode's
+        // catalogue runtime — what the row draws its bar against
+        // (web parity: a row the feed stamps duration<=0 stays).
+        val runtimeSec = seasons.flatMap { it.episodes }
+            .associate { it.id to (it.durationMs ?: 0L) / 1000L }
+        val episodeResume = continueDef.await()
+            .filter {
+                val durationSec = if (it.durationSec > 0) it.durationSec.toLong() else runtimeSec[it.id] ?: 0L
+                !it.upNext && resumesAt(it.positionSec, durationSec.toDouble())
+            }
+            .associate { it.id to EpisodeResume(it.positionSec, it.durationSec) }
+        DetailUiState.Ready(
+            item = item,
+            resumePositionSec = progressDef.await(),
+            baseUrl = container.config.apiBaseUrl.trimEnd('/'),
+            streamToken = tokenDef.await(),
+            seasons = seasons,
+            similar = similarDef.await(),
+            focusEpisodeId = focusEpisodeId,
+            episodeResume = episodeResume,
+        )
     }
 }
