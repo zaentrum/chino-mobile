@@ -102,6 +102,8 @@ fun BrowseSection(
     // the shell leaves the stack (Home starts a new one).
     val model = screen.rememberScreenModel(tag = type) { BrowseScreenModel(container, type, initialFilter = filter) }
     val state by model.state.collectAsState()
+    // Saveable: the shell keeps it, as the filters, while the other grid
+    // tab or the search results show (MainShellScreen).
     val gridState = rememberLazyGridState()
 
     // Tail-sentinel: when the last visible item is within ~6 rows of

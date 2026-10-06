@@ -57,7 +57,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -136,6 +138,11 @@ class MainShellScreen : Screen {
         // Saveable, as the tab is: back from a title opened from the
         // results, the search is as it was.
         var searchQuery by rememberSaveable { mutableStateOf("") }
+        // The grid tabs' own saveable state - a grid's scroll, its filters -
+        // kept while another tab or the search results show: back on Movies
+        // or Series, the grid is where it was left. Their models are the
+        // shell's (BrowseSection), so the titles are there to scroll back to.
+        val gridTabs = rememberSaveableStateHolder()
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             val isWide = maxWidth >= 600.dp
             // #150: lets a Home rail's "See all" tile switch the active
@@ -154,7 +161,7 @@ class MainShellScreen : Screen {
                     searchQuery = searchQuery,
                     onSearchChange = { searchQuery = it },
                 ) {
-                    SectionContent(this@MainShellScreen, section, container, searchQuery, onNavigateToSection)
+                    SectionContent(this@MainShellScreen, section, gridTabs, container, searchQuery, onNavigateToSection)
                 }
             } else {
                 NarrowLayout(
@@ -163,7 +170,7 @@ class MainShellScreen : Screen {
                     searchQuery = searchQuery,
                     onSearchChange = { searchQuery = it },
                 ) {
-                    SectionContent(this@MainShellScreen, section, container, searchQuery, onNavigateToSection)
+                    SectionContent(this@MainShellScreen, section, gridTabs, container, searchQuery, onNavigateToSection)
                 }
             }
         }
@@ -175,6 +182,8 @@ private fun SectionContent(
     /** The shell itself: the screen its sections' models belong to. */
     screen: Screen,
     section: Section,
+    /** Keeps each grid tab's saveable state while it is not showing. */
+    gridTabs: SaveableStateHolder,
     container: cloud.nalet.chino.mobile.data.AppContainer,
     searchQuery: String,
     onNavigateToSection: (String) -> Unit,
@@ -206,20 +215,24 @@ private fun SectionContent(
             onPlayTrailer = { id, extraId -> nav.push(PlayerScreen(itemId = id, extraId = extraId)) },
         )
         Section.Zap -> cloud.nalet.chino.mobile.ui.zap.ZapScreen().Content()
-        Section.Movies -> cloud.nalet.chino.mobile.ui.browse.BrowseSection(
-            container = container,
-            screen = screen,
-            type = "movie",
-            pageTitle = "Movies",
-            onItemSelected = onItemSelected,
-        )
-        Section.Series -> cloud.nalet.chino.mobile.ui.browse.BrowseSection(
-            container = container,
-            screen = screen,
-            type = "series",
-            pageTitle = "Shows",
-            onItemSelected = onItemSelected,
-        )
+        Section.Movies -> gridTabs.SaveableStateProvider(Section.Movies.name) {
+            cloud.nalet.chino.mobile.ui.browse.BrowseSection(
+                container = container,
+                screen = screen,
+                type = "movie",
+                pageTitle = "Movies",
+                onItemSelected = onItemSelected,
+            )
+        }
+        Section.Series -> gridTabs.SaveableStateProvider(Section.Series.name) {
+            cloud.nalet.chino.mobile.ui.browse.BrowseSection(
+                container = container,
+                screen = screen,
+                type = "series",
+                pageTitle = "Shows",
+                onItemSelected = onItemSelected,
+            )
+        }
         Section.Watchlist -> cloud.nalet.chino.mobile.ui.watchlist.WatchlistSection()
         Section.Settings -> SettingsSection()
     }
