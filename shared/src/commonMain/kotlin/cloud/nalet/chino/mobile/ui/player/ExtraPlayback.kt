@@ -28,7 +28,7 @@ sealed interface ExtraPlayback {
      * [heading] ("Sintel · Trailer"), with [info] read off the master
      * ([extraPlayInfo]). [item] is the title's detail (its poster for Now
      * Playing); [link] its trailer link, offered should the master answer
-     * 404 after all.
+     * 404 after all. [streamToken] signs the master, the session's token.
      */
     data class Ready(
         val masterUrl: String,
@@ -36,6 +36,7 @@ sealed interface ExtraPlayback {
         val info: PlayInfo,
         val item: Item,
         val link: Trailer?,
+        val streamToken: String,
     ) : ExtraPlayback
 
     /** There is no such extra to play: the title or the extra is gone, the
@@ -53,11 +54,13 @@ sealed interface ExtraPlayback {
  * master that answers 404 are [ExtraPlayback.NotAvailable]; any other failure
  * of the detail throws. A master that cannot be read otherwise plays as it is
  * served, without a quality menu: the player says whatever is wrong with it.
+ * The master is signed with [streamToken] for the extra's session - its
+ * length from the head ([sessionLifeMs]), asked for once the detail gives it.
  */
 internal suspend fun loadExtraPlayback(
     api: ChinoApi,
     apiBase: String,
-    streamToken: String,
+    streamToken: suspend (lifeMs: Long) -> String,
     caps: String,
     itemId: String,
     extraId: String,
@@ -71,7 +74,8 @@ internal suspend fun loadExtraPlayback(
     val link = pickTrailer(item.trailers)
     val extra = item.extras.firstOrNull { it.id == extraId && it.playable }
         ?: return ExtraPlayback.NotAvailable(item.title, link)
-    val url = extraMasterUrl(apiBase, extra.playPath, streamToken, caps)
+    val token = streamToken(sessionLifeMs(extra.durationMs, startMs = 0L))
+    val url = extraMasterUrl(apiBase, extra.playPath, token, caps)
         ?: return ExtraPlayback.NotAvailable(item.title, link)
     val master = try {
         api.hlsMaster(url)
@@ -89,6 +93,7 @@ internal suspend fun loadExtraPlayback(
         info = extraPlayInfo(master, extra.durationMs),
         item = item,
         link = link,
+        streamToken = token,
     )
 }
 

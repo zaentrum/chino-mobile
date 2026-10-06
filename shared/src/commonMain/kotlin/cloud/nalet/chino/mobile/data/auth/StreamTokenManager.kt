@@ -42,10 +42,21 @@ class StreamTokenManager(
      *  pool, etc.) so suspending is fine here. Asked where a link is used -
      *  an image fetched, a Zap card shown - a link that has lived for hours
      *  is signed with a token valid now, judged by the wall clock then. */
-    suspend fun valid(): String {
-        _current.value?.takeIf { isFresh(now()) }?.let { return it }
+    suspend fun valid(): String = validFor(0L)
+
+    /**
+     * A token with [lifeMs] of its life left at least - for links built once
+     * and used that long: a playback session's, which cannot sign its
+     * segments again halfway through (forSession in ui/player). The current
+     * token when it lives that long, else the next one, minted first. A
+     * session longer than a token lives gets the freshest there is: one
+     * minted within the last [SLACK_MS].
+     */
+    suspend fun validFor(lifeMs: Long): String {
+        val need = lifeMs.coerceAtMost(TOKEN_LIFE_MS - SLACK_MS)
+        lasting(need)?.let { return it }
         return mutex.withLock {
-            _current.value?.takeIf { isFresh(now()) }?.let { return@withLock it }
+            lasting(need)?.let { return@withLock it }
             val resp = api.mintStreamToken()
             // chino-api's tokens live 6 h (streamTokenTTL). Counted from
             // when this one arrived, by this device's clock - the server's
@@ -56,10 +67,14 @@ class StreamTokenManager(
         }
     }
 
-    /** The current token has more than [SLACK_MS] of its life left at
-     *  [atMs]: past that, [valid] mints the next one, while links still
-     *  signed with this one keep working for those last minutes. */
-    private fun isFresh(atMs: Long): Boolean = atMs < expiresAtEpochMillis - SLACK_MS
+    /** The current token, when it has more than [SLACK_MS] of its life left
+     *  now and [lifeMs] at least. Past [SLACK_MS] the next one is minted,
+     *  while links still signed with this one keep working for those last
+     *  minutes. */
+    private fun lasting(lifeMs: Long): String? {
+        val left = expiresAtEpochMillis - now()
+        return _current.value?.takeIf { left > SLACK_MS && left >= lifeMs }
+    }
 
     /** Clear the cached token. Call on active-account switch so the next
      *  poster/player URL gets a freshly-minted token bound to the new user

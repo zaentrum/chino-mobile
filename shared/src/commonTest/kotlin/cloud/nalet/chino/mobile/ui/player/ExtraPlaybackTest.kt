@@ -39,10 +39,16 @@ class ExtraPlaybackTest {
         }
     }
 
+    /** The session lengths the load asked a token for. */
+    private val tokenLives = mutableListOf<Long>()
+
     private suspend fun FakeServer.load(extraId: String = "x1") = loadExtraPlayback(
         api = api,
         apiBase = FAKE_API_BASE,
-        streamToken = "tok",
+        streamToken = { lifeMs ->
+            tokenLives += lifeMs
+            "tok"
+        },
         caps = "avc:1080,aac,mp3",
         itemId = "m1",
         extraId = extraId,
@@ -58,6 +64,10 @@ class ExtraPlaybackTest {
 
         val master = "https://media.example.com/api/v1/items/m1/extras/x1/play/master.m3u8?stream=tok&caps=avc:1080,aac,mp3"
         assertEquals(master, ready.masterUrl)
+        // Signed with a token for the extra's session: its 33 s from the
+        // head and the half hour more, asked for once its length was known.
+        assertEquals(listOf(33_000L + SESSION_MARGIN_MS), tokenLives)
+        assertEquals("tok", ready.streamToken)
         assertEquals("A Film · Trailer", ready.heading)
         assertEquals(LINK, ready.link)
         assertEquals("A Film", ready.item.title)

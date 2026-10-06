@@ -211,14 +211,14 @@ actual class PlayerScreen actual constructor(
             error = null
             notAvailable = null
             try {
-                val token = container.streamTokenManager.valid()
                 val base = container.config.apiBaseUrl.trimEnd('/')
                 val caps = CodecCaps.queryParam
                 // An extra: the title's detail and the extra's master, and
                 // nothing else of the server's (PlayerMode.Extra) — what
-                // /play/info says of a title is read off the master.
+                // /play/info says of a title is read off the master, signed
+                // with a token that outlives the extra.
                 val extra = extraId?.let { id ->
-                    when (val e = loadExtraPlayback(container.chinoApi, base, token, caps, itemId, id)) {
+                    when (val e = loadExtraPlayback(container.chinoApi, base, container.streamTokenManager::validFor, caps, itemId, id)) {
                         is ExtraPlayback.Ready -> e
                         is ExtraPlayback.NotAvailable -> {
                             notAvailable = e
@@ -269,26 +269,8 @@ actual class PlayerScreen actual constructor(
                 val info = infoAsk.await()
                 val item = itemAsk.await()
                 val segs = segsAsk.await()
-                val sidecarSubs = subsAsk.await()
-                    .orEmpty()
-                    // Sidecar URLs from chino-api are `/api/v1/play/subs/{id}.vtt`.
-                    // chino-api's StreamMiddleware (auth/oidc.go L78-87)
-                    // accepts `?stream=<signed-token>` minted by
-                    // /me/stream-token — same shape as master.m3u8. The
-                    // sibling `?token=` param is reserved for raw OIDC
-                    // bearers; passing a stream token there 401s with
-                    // "oidc: failed to unmarshal claims". Strip `/api`
-                    // so we don't double-prefix (apiBaseUrl already
-                    // ends in `/api/`).
-                    .map { s ->
-                        val absUrl = if (s.url.startsWith("http")) {
-                            s.url
-                        } else {
-                            base + s.url.removePrefix("/api")
-                        }
-                        val sep = if ('?' in absUrl) '&' else '?'
-                        s.copy(url = "$absUrl${sep}stream=$token")
-                    }
+                // Signed below, with the session's token.
+                val subs = subsAsk.await().orEmpty()
                 // Sibling episode resolution (TV pattern, ported). Series id
                 // lives on Item.parentId for episodes; for movies parentId is
                 // null and the prev/next chevrons stay disabled.
@@ -337,6 +319,33 @@ actual class PlayerScreen actual constructor(
                     startOver = fromStart || !playerMode.progress,
                     handoffSec = if (handoff) resumeSec else -1,
                 )
+                val startMs = resumeStartSec(resume) * 1000L
+                // The session's links - its master, sidecars, scrub previews -
+                // are built once, with a token that outlives what is left to
+                // play and half an hour (forSession): one with less life left
+                // is replaced first, so a film started late in a token's 6 h
+                // does not lose its segments halfway. An extra's came with it.
+                val token = extra?.streamToken
+                    ?: container.streamTokenManager.forSession(item?.durationMs ?: info?.durationMs, startMs)
+                val sidecarSubs = subs
+                    // Sidecar URLs from chino-api are `/api/v1/play/subs/{id}.vtt`.
+                    // chino-api's StreamMiddleware (auth/oidc.go L78-87)
+                    // accepts `?stream=<signed-token>` minted by
+                    // /me/stream-token — same shape as master.m3u8. The
+                    // sibling `?token=` param is reserved for raw OIDC
+                    // bearers; passing a stream token there 401s with
+                    // "oidc: failed to unmarshal claims". Strip `/api`
+                    // so we don't double-prefix (apiBaseUrl already
+                    // ends in `/api/`).
+                    .map { s ->
+                        val absUrl = if (s.url.startsWith("http")) {
+                            s.url
+                        } else {
+                            base + s.url.removePrefix("/api")
+                        }
+                        val sep = if ('?' in absUrl) '&' else '?'
+                        s.copy(url = "$absUrl${sep}stream=$token")
+                    }
                 // The Settings languages as playback starts, and the audio
                 // /play/info says plays first with them (chino-web's pick):
                 // what the default subtitle rule reads, as on iOS.
@@ -349,7 +358,7 @@ actual class PlayerScreen actual constructor(
                     caps = caps,
                     currentQuality = streamQuality,
                     qualities = info?.qualities ?: emptyList(),
-                    resumeMs = resumeStartSec(resume) * 1000L,
+                    resumeMs = startMs,
                     writable = playerMode.progress && mayWriteProgress(resume),
                     audioPref = settings.preferredAudioLang,
                     subtitlePref = settings.preferredSubLang,

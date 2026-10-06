@@ -111,12 +111,13 @@ actual class PlayerScreen actual constructor(
             notAvailable = null
             try {
                 // An extra: the title's detail and the extra's master, and
-                // nothing else of the server's (PlayerMode.Extra).
+                // nothing else of the server's (PlayerMode.Extra), signed with
+                // a token that outlives the extra.
                 val extra = extraId?.let { id ->
                     val load = loadExtraPlayback(
                         api = container.chinoApi,
                         apiBase = container.config.apiBaseUrl,
-                        streamToken = container.streamTokenManager.valid(),
+                        streamToken = container.streamTokenManager::validFor,
                         caps = CodecCaps.queryParam,
                         itemId = itemId,
                         extraId = id,
@@ -238,7 +239,6 @@ private suspend fun loadPlayState(
 ): IosPlayState = coroutineScope {
     val mode = PlayerMode.of(extraId)
     val api = container.chinoApi
-    val token = container.streamTokenManager.valid()
     val apiBase = container.config.apiBaseUrl
     val caps = CodecCaps.queryParam
     val handoff = !fromStart && resumeSec > 1
@@ -278,6 +278,13 @@ private suspend fun loadPlayState(
         startOver = fromStart || !mode.progress,
         handoffSec = if (handoff) resumeSec else -1,
     )
+    val startSec = resumeStartSec(resume)
+    // The session's links - its master, subtitles, scrub previews, artwork -
+    // are built once, with a token that outlives what is left to play and
+    // half an hour (forSession): one with less life left is replaced first.
+    // An extra's came with it.
+    val token = extra?.streamToken
+        ?: container.streamTokenManager.forSession(it?.durationMs ?: playInfo?.durationMs, startSec * 1000L)
     val subtitles = buildSubtitleChoices(itemId, sidecars.await(), playInfo?.subtitleTracks.orEmpty(), apiBase, token)
     val preferredAudio = preferredAudioTrack(playInfo?.audioTracks.orEmpty(), settings.preferredAudioLang)
     val defaultSub = defaultSubtitleChoice(
@@ -297,7 +304,7 @@ private suspend fun loadPlayState(
         title = extra?.heading ?: composePlayerTitle(it, seriesTitle.await()),
         info = playInfo,
         quality = qualityLadder(playInfo),
-        startSec = resumeStartSec(resume),
+        startSec = startSec,
         writable = mode.progress && mayWriteProgress(resume),
         durationMs = durationMs,
         segments = segments.await(),
