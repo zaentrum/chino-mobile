@@ -46,9 +46,12 @@ data class BrowseUiState(
 class BrowseScreenModel(
     private val container: AppContainer,
     private val type: String,
+    /** The filters the grid starts with: the ones it showed before a title
+     *  opened from it covered the shell (BrowseSection keeps them). */
+    initialFilter: BrowseQuery = BrowseQuery(),
     private val pageSize: Int = 48,
 ) : ScreenModel {
-    private val _state = MutableStateFlow(BrowseUiState())
+    private val _state = MutableStateFlow(BrowseUiState(filter = initialFilter))
     val state: StateFlow<BrowseUiState> = _state.asStateFlow()
 
     /** The request in flight — the first page or a later one. A filter

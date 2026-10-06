@@ -50,6 +50,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,7 +87,12 @@ fun BrowseSection(
     pageTitle: String,
     onItemSelected: (String) -> Unit,
 ) {
-    val model = remember(type) { BrowseScreenModel(container, type) }
+    // The filters, saveable as the shell's tab is: back from a title opened
+    // from the grid, the grid has them still, as after a recreation or the
+    // process being killed. The model starts from them; a change goes to
+    // both.
+    var filter by rememberSaveable(type, stateSaver = BrowseQuerySaver) { mutableStateOf(BrowseQuery()) }
+    val model = remember(type) { BrowseScreenModel(container, type, initialFilter = filter) }
     val state by model.state.collectAsState()
     val gridState = rememberLazyGridState()
 
@@ -139,7 +145,10 @@ fun BrowseSection(
             BrowseFilters(
                 value = state.filter,
                 genres = state.genres,
-                onChange = model::setFilter,
+                onChange = { q ->
+                    filter = q
+                    model.setFilter(q)
+                },
             )
         }
         item(span = { GridItemSpan(maxLineSpan) }) {

@@ -133,7 +133,9 @@ class MainShellScreen : Screen {
         // the SearchResultsSection. Non-empty query hides the active
         // section and shows results inline (mirroring chino-web, where
         // the search bar in the header overlays the page with results).
-        var searchQuery by remember { mutableStateOf("") }
+        // Saveable, as the tab is: back from a title opened from the
+        // results, the search is as it was.
+        var searchQuery by rememberSaveable { mutableStateOf("") }
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             val isWide = maxWidth >= 600.dp
             // #150: lets a Home rail's "See all" tile switch the active

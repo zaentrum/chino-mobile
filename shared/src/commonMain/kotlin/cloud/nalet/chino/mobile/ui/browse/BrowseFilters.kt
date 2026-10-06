@@ -33,6 +33,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +50,13 @@ data class BrowseQuery(
     val yearMax: Int? = null,
     val ratingMin: Double? = null,
     val sort: String? = null, // "rating" / "year" / "title" / "newest"
+)
+
+/** A [BrowseQuery] in saved state: its fields, each a value saved state
+ *  holds on Android and iOS alike (BrowseSection's filters). */
+val BrowseQuerySaver: Saver<BrowseQuery, Any> = listSaver(
+    save = { listOf(it.genre, it.yearMin, it.yearMax, it.ratingMin, it.sort) },
+    restore = { BrowseQuery(it[0] as String?, it[1] as Int?, it[2] as Int?, it[3] as Double?, it[4] as String?) },
 )
 
 private data class Decade(val label: String, val min: Int, val max: Int)
