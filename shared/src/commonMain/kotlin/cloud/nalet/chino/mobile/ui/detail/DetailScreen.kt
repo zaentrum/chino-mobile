@@ -70,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -943,19 +944,34 @@ private fun SeasonRow(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "Season ${season.season}",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(end = 16.dp),
-            )
-            Text(
-                text = "${season.episodes.size} episodes",
-                color = ChinoMuted,
-                fontSize = 14.sp,
+            // The name and the count on one line where they fit. At a large
+            // font size the count moves under the name, whole - it never
+            // breaks ("6 / episo / des") - and only a name too long for a
+            // line of its own is cut short: cut beside the count it would
+            // read "S…", whichever season it is.
+            FlowRow(
                 modifier = Modifier.weight(1f),
-            )
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "Season ${season.season}",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                )
+                Text(
+                    text = "${season.episodes.size} episodes",
+                    color = ChinoMuted,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                )
+            }
             Icon(
                 imageVector = if (expanded) Lucide.ChevronDown else Lucide.ChevronRight,
                 contentDescription = if (expanded) "Collapse" else "Expand",
@@ -1044,32 +1060,31 @@ private fun EpisodeRow(
             broughtIntoView = true
         }
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(if (focused) Modifier.bringIntoViewRequester(bringIntoView) else Modifier)
-            .then(
-                if (focused) {
-                    Modifier
-                        .background(ChinoCloudBlue.copy(alpha = 0.12f))
-                        .border(BorderStroke(1.dp, ChinoCloudBlue), RectangleShape)
-                } else {
-                    Modifier
-                },
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        // The still, and its chips over it: beside it rather than in it, as
-        // the still clips and their touch targets reach past it
-        // (EpisodeStillChip). The box is the still's size.
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .then(if (focused) Modifier.bringIntoViewRequester(bringIntoView) else Modifier)
+        .then(
+            if (focused) {
+                Modifier
+                    .background(ChinoCloudBlue.copy(alpha = 0.12f))
+                    .border(BorderStroke(1.dp, ChinoCloudBlue), RectangleShape)
+            } else {
+                Modifier
+            },
+        )
+        .clickable(onClick = onClick)
+        .padding(horizontal = EPISODE_ROW_PADDING, vertical = 12.dp)
+    // On a phone as wide as a phone's poster card, and tall enough to keep
+    // the watched and add-to-list chips apart.
+    val stillWidth = if (compact) 128.dp else 160.dp
+    // The still, and its chips over it: beside it rather than in it, as
+    // the still clips and their touch targets reach past it
+    // (EpisodeStillChip). The box is the still's size.
+    val still: @Composable () -> Unit = {
         Box {
             Box(
                 modifier = Modifier
-                    // On a phone as wide as a phone's poster card, and tall enough
-                    // to keep the watched and add-to-list chips apart.
-                    .width(if (compact) 128.dp else 160.dp)
+                    .width(stillWidth)
                     .aspectRatio(16f / 9f)
                     .clip(RectangleShape)
                     .background(ChinoBg2),
@@ -1131,7 +1146,9 @@ private fun EpisodeRow(
                 modifier = Modifier.align(Alignment.BottomEnd),
             )
         }
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
+    }
+    val details: @Composable (Modifier) -> Unit = { modifier ->
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = modifier) {
             val epNum = listOfNotNull(
                 episode.seasonNumber?.let { "S${it.toString().padStart(2, '0')}" },
                 episode.episodeNumber?.let { "E${it.toString().padStart(2, '0')}" },
@@ -1168,7 +1185,7 @@ private fun EpisodeRow(
                 Text(
                     text = episode.title,
                     color = if (watched) ChinoMuted else Color.White,
-                    fontSize = 14.sp,
+                    fontSize = EPISODE_TITLE_SIZE,
                     fontWeight = FontWeight.Medium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -1183,7 +1200,7 @@ private fun EpisodeRow(
                         text = episode.title,
                         // Web dims a watched episode's title to #8b949e.
                         color = if (watched) ChinoMuted else Color.White,
-                        fontSize = 14.sp,
+                        fontSize = EPISODE_TITLE_SIZE,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1224,7 +1241,35 @@ private fun EpisodeRow(
             }
         }
     }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // Large text on a narrow phone: the still above the text, which then
+        // has the row's width. Beside the still the column was narrower than
+        // a word of the title at 2x on a 320dp phone, and the word broke in
+        // two ("Earthfal / l"). It stays beside the still while that leaves
+        // the title six ems - a dozen letters or so - at the font size the
+        // viewer set: the default on any phone, 1.3x from 360dp.
+        val besideStill = maxWidth - EPISODE_ROW_PADDING * 2 - stillWidth - EPISODE_ROW_GAP
+        val titleEm = with(LocalDensity.current) { EPISODE_TITLE_SIZE.toDp() }
+        if (compact && besideStill < titleEm * 6) {
+            Column(modifier = rowModifier, verticalArrangement = Arrangement.spacedBy(EPISODE_ROW_GAP)) {
+                still()
+                details(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(modifier = rowModifier, horizontalArrangement = Arrangement.spacedBy(EPISODE_ROW_GAP)) {
+                still()
+                details(Modifier.weight(1f))
+            }
+        }
+    }
 }
+
+/** An episode row's padding at its sides, the gap between its still and its
+ *  text, and its title's size: what the text beside the still has room for
+ *  (EpisodeRow). */
+private val EPISODE_ROW_PADDING = 16.dp
+private val EPISODE_ROW_GAP = 12.dp
+private val EPISODE_TITLE_SIZE = 14.sp
 
 /**
  * One of an episode still's chips (web: EpisodesList.tsx's pips): 24dp, 6dp
