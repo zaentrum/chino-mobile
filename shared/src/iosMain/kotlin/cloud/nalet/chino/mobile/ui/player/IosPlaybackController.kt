@@ -29,6 +29,12 @@ internal const val STARTUP_DEADLINE_MS = 20_000L
  * everything the chrome shows. A plain object remembered by the screen, so the
  * player's clock, the remote commands and the 10 s save always act on current
  * values (no state captured by a long-lived effect goes stale).
+ *
+ * In extra mode ([PlayerMode.Extra]) it plays the extra's master and tells
+ * the server nothing of the title's: no progress (the session is not
+ * writable), no watched mark, none of the player's events — one
+ * trailer_play at the first playback. Its subtitles are the master's own,
+ * which AVPlayer draws ([masterSubtitleChoices]).
  */
 @Stable
 internal class IosPlaybackController(
@@ -80,8 +86,14 @@ internal class IosPlaybackController(
     /** A manual audio pick holds across a rebuilt item; Settings until then. */
     private var pickedAudioLang: String? = null
 
+    /** The captions menu: a title's sidecar and embedded tracks, an extra's
+     *  master renditions once the item knows them. */
+    var subtitleChoices by mutableStateOf(state.subtitles)
+        private set
     var activeSubtitleId by mutableStateOf(state.defaultSubtitleId)
         private set
+    /** The default rule has picked an extra's subtitle (or none). */
+    private var masterSubtitleSet = false
     private var cues: List<SubtitleCue> = emptyList()
     var subtitleText by mutableStateOf("")
         private set
@@ -90,6 +102,7 @@ internal class IosPlaybackController(
         private set
 
     private var markedWatched = false
+    private var trailerPlaySent = false
     private var lastPublishedPlaying = false
     private var lastPublishAt = 0L
     private var foregroundWaitMs = 0L
@@ -126,6 +139,31 @@ internal class IosPlaybackController(
             if (match != null && !match.selected) engine.selectAudio(match.index)
             refreshAudioChoices()
         }
+        // An extra's subtitles are its master's renditions (it has no
+        // sidecars): listed once the item knows them, the default rule's pick
+        // on, and the pick kept across a rebuilt item.
+        if (!state.mode.sidecarSubtitles) {
+            engine.onLegibleGroupLoaded = {
+                val choices = masterSubtitleChoices(engine.subtitleRenditions())
+                subtitleChoices = choices
+                if (!masterSubtitleSet) {
+                    masterSubtitleSet = true
+                    activeSubtitleId = defaultSubtitleChoice(
+                        choices,
+                        audioLang = state.preferredAudio?.language,
+                        subtitlePref = state.subtitlePref,
+                        audioPref = state.audioPref,
+                    )?.id
+                }
+                engine.selectSubtitleRendition(masterSubtitleIndex(activeSubtitleId))
+            }
+        }
+    }
+
+    /** The player's events, for a title; an extra's telemetry is its one
+     *  trailer_play ([PlayerMode]). */
+    private fun event(kind: String, extra: Map<String, String>) {
+        if (state.mode.playbackEvents) telemetry.event(kind, itemId = itemId, extra = extra)
     }
 
     /** The screen came up: sound, Now Playing, the background save. */
@@ -154,7 +192,7 @@ internal class IosPlaybackController(
     /** (Re)builds the item for [loadKey]: master URL at the current rung, the
      *  start seek armed in the guard. */
     fun load() {
-        val url = buildMasterUrl(state.apiBase, itemId, state.streamToken, quality, state.caps)
+        val url = state.masterUrl(quality)
         guard.expectSeek(resumeAtMs / 1000.0)
         engine.load(url, startAtSec = resumeAtMs / 1000.0, play = playIntent)
         engine.speed = speed
@@ -170,23 +208,24 @@ internal class IosPlaybackController(
         pipActive = engine.pipActive
         if (s.startSeekDone && s.firstFrame && !started) started = true
         if (started && s.playing) guard.played(s.positionMs / 1000.0)
+        // An extra's one trailer_play, as the trailer screen sent it.
+        if (state.mode.trailerPlay && !trailerPlaySent && started && s.playing) {
+            trailerPlaySent = true
+            telemetry.event("trailer_play", itemId = itemId, extra = mapOf("extra_id" to state.extraId.orEmpty(), "local" to "true"))
+        }
         subtitleText = if (cues.isEmpty()) "" else cueTextAt(cues, s.positionMs)
         if (failure == null) {
             engine.failure()?.let { f ->
-                telemetry.event("media_error", itemId = itemId, extra = mapOf("signature" to f.signature, "message" to f.message, "not_found" to f.notFound.toString()))
+                event("media_error", mapOf("signature" to f.signature, "message" to f.message, "not_found" to f.notFound.toString()))
                 giveUp(f)
             }
         }
         val dur = durationMs
         val credits = inCredits(state.segments, s.positionMs)
-        if (!markedWatched && started && s.playing && reachedWatched(s.positionMs, dur, credits)) {
+        if (state.mode.watched && !markedWatched && started && s.playing && reachedWatched(s.positionMs, dur, credits)) {
             markedWatched = true
             container.appScope.launch { runCatching { api.postWatched(itemId) } }
-            telemetry.event(
-                "mark_watched",
-                itemId = itemId,
-                extra = mapOf("at" to (s.positionMs / 1000).toString(), "via" to if (credits) "credits" else "p95"),
-            )
+            event("mark_watched", mapOf("at" to (s.positionMs / 1000).toString(), "via" to if (credits) "credits" else "p95"))
         }
         val now = currentTimeMillis()
         if (s.playing != lastPublishedPlaying || now - lastPublishAt > 5_000) {
@@ -201,7 +240,7 @@ internal class IosPlaybackController(
         if (started || failure != null) return
         if (UIApplication.sharedApplication.applicationState == UIApplicationState.UIApplicationStateActive) foregroundWaitMs += 1_000
         if (foregroundWaitMs < STARTUP_DEADLINE_MS) return
-        telemetry.event("startup_timeout", itemId = itemId, extra = mapOf("attempt" to attempt.toString()))
+        event("startup_timeout", mapOf("attempt" to attempt.toString()))
         giveUp(
             PlayerFailure(
                 notFound = false,
@@ -256,7 +295,7 @@ internal class IosPlaybackController(
 
     fun skip(seg: cloud.nalet.chino.mobile.data.api.Segment) {
         seek(seg.endMs)
-        telemetry.event("skip_segment", itemId = itemId, extra = mapOf("kind" to seg.kind))
+        event("skip_segment", mapOf("kind" to seg.kind))
     }
 
     fun setVolume(v: Float) {
@@ -287,7 +326,7 @@ internal class IosPlaybackController(
 
     fun switchQuality(q: String) {
         if (q == quality) return
-        telemetry.event("quality_switch", itemId = itemId, extra = mapOf("from" to quality, "to" to q))
+        event("quality_switch", mapOf("from" to quality, "to" to q))
         if (snapshot.startSeekDone && snapshot.positionMs > 0) resumeAtMs = snapshot.positionMs
         playIntent = engine.wantsPlay
         quality = q
@@ -297,10 +336,9 @@ internal class IosPlaybackController(
     fun selectAudio(choice: AudioChoice) {
         val from = audioChoices.firstOrNull { it.selected }
         if (from?.index != choice.index) {
-            telemetry.event(
+            event(
                 "audio_switch",
-                itemId = itemId,
-                extra = mapOf("from" to (from?.language ?: from?.index?.toString().orEmpty()), "to" to (choice.language ?: choice.index.toString())),
+                mapOf("from" to (from?.language ?: from?.index?.toString().orEmpty()), "to" to (choice.language ?: choice.index.toString())),
             )
         }
         pickedAudioLang = choice.language
@@ -308,17 +346,20 @@ internal class IosPlaybackController(
         refreshAudioChoices()
     }
 
-    /** Off (null) or a track the overlay can draw. */
+    /** Off (null) or a track the overlay can draw — an extra's, a rendition
+     *  of its master that AVPlayer draws. */
     fun selectSubtitle(choice: SubtitleChoice?) {
         if (choice != null && !choice.available) return
         activeSubtitleId = choice?.id
+        if (!state.mode.sidecarSubtitles) engine.selectSubtitleRendition(masterSubtitleIndex(choice?.id))
     }
 
-    /** Loads the active track's cue file (?stream=) for the overlay. */
+    /** Loads the active track's cue file (?stream=) for the overlay. A
+     *  master's rendition has none: AVPlayer draws it. */
     suspend fun loadCues() {
         cues = emptyList()
         subtitleText = ""
-        val choice = state.subtitles.firstOrNull { it.id == activeSubtitleId && it.available } ?: return
+        val choice = subtitleChoices.firstOrNull { it.id == activeSubtitleId && it.available && it.url.isNotEmpty() } ?: return
         cues = runCatching { parseSubtitleCues(container.http.get(choice.url).bodyAsText()) }.getOrDefault(emptyList())
     }
 
@@ -344,19 +385,20 @@ internal class IosPlaybackController(
             title = "${f.title}: ${f.message.substringBefore(". ").trimEnd('.')}".take(120),
             description = f.tech.take(8 * 1024),
             fingerprint = bugFingerprint(name = f.signature, message = f.message),
-            context = mapOf(
-                "itemId" to itemId,
-                "positionSec" to (resumeAtMs / 1000).toString(),
-                "screen" to "player",
-                "mode" to (state.info?.mode ?: "unknown"),
-                "quality" to quality,
-            ),
+            context = buildMap {
+                put("itemId", itemId)
+                state.extraId?.let { put("extraId", it) }
+                put("positionSec", (resumeAtMs / 1000).toString())
+                put("screen", "player")
+                put("mode", state.info?.mode ?: "unknown")
+                put("quality", quality)
+            },
         )
     }
 
     /** Try again: a fresh item and a fresh deadline, where the give-up was. */
     fun retry() {
-        telemetry.event("retry", itemId = itemId, extra = mapOf("attempt" to (attempt + 1).toString()))
+        event("retry", mapOf("attempt" to (attempt + 1).toString()))
         failure = null
         started = false
         foregroundWaitMs = 0
@@ -367,7 +409,7 @@ internal class IosPlaybackController(
 
     fun prewarmNext(nextId: String) {
         container.appScope.launch { runCatching { api.prewarm(nextId, caps = state.caps.ifEmpty { null }, quality = "high") } }
-        telemetry.event("binge_prewarm", itemId = itemId, extra = mapOf("next_item" to nextId))
+        event("binge_prewarm", mapOf("next_item" to nextId))
     }
 
     private fun refreshAudioChoices() {
@@ -413,6 +455,34 @@ internal fun audioChoicesFor(
         AudioChoice(index = r.index, label = labels[i], detail = details[i], language = langs[i], selected = r.selected)
     }
 }
+
+/** The id prefix of a master's subtitle rendition in the captions menu; the
+ *  rendition's index follows. */
+private const val MASTER_SUBTITLE_ID = "hls-"
+
+/** An extra's captions menu: its master's subtitle renditions, named as a
+ *  title's tracks are ([subtitleLabels]) — the language first, then what the
+ *  NAME says beyond it, "(forced)" for a forced one. AVPlayer draws the one
+ *  picked, so each is available and has no cue file. */
+internal fun masterSubtitleChoices(renditions: List<SubtitleRendition>): List<SubtitleChoice> {
+    val labels = subtitleLabels(renditions.map { SubtitleLabelInput(it.language, it.name, it.forced) })
+    return renditions.mapIndexed { i, r ->
+        SubtitleChoice(
+            id = MASTER_SUBTITLE_ID + r.index,
+            label = labels[i],
+            lang = normalizeLang(r.language),
+            url = "",
+            kind = SubtitleKind.Text,
+            forced = r.forced,
+            available = true,
+        )
+    }
+}
+
+/** The rendition a [masterSubtitleChoices] row shows, by its id; null for
+ *  off, or a row of another kind. */
+internal fun masterSubtitleIndex(id: String?): Int? =
+    id?.takeIf { it.startsWith(MASTER_SUBTITLE_ID) }?.removePrefix(MASTER_SUBTITLE_ID)?.toIntOrNull()
 
 private fun channelLabel(n: Int): String = when (n) {
     1 -> "Mono"

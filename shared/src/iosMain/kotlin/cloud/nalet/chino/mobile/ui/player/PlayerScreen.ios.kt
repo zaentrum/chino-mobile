@@ -60,6 +60,15 @@ import platform.UIKit.UIDevice
  * sidecar / embedded cue files, as AVPlayer cannot side-load WebVTT. Playback
  * keeps going in the background and in picture in picture, with Now Playing
  * and the remote commands.
+ *
+ * Extra mode ([extraId], [PlayerMode.Extra]): one of the title's extras — its
+ * trailer — in this same player, chrome and menus: its master from the title's
+ * detail ([loadExtraPlayback]), the quality ladder read off it, its subtitles
+ * the master's (AVPlayer draws them), from the head with sound. Nothing of the
+ * title's is read or written — no progress, watched, segments, trickplay,
+ * sidecars, episodes or prewarm, and of the telemetry one trailer_play. The
+ * screen closes at the end; a master that is not there says "Trailer not
+ * available" with the title's link.
  */
 actual class PlayerScreen actual constructor(
     private val itemId: String,
@@ -77,12 +86,39 @@ actual class PlayerScreen actual constructor(
         var state by remember { mutableStateOf<IosPlayState?>(null) }
         var loadError by remember { mutableStateOf<String?>(null) }
         var reportDraft by remember { mutableStateOf<String?>(null) }
+        // An extra that is not there: gone from the detail, or its master
+        // answers 404 (at the load, or once playing).
+        var notAvailable by remember { mutableStateOf<ExtraPlayback.NotAvailable?>(null) }
+        // Back, the panels and an extra's end close it the same way — an
+        // extra's end and a Back can come together — and only while the
+        // player is the screen on top.
+        val close: () -> Unit = { if (nav.lastItem === this@PlayerScreen) nav.pop() }
 
-        LaunchedEffect(itemId, fromStart, resumeSec, loadAttempt) {
+        LaunchedEffect(itemId, fromStart, resumeSec, extraId, loadAttempt) {
             state = null
             loadError = null
+            notAvailable = null
             try {
-                state = loadPlayState(container, itemId, fromStart, resumeSec)
+                // An extra: the title's detail and the extra's master, and
+                // nothing else of the server's (PlayerMode.Extra).
+                val extra = extraId?.let { id ->
+                    val load = loadExtraPlayback(
+                        api = container.chinoApi,
+                        apiBase = container.config.apiBaseUrl,
+                        streamToken = container.streamTokenManager.valid(),
+                        caps = CodecCaps.queryParam,
+                        itemId = itemId,
+                        extraId = id,
+                    )
+                    when (load) {
+                        is ExtraPlayback.Ready -> load
+                        is ExtraPlayback.NotAvailable -> {
+                            notAvailable = load
+                            return@LaunchedEffect
+                        }
+                    }
+                }
+                state = loadPlayState(container, itemId, fromStart, resumeSec, extraId, extra)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -91,27 +127,37 @@ actual class PlayerScreen actual constructor(
         }
 
         val ready = state
+        val missing = notAvailable
         when {
+            missing != null -> ExtraNotAvailable(title = missing.title, link = missing.link, onBack = close)
             loadError != null -> PlaybackFailurePanel(
                 title = "Playback failed",
                 label = "The server didn't answer the player. Try again in a moment.",
                 onRetry = { loadAttempt += 1 },
-                onBack = { nav.pop() },
+                onBack = close,
                 onReport = { reportDraft = loadError },
             )
             ready == null -> PlayerLoading()
             else -> IosPlaybackSurface(
                 state = ready,
-                onBack = { nav.pop() },
+                onBack = close,
                 onHome = { nav.replaceAll(MainShellScreen()) },
                 // Replace, so back from the next episode does not walk the chain.
                 onSwitchItem = { id -> nav.replace(PlayerScreen(itemId = id, fromStart = true)) },
+                onExtraMissing = {
+                    notAvailable = ExtraPlayback.NotAvailable(title = ready.extra?.item?.title, link = ready.extra?.link)
+                },
+                onEnded = close,
             )
         }
         reportDraft?.let { tech ->
             BugReportDialog(
                 screenshot = null,
-                context = mapOf("screen" to "player", "itemId" to itemId),
+                context = buildMap {
+                    put("screen", "player")
+                    put("itemId", itemId)
+                    extraId?.let { put("extraId", it) }
+                },
                 initialDescription = "Playback failed while watching this item.\n\n--- technical details ---\n$tech",
                 onDismiss = { reportDraft = null },
             )
@@ -143,14 +189,35 @@ internal data class IosPlayState(
     val nextEpisodeTitle: String?,
     val trickplayCues: List<TrickplayCue>,
     val artworkUrl: String?,
-)
+    /** What it plays, a title or one of its extras: what it reads and
+     *  writes ([PlayerMode]). */
+    val mode: PlayerMode,
+    /** The extra it plays in extra mode; null for a title. */
+    val extraId: String?,
+    /** The extra's master and what was read off it; null for a title. */
+    val extra: ExtraPlayback.Ready?,
+    /** Settings' subtitle and audio languages as playback started: the
+     *  default rule for an extra's subtitles, known once its item is. */
+    val subtitlePref: String,
+    val audioPref: String,
+) {
+    /** The master at [quality]: a title's ([buildMasterUrl]), else the
+     *  extra's — `q` for a rung the viewer picked ([withQuality]). */
+    fun masterUrl(quality: String): String =
+        extra?.let { withQuality(it.masterUrl, quality) } ?: buildMasterUrl(apiBase, itemId, streamToken, quality, caps)
+}
 
+/** What the surface plays: [itemId], or its extra [extra] (loaded first,
+ *  [loadExtraPlayback]), each request gated by the mode. */
 private suspend fun loadPlayState(
     container: AppContainer,
     itemId: String,
     fromStart: Boolean,
     resumeSec: Int,
+    extraId: String?,
+    extra: ExtraPlayback.Ready?,
 ): IosPlayState = coroutineScope {
+    val mode = PlayerMode.of(extraId)
     val api = container.chinoApi
     val token = container.streamTokenManager.valid()
     val apiBase = container.config.apiBaseUrl
@@ -158,34 +225,46 @@ private suspend fun loadPlayState(
     val handoff = !fromStart && resumeSec > 1
     // The saved position matters only when neither "from start" nor a
     // hand-off says where to begin. Null = it could not be read.
-    val saved = async { if (fromStart || handoff) null else runCatching { api.getProgress(itemId).positionSec }.getOrNull() }
-    val info = async { runCatching { api.playInfo(itemId, caps = caps.ifEmpty { null }) }.getOrNull() }
-    val item = async { runCatching { api.getItem(itemId) }.getOrNull() }
-    val segments = async { runCatching { api.itemSegments(itemId).segments }.getOrDefault(emptyList()) }
-    val sidecars = async { runCatching { api.itemSubtitles(itemId).subtitles }.getOrDefault(emptyList()) }
+    val saved = async {
+        if (!mode.progress || fromStart || handoff) null else runCatching { api.getProgress(itemId).positionSec }.getOrNull()
+    }
+    val info = async {
+        if (mode.playInfo) runCatching { api.playInfo(itemId, caps = caps.ifEmpty { null }) }.getOrNull() else extra?.info
+    }
+    // The title's detail: an extra's came with its load (its poster is Now
+    // Playing's).
+    val item = async { extra?.item ?: runCatching { api.getItem(itemId) }.getOrNull() }
+    val segments = async {
+        if (mode.segments) runCatching { api.itemSegments(itemId).segments }.getOrDefault(emptyList()) else emptyList()
+    }
+    // An extra has no sidecars: its subtitles are its master's.
+    val sidecars = async {
+        if (mode.sidecarSubtitles) runCatching { api.itemSubtitles(itemId).subtitles }.getOrDefault(emptyList()) else emptyList()
+    }
     val settings = container.settings.flow.first()
 
     val it = item.await()
     val playInfo = info.await()
-    val seriesId = it?.parentId
+    val seriesId = it?.parentId?.takeIf { mode.episodes }
     val seriesTitle = async { seriesId?.let { sid -> runCatching { api.getItem(sid).title }.getOrNull() } }
     val episodes = async {
         seriesId?.let { sid -> runCatching { api.seriesEpisodes(sid).seasons.flatMap { s -> s.episodes } }.getOrNull() }.orEmpty()
     }
     // Scrub thumbnails exist for packaged titles only (web's gate).
     val trickplay = async {
-        if (playInfo?.mode.equals("packaged", ignoreCase = true)) {
+        if (mode.trickplay && playInfo?.mode.equals("packaged", ignoreCase = true)) {
             runCatching { parseTrickplayVtt(api.trickplayVtt(itemId, token)) }.getOrDefault(emptyList())
         } else {
             emptyList()
         }
     }
 
-    val durationMs = playInfo?.durationMs ?: it?.durationMs ?: 0L
+    // An extra's length is its own, never the title's.
+    val durationMs = playInfo?.durationMs ?: it?.durationMs?.takeIf { extra == null } ?: 0L
     val resume = ResumeInput(
         savedSec = saved.await(),
         durationSec = durationMs / 1000.0,
-        startOver = fromStart,
+        startOver = fromStart || !mode.progress,
         handoffSec = if (handoff) resumeSec else -1,
     )
     val subtitles = buildSubtitleChoices(itemId, sidecars.await(), playInfo?.subtitleTracks.orEmpty(), apiBase, token)
@@ -204,11 +283,11 @@ private suspend fun loadPlayState(
         apiBase = apiBase,
         streamToken = token,
         caps = caps,
-        title = composePlayerTitle(it, seriesTitle.await()),
+        title = extra?.heading ?: composePlayerTitle(it, seriesTitle.await()),
         info = playInfo,
         quality = qualityLadder(playInfo),
         startSec = resumeStartSec(resume),
-        writable = mayWriteProgress(resume),
+        writable = mode.progress && mayWriteProgress(resume),
         durationMs = durationMs,
         segments = segments.await(),
         subtitles = subtitles,
@@ -225,6 +304,11 @@ private suspend fun loadPlayState(
         },
         trickplayCues = trickplay.await(),
         artworkUrl = artworkUrl(apiBase, it?.posterUrl ?: it?.backdropUrl, token),
+        mode = mode,
+        extraId = extraId,
+        extra = extra,
+        subtitlePref = settings.preferredSubLang,
+        audioPref = settings.preferredAudioLang,
     )
 }
 
@@ -235,6 +319,10 @@ private fun IosPlaybackSurface(
     onBack: () -> Unit,
     onHome: () -> Unit,
     onSwitchItem: (String) -> Unit,
+    /** The extra's master answered 404 once playing (extra mode). */
+    onExtraMissing: () -> Unit,
+    /** Playback reached the end of what closes there ([PlayerMode.closesAtEnd]). */
+    onEnded: () -> Unit,
 ) {
     val container = LocalAppContainer.current
     val settings by container.settings.flow.collectAsState(initial = AppSettings())
@@ -244,6 +332,10 @@ private fun IosPlaybackSurface(
         c.start()
         onDispose { c.release() }
     }
+    // An extra closes at its end; a title stays there (the up-next
+    // countdown, the chrome).
+    val ended = c.snapshot.ended
+    LaunchedEffect(ended) { if (ended && state.mode.closesAtEnd) onEnded() }
     // The first item, a quality switch, Try again.
     LaunchedEffect(c.loadKey) { c.load() }
     // The player's clock: 5 looks a second, on the main thread.
@@ -344,6 +436,9 @@ private fun IosPlaybackSurface(
 
     val unavailableNote = remember { "Not available on ${UIDevice.currentDevice.model}" }
     val failure = c.failure
+    // An extra whose master is gone: "Trailer not available", with the
+    // title's link, in place of the panel (and without a report).
+    LaunchedEffect(failure) { if (failure?.notFound == true && state.extra != null) onExtraMissing() }
     // The native AirPlay button follows the chrome's fade; it hides under the
     // info dialog (which Compose draws, so below it).
     val chromeAlpha by animateFloatAsState(if (chromeVisible && failure == null && openPopover != OpenPopover.INFO) 1f else 0f)
@@ -420,7 +515,7 @@ private fun IosPlaybackSurface(
                     trickplayBaseUrl = "${state.apiBase.trimEnd('/')}/v1/items/${state.itemId}/play/trickplay",
                     streamToken = state.streamToken,
                     audio = c.audioChoices,
-                    subtitles = state.subtitles,
+                    subtitles = c.subtitleChoices,
                     activeSubtitleId = c.activeSubtitleId,
                     quality = state.quality,
                     currentQuality = c.quality,
@@ -504,7 +599,9 @@ private fun IosPlaybackSurface(
             )
         }
 
-        if (failure != null) {
+        // An extra's missing master is the trailer's message (above), not
+        // this panel.
+        if (failure != null && !(failure.notFound && state.extra != null)) {
             PlaybackFailurePanel(
                 title = failure.title,
                 label = failure.message,
@@ -516,7 +613,11 @@ private fun IosPlaybackSurface(
         reportDraft?.let { tech ->
             BugReportDialog(
                 screenshot = null,
-                context = mapOf("screen" to "player", "itemId" to state.itemId),
+                context = buildMap {
+                    put("screen", "player")
+                    put("itemId", state.itemId)
+                    state.extraId?.let { put("extraId", it) }
+                },
                 initialDescription = "Playback failed while watching this item.\n\n--- technical details ---\n$tech",
                 onDismiss = { reportDraft = null },
             )

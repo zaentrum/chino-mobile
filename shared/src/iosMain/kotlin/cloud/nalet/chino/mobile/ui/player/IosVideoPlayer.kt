@@ -5,6 +5,7 @@ import kotlinx.cinterop.readValue
 import kotlinx.cinterop.useContents
 import platform.AVFoundation.AVLayerVideoGravityResizeAspect
 import platform.AVFoundation.AVMediaCharacteristicAudible
+import platform.AVFoundation.AVMediaCharacteristicContainsOnlyForcedSubtitles
 import platform.AVFoundation.AVMediaCharacteristicLegible
 import platform.AVFoundation.AVMediaSelectionGroup
 import platform.AVFoundation.AVMediaSelectionOption
@@ -100,6 +101,19 @@ internal data class AudioRendition(
     val selected: Boolean,
 )
 
+/** A subtitle rendition of the master playlist (AVFoundation's legible
+ *  group): what an extra's captions menu lists, AVPlayer drawing the one
+ *  picked. A title's subtitles are its sidecars, on the overlay. */
+internal data class SubtitleRendition(
+    val index: Int,
+    /** The rendition's NAME. */
+    val name: String,
+    /** Its LANGUAGE, as tagged ("en"). */
+    val language: String?,
+    /** FORCED=YES: it carries only the forced subtitles. */
+    val forced: Boolean,
+)
+
 /**
  * AVPlayer for chino-stream's HLS master, behind the player screen.
  *
@@ -139,6 +153,13 @@ internal class IosVideoPlayer {
     /** Called on the main thread once the audio renditions are known. */
     var onAudioGroupLoaded: (() -> Unit)? = null
 
+    /** The master's subtitle renditions, once known; none is shown until
+     *  [selectSubtitleRendition] picks one. */
+    private var legibleGroup: AVMediaSelectionGroup? = null
+
+    /** Called on the main thread once the subtitle renditions are known. */
+    var onLegibleGroupLoaded: (() -> Unit)? = null
+
     private val pipDelegate = PipDelegate()
     val pip: AVPictureInPictureController? =
         if (AVPictureInPictureController.isPictureInPictureSupported()) {
@@ -175,6 +196,7 @@ internal class IosVideoPlayer {
         item = newItem
         ended = false
         audioGroup = null
+        legibleGroup = null
         wantsPlay = play
         startSec = startAtSec
         player.pause()
@@ -312,6 +334,27 @@ internal class IosVideoPlayer {
         item?.selectMediaOption(option, inMediaSelectionGroup = group)
     }
 
+    fun subtitleRenditions(): List<SubtitleRendition> {
+        val group = legibleGroup ?: return emptyList()
+        return group.options.filterIsInstance<AVMediaSelectionOption>().mapIndexed { i, o ->
+            SubtitleRendition(
+                index = i,
+                name = o.displayName,
+                language = o.extendedLanguageTag ?: o.locale?.languageCode,
+                forced = o.hasMediaCharacteristic(AVMediaCharacteristicContainsOnlyForcedSubtitles),
+            )
+        }
+    }
+
+    /** Shows the master's subtitle rendition [index], AVPlayer drawing it, or
+     *  none (null). */
+    fun selectSubtitleRendition(index: Int?) {
+        val group = legibleGroup ?: return
+        val option = index?.let { group.options.getOrNull(it) as? AVMediaSelectionOption }
+        if (option == null && (index != null || !group.allowsEmptySelection)) return
+        item?.selectMediaOption(option, inMediaSelectionGroup = group)
+    }
+
     private fun loadSelectionGroups(forItem: AVPlayerItem, gen: Int) {
         forItem.asset.loadMediaSelectionGroupForMediaCharacteristic(AVMediaCharacteristicAudible) { group, _ ->
             dispatch_async(dispatch_get_main_queue()) {
@@ -323,8 +366,11 @@ internal class IosVideoPlayer {
         forItem.asset.loadMediaSelectionGroupForMediaCharacteristic(AVMediaCharacteristicLegible) { group, _ ->
             dispatch_async(dispatch_get_main_queue()) {
                 if (gen != generation || group == null) return@dispatch_async
-                // In-playlist subtitles would draw under the overlay's: off.
+                // In-playlist subtitles would draw under the overlay's: off,
+                // until one is picked (an extra's, which has no overlay).
                 if (group.allowsEmptySelection) forItem.selectMediaOption(null, inMediaSelectionGroup = group)
+                legibleGroup = group
+                onLegibleGroupLoaded?.invoke()
             }
         }
     }
