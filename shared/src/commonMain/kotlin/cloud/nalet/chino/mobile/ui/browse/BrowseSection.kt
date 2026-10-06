@@ -61,6 +61,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cafe.adriel.voyager.core.model.rememberScreenModel
+import cafe.adriel.voyager.core.screen.Screen
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.theme.PosterImage
@@ -83,6 +85,8 @@ import com.composables.icons.lucide.Lucide
 @Composable
 fun BrowseSection(
     container: AppContainer,
+    /** The screen the grid is on, the shell: its model lives as long as it. */
+    screen: Screen,
     type: String,
     pageTitle: String,
     onItemSelected: (String) -> Unit,
@@ -92,7 +96,11 @@ fun BrowseSection(
     // process being killed. The model starts from them; a change goes to
     // both.
     var filter by rememberSaveable(type, stateSaver = BrowseQuerySaver) { mutableStateOf(BrowseQuery()) }
-    val model = remember(type) { BrowseScreenModel(container, type, initialFilter = filter) }
+    // The shell's own, one per tab: a title opened from the grid covers the
+    // shell, and back from it the grid has its pages and scrolls back to
+    // where it was, nothing asked again; it goes, its requests with it, when
+    // the shell leaves the stack (Home starts a new one).
+    val model = screen.rememberScreenModel(tag = type) { BrowseScreenModel(container, type, initialFilter = filter) }
     val state by model.state.collectAsState()
     val gridState = rememberLazyGridState()
 

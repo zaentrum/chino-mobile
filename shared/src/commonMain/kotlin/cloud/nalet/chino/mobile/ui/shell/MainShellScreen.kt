@@ -154,7 +154,7 @@ class MainShellScreen : Screen {
                     searchQuery = searchQuery,
                     onSearchChange = { searchQuery = it },
                 ) {
-                    SectionContent(section, container, searchQuery, onNavigateToSection)
+                    SectionContent(this@MainShellScreen, section, container, searchQuery, onNavigateToSection)
                 }
             } else {
                 NarrowLayout(
@@ -163,7 +163,7 @@ class MainShellScreen : Screen {
                     searchQuery = searchQuery,
                     onSearchChange = { searchQuery = it },
                 ) {
-                    SectionContent(section, container, searchQuery, onNavigateToSection)
+                    SectionContent(this@MainShellScreen, section, container, searchQuery, onNavigateToSection)
                 }
             }
         }
@@ -172,6 +172,8 @@ class MainShellScreen : Screen {
 
 @Composable
 private fun SectionContent(
+    /** The shell itself: the screen its sections' models belong to. */
+    screen: Screen,
     section: Section,
     container: cloud.nalet.chino.mobile.data.AppContainer,
     searchQuery: String,
@@ -206,12 +208,14 @@ private fun SectionContent(
         Section.Zap -> cloud.nalet.chino.mobile.ui.zap.ZapScreen().Content()
         Section.Movies -> cloud.nalet.chino.mobile.ui.browse.BrowseSection(
             container = container,
+            screen = screen,
             type = "movie",
             pageTitle = "Movies",
             onItemSelected = onItemSelected,
         )
         Section.Series -> cloud.nalet.chino.mobile.ui.browse.BrowseSection(
             container = container,
+            screen = screen,
             type = "series",
             pageTitle = "Shows",
             onItemSelected = onItemSelected,
