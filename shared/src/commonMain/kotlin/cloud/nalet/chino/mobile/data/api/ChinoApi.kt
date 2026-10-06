@@ -303,6 +303,13 @@ class ChinoApi(private val http: HttpClient) {
             parameter("stream", streamToken)
         }.bodyAsText()
 
+    /** An HLS master as this device is served it, verbatim: an extra's, at
+     *  [url] — its play_path with the stream token and the caps
+     *  ([cloud.nalet.chino.mobile.ui.player.extraMasterUrl]), the URL the
+     *  player loads. chino-api has no /play/info for an extra, so the player
+     *  reads its rungs and tracks off this ([cloud.nalet.chino.mobile.ui.player.extraPlayInfo]). */
+    suspend fun hlsMaster(url: String): String = http.get(url).bodyAsText()
+
     // ---- What addons add ----------------------------------------------------
     // Two seams an addon plugs into with its own words: slot rows (buttons a
     // client draws in a named place) and notices (what an addon told the
