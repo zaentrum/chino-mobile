@@ -1757,7 +1757,12 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
                 onClick = onHome,
                 variant = ChromeBtnVariant.Neutral,
             )
-            // The web player's `h1.text-lg font-medium truncate`.
+            // The web player's `h1.text-lg font-medium truncate`. It takes the
+            // rest of the row, as on iOS: beside a spacer of the same weight it
+            // had half of it, and "Sintel · Trailer" or "Series — S01E02 ·
+            // Title" was cut short on a phone held upright. The playback mode
+            // is not on the always-visible chrome — it lives in the Playback
+            // info dialog (Info button).
             Text(
                 text = title,
                 color = Color.White,
@@ -1766,11 +1771,8 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = ChinoHeading,
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f),
             )
-            // The playback mode is no longer surfaced on the always-visible
-            // chrome — it lives in the Playback info dialog (Info button).
-            Spacer(Modifier.weight(1f))
         }
     }
 }
