@@ -178,11 +178,13 @@ on Android the cards ahead are prefetched to exactly those bytes.
 On an Android phone Zap stays in portrait. On a large screen (smallest width
 600 dp and up) it turns with the device — Android 16 ignores an orientation
 lock there for an app targeting API 36. Each card plays its clip whole in the
-middle, over the clip's own ambient light — a small copy of the frame on
-screen, blown up, blurred and dimmed (Android; iOS shows the backdrop) — with
-the title, the year and rating and three lines of the overview small at its
-foot, and Save and Watch beside them at the right edge. Zap plays with
-sound: the phone's volume is the mute.
+middle, over the clip's own ambient light — its colours, followed slowly: a
+copy of the frame once a second, averaged into a 16 x 9 grid and with the
+light before, eased to over 1.8 s, blown up, blurred and dimmed (Android; iOS
+shows the backdrop); a card's first light takes over from its backdrop in
+0.6 s — with the title, the year and rating and three lines of the overview
+small at its foot, and Save and Watch beside them at the right edge. Zap
+plays with sound: the phone's volume is the mute.
 
 ## Trailers
 
