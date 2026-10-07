@@ -16,9 +16,14 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -55,6 +60,7 @@ import com.composables.icons.lucide.Zap
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -291,6 +297,8 @@ private fun ShellLayout(
 
 /* ────────────────────────────  Wide: side rail  ──────────────────────────── */
 
+// BringIntoViewRequester is experimental in Compose Foundation 1.7.
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SideRail(active: Section, onChange: (Section) -> Unit) {
     // Flat canvas chrome with a 1dp #30363D *right-edge-only* divider —
@@ -359,18 +367,45 @@ private fun SideRail(active: Section, onChange: (Section) -> Unit) {
                     .background(ChinoBorder),
             )
         }
+        // Same order as web/TV + the bottom nav: Home, Movies, Series,
+        // Watchlist, Zap (Settings is pinned separately below).
+        val tabs = listOf(Section.Home, Section.Movies, Section.Series, Section.Watchlist, Section.Zap)
+        // Where the tabs don't fit the rail's height - a phone on its side
+        // leaves the rail some 360 dp, and the logo, the five tabs and
+        // Settings take 432 - their column scrolls, each tab still 48 dp,
+        // none lost under Settings or squeezed, and the open one is scrolled
+        // into view. Where they fit there is nothing to scroll: the scroll
+        // is off and the rail is as it was.
+        val tabScroll = rememberScrollState()
+        val tabInView = remember { tabs.associateWith { BringIntoViewRequester() } }
+        // maxValue is how far the column overflows, known once it is laid
+        // out (Int.MAX_VALUE until then): keyed on it, the open tab comes
+        // into view after the layout that shows it short - the phone turned,
+        // a window made smaller - and when another tab opens. Scrolled by
+        // hand, the column stays where it was left.
+        LaunchedEffect(active, tabScroll.maxValue) {
+            if (tabScroll.maxValue in 1 until Int.MAX_VALUE) tabInView[active]?.bringIntoView()
+        }
         Column(
             // CDP-verified: web nav has `px-4 pt-4 space-y-2` — top + sides
             // padding, NO bottom padding (Settings cell handles bottom).
             // Previous `vertical = 16.dp` added a 16dp gap that doesn't
-            // exist on web.
-            modifier = Modifier.fillMaxWidth().weight(1f).padding(start = 16.dp, end = 16.dp, top = 16.dp),
+            // exist on web. The padding is inside the scroll: it scrolls
+            // with the tabs.
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(tabScroll, enabled = tabScroll.maxValue > 0)
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Same order as web/TV + the bottom nav: Home, Movies, Series,
-            // Watchlist, Zap (Settings is pinned separately below).
-            listOf(Section.Home, Section.Movies, Section.Series, Section.Watchlist, Section.Zap).forEach { s ->
-                RailButton(section = s, isActive = s == active, onClick = { onChange(s) })
+            tabs.forEach { s ->
+                RailButton(
+                    section = s,
+                    isActive = s == active,
+                    onClick = { onChange(s) },
+                    modifier = Modifier.bringIntoViewRequester(tabInView.getValue(s)),
+                )
             }
         }
             Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -396,14 +431,14 @@ private fun SideRail(active: Section, onChange: (Section) -> Unit) {
 }
 
 @Composable
-private fun RailButton(section: Section, isActive: Boolean, onClick: () -> Unit) {
+private fun RailButton(section: Section, isActive: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     // Active slot uses #161B22 — stands out against the canvas-color rail
     // (#0D1117). The accent strip in App.kt's Content() root uses the same
     // colour, so the whole chrome reads as a single elevation family.
     // Icon only, as the web's rail: the tab's name is its icon's
     // description, and the open tab says it is selected.
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(48.dp)
             .clip(RectangleShape)
             .background(if (isActive) ChinoSurface else Color.Transparent)
