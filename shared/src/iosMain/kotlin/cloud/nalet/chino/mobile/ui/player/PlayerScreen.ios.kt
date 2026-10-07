@@ -287,7 +287,10 @@ private suspend fun loadPlayState(
         ?: container.streamTokenManager.forSession(it?.durationMs ?: playInfo?.durationMs, startSec * 1000L)
     val subtitles = buildSubtitleChoices(itemId, sidecars.await(), playInfo?.subtitleTracks.orEmpty(), apiBase, token)
     val preferredAudio = preferredAudioTrack(playInfo?.audioTracks.orEmpty(), settings.preferredAudioLang)
-    val defaultSub = defaultSubtitleChoice(
+    // The subtitle on at the start: the rule's for the audio that plays
+    // first, a full track for a language the viewer does not follow, else
+    // the forced one in the audio's (the controller follows the audio).
+    val defaultSub = autoSubtitleChoice(
         subtitles,
         audioLang = preferredAudio?.language,
         subtitlePref = settings.preferredSubLang,

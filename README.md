@@ -130,7 +130,14 @@ codec caps and the chosen quality, and play by the same rules in
   title is marked watched.
 - **Subtitles** — on by default only when the audio is in another language
   than the preferred subtitle language, as on the web; a full track before a
-  forced one, and a file's own default flag counts for nothing.
+  forced one, and a file's own default flag counts for nothing. Where none
+  comes on that way — the audio in the viewer's own language, or subtitles
+  off in Settings — the forced track in the audio's language does, a text
+  one before a picture one: the lines a film shows in another language. The
+  choice follows the audio, made again when its language changes, until the
+  viewer picks in the subtitles menu; from then on a track picked stays on,
+  and an Off stays off, for the session. A sidecar is forced where chino-api
+  says so (`forced`), or its label does.
 - **Audio, quality, segments** — audio tracks, the quality ladder from
   `/play/info`, intro/recap/credits skipping and the next-episode countdown.
   Without play info (it failed, or took more than 8 s) playback starts at

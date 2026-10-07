@@ -4,7 +4,9 @@ import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.data.api.TrackInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** The captions menu the iOS player shows: chino-api's sidecars, then the
  *  embedded text streams, named by language, picture formats listed but not
@@ -66,15 +68,84 @@ class SubtitleChoicesTest {
 
     @Test
     fun offUnlessTheAudioIsInAnotherLanguageAndThenAFullTrackTheOverlayCanDraw() {
-        // English audio, English subtitles preferred: off.
-        assertNull(defaultSubtitleChoice(choices, audioLang = "eng", subtitlePref = "eng", audioPref = "eng"))
+        // English audio, English subtitles preferred, no forced English: off.
+        assertNull(autoSubtitleChoice(choices, audioLang = "eng", subtitlePref = "eng", audioPref = "eng"))
         // German audio, English subtitles preferred: the English sidecar.
-        assertEquals("s-en", defaultSubtitleChoice(choices, "ger", "eng", "eng")?.id)
+        assertEquals("s-en", autoSubtitleChoice(choices, "ger", "eng", "eng")?.id)
         // Japanese audio, German subtitles preferred: the PGS sidecar cannot be
         // drawn, so the embedded German text stream comes on.
-        assertEquals("emb-3", defaultSubtitleChoice(choices, "jpn", "deu", "orig")?.id)
-        // The mobile default (subtitles off) never switches any on.
-        assertNull(defaultSubtitleChoice(choices, "jpn", "off", "eng"))
+        assertEquals("emb-3", autoSubtitleChoice(choices, "jpn", "deu", "orig")?.id)
+        // The mobile default (subtitles off) switches none on but a forced
+        // one; the forced French stream is a picture one, not drawn here.
+        assertNull(autoSubtitleChoice(choices, "jpn", "off", "eng"))
+        assertNull(autoSubtitleChoice(choices, "fre", "off", "eng"))
+    }
+
+    @Test
+    fun aForcedSidecarSaysSoOrItsLabelDoes() {
+        val forced = buildSubtitleChoices(
+            "m1",
+            listOf(
+                SidecarSubtitle(id = "s-en", lang = "eng", url = "", format = "webvtt"),
+                SidecarSubtitle(id = "s-en-f", lang = "eng", url = "", format = "webvtt", forced = true),
+                // A server that does not pass the flag on: the label tells.
+                SidecarSubtitle(id = "s-de-f", lang = "ger", label = "Forced", url = "", format = "webvtt"),
+            ),
+            emptyList(),
+            apiBase,
+            "tok",
+        )
+        assertEquals(listOf(false, true, true), forced.map { it.forced })
+        assertEquals(listOf("English", "English (forced)", "German · Forced"), forced.map { it.label })
+    }
+
+    @Test
+    fun theForcedTrackInTheAudiosLanguageWhereNoneWouldComeOnAndOneThePlayerCanDraw() {
+        val choices = buildSubtitleChoices(
+            "m1",
+            listOf(
+                SidecarSubtitle(id = "s-en", lang = "eng", url = "", format = "webvtt"),
+                SidecarSubtitle(id = "s-en-pgs", lang = "eng", url = "", format = "pgs", forced = true),
+                SidecarSubtitle(id = "s-en-f", lang = "eng", url = "", format = "webvtt", forced = true),
+            ),
+            listOf(TrackInfo(index = 5, codec = "subrip", language = "fre", forced = true)),
+            apiBase,
+            "tok",
+        )
+        // English audio, subtitles off in Settings: the forced English text
+        // track; the PGS one cannot be drawn here, and comes after it anyway.
+        assertEquals("s-en-f", autoSubtitleChoice(choices, audioLang = "eng", subtitlePref = "off", audioPref = "eng")?.id)
+        assertEquals("s-en-f", autoSubtitleChoice(choices.filter { it.id != "s-en-pgs" }, "eng", "off", "eng")?.id)
+        assertNull(autoSubtitleChoice(choices.filter { it.id != "s-en-f" }, "eng", "off", "eng"))
+        // French audio: the embedded forced French stream.
+        assertEquals("emb-5", autoSubtitleChoice(choices, audioLang = "fre", subtitlePref = "off", audioPref = "eng")?.id)
+        // Japanese audio, English subtitles chosen: the full English track.
+        assertEquals("s-en", autoSubtitleChoice(choices, audioLang = "jpn", subtitlePref = "eng", audioPref = "eng")?.id)
+    }
+
+    @Test
+    fun thePlayerDecidesAtTheStartAndAsTheAudiosLanguageChangesUntilTheViewerPicks() {
+        val session = SubtitleSession()
+        assertTrue(session.playerDecides("eng"))
+        // English 5.1 to English, "eng" to "en": the same language, no change.
+        assertFalse(session.playerDecides("en"))
+        assertFalse(session.playerDecides("eng"))
+        // German audio: decided again, and English again after it.
+        assertTrue(session.playerDecides("ger"))
+        assertTrue(session.playerDecides("eng"))
+        // The viewer's Off (or a track): theirs for the rest of the session.
+        session.viewerPicks()
+        assertTrue(session.viewerPicked)
+        assertFalse(session.playerDecides("ger"))
+        assertFalse(session.playerDecides("eng"))
+    }
+
+    @Test
+    fun anAudioOfNoKnownLanguageIsOneLanguageToo() {
+        val session = SubtitleSession()
+        assertTrue(session.playerDecides(null))
+        assertFalse(session.playerDecides("und"))
+        assertTrue(session.playerDecides("fre"))
     }
 
     @Test

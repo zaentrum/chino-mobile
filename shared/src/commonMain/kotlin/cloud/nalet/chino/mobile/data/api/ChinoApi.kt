@@ -489,6 +489,10 @@ data class SidecarSubtitle(
     // backward compatibility with older manager-api builds that
     // didn't emit the field — those rows are assumed webvtt.
     val format: String? = null,
+    /** A forced track: the lines a film shows in another language than its
+     *  audio's (katalog's isforced, passed on by chino-api; an older server
+     *  leaves it out, and only a label that says so tells then). */
+    val forced: Boolean = false,
 )
 
 @Serializable

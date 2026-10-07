@@ -6,7 +6,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** An extra's captions menu: its master's subtitle renditions, named as a
- *  title's tracks are, each one AVPlayer draws — and the default rule picks
+ *  title's tracks are, each one AVPlayer draws — and the subtitle rule picks
  *  among them as it does among a title's. */
 class MasterSubtitleChoicesTest {
     private val renditions = listOf(
@@ -40,11 +40,18 @@ class MasterSubtitleChoicesTest {
     fun theDefaultRulePicksAFullOneInTheLanguageTheViewerFollows() {
         val choices = masterSubtitleChoices(renditions)
         // German audio, English subtitles wanted: English on.
-        assertEquals("English", defaultSubtitleChoice(choices, audioLang = "de", subtitlePref = "en", audioPref = "orig")?.label)
+        assertEquals("English", autoSubtitleChoice(choices, audioLang = "de", subtitlePref = "en", audioPref = "orig")?.label)
         // English audio, German subtitles wanted: the full German one, not the forced.
-        assertEquals("German", defaultSubtitleChoice(choices, audioLang = "en", subtitlePref = "de", audioPref = "orig")?.label)
-        // Audio in the language wanted, or subtitles off: none.
-        assertNull(defaultSubtitleChoice(choices, audioLang = "en", subtitlePref = "en", audioPref = "orig"))
-        assertNull(defaultSubtitleChoice(choices, audioLang = "de", subtitlePref = "off", audioPref = "orig"))
+        assertEquals("German", autoSubtitleChoice(choices, audioLang = "en", subtitlePref = "de", audioPref = "orig")?.label)
+        // Audio in the language wanted: none, there is no forced English.
+        assertNull(autoSubtitleChoice(choices, audioLang = "en", subtitlePref = "en", audioPref = "orig"))
+    }
+
+    @Test
+    fun whereNoneWouldComeOnTheForcedRenditionInTheAudiosLanguage() {
+        val choices = masterSubtitleChoices(renditions)
+        // German audio, subtitles off in Settings: the forced German one.
+        assertEquals("German (forced)", autoSubtitleChoice(choices, audioLang = "de", subtitlePref = "off", audioPref = "orig")?.label)
+        assertEquals("German (forced)", autoSubtitleChoice(choices, audioLang = "ger", subtitlePref = "de", audioPref = "orig")?.label)
     }
 }

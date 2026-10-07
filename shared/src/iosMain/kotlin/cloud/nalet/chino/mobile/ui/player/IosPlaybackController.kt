@@ -92,7 +92,11 @@ internal class IosPlaybackController(
         private set
     var activeSubtitleId by mutableStateOf(state.defaultSubtitleId)
         private set
-    /** The default rule has picked an extra's subtitle (or none). */
+    /** Who decides the subtitle: the player, for the audio playing — its
+     *  first decision [IosPlayState.defaultSubtitleId], for the audio that
+     *  plays first — until the viewer picks one. */
+    private val subtitleSession = SubtitleSession().also { it.playerDecides(state.preferredAudio?.language) }
+    /** The subtitle rule has picked an extra's subtitle (or none). */
     private var masterSubtitleSet = false
     private var cues: List<SubtitleCue> = emptyList()
     var subtitleText by mutableStateOf("")
@@ -138,26 +142,43 @@ internal class IosPlaybackController(
                     ?.let { t -> renditions.firstOrNull { it.name.equals(t, ignoreCase = true) } }
             if (match != null && !match.selected) engine.selectAudio(match.index)
             refreshAudioChoices()
+            followAudio()
         }
         // An extra's subtitles are its master's renditions (it has no
-        // sidecars): listed once the item knows them, the default rule's pick
-        // on, and the pick kept across a rebuilt item.
+        // sidecars): listed once the item knows them, the subtitle rule's
+        // pick on for the audio playing, and the pick kept across a rebuilt
+        // item.
         if (!state.mode.sidecarSubtitles) {
             engine.onLegibleGroupLoaded = {
                 val choices = masterSubtitleChoices(engine.subtitleRenditions())
                 subtitleChoices = choices
                 if (!masterSubtitleSet) {
                     masterSubtitleSet = true
-                    activeSubtitleId = defaultSubtitleChoice(
-                        choices,
-                        audioLang = state.preferredAudio?.language,
-                        subtitlePref = state.subtitlePref,
-                        audioPref = state.audioPref,
-                    )?.id
+                    if (!subtitleSession.viewerPicked) activeSubtitleId = autoSubtitle(playingAudioLang())?.id
                 }
                 engine.selectSubtitleRendition(masterSubtitleIndex(activeSubtitleId))
             }
         }
+    }
+
+    /** The language of the audio playing: the option AVPlayer plays, else the
+     *  track /play/info says plays first. */
+    private fun playingAudioLang(): String? =
+        audioChoices.firstOrNull { it.selected }?.language ?: state.preferredAudio?.language
+
+    /** The subtitle rule's pick for audio in [audioLang] ([autoSubtitleChoice]). */
+    private fun autoSubtitle(audioLang: String?): SubtitleChoice? =
+        autoSubtitleChoice(subtitleChoices, audioLang, state.subtitlePref, state.audioPref)
+
+    /** The audio's language changed — the item's audio known, or another
+     *  picked: the subtitle rule picks again, until the viewer has picked a
+     *  subtitle ([SubtitleSession]) — the forced track in the new language,
+     *  the full one for a language the viewer does not follow, else none. */
+    private fun followAudio() {
+        val lang = audioChoices.firstOrNull { it.selected }?.language ?: return
+        if (!subtitleSession.playerDecides(lang)) return
+        activeSubtitleId = autoSubtitle(lang)?.id
+        if (!state.mode.sidecarSubtitles) engine.selectSubtitleRendition(masterSubtitleIndex(activeSubtitleId))
     }
 
     /** The player's events, for a title; an extra's telemetry is its one
@@ -345,12 +366,15 @@ internal class IosPlaybackController(
         pickedAudioLang = choice.language
         engine.selectAudio(choice.index)
         refreshAudioChoices()
+        followAudio()
     }
 
     /** Off (null) or a track the overlay can draw — an extra's, a rendition
-     *  of its master that AVPlayer draws. */
+     *  of its master that AVPlayer draws. The viewer's from now on: a track
+     *  stays on whatever the audio, an Off stays off. */
     fun selectSubtitle(choice: SubtitleChoice?) {
         if (choice != null && !choice.available) return
+        subtitleSession.viewerPicks()
         activeSubtitleId = choice?.id
         if (!state.mode.sidecarSubtitles) engine.selectSubtitleRendition(masterSubtitleIndex(choice?.id))
     }

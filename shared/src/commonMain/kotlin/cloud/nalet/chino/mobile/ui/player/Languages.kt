@@ -362,3 +362,42 @@ fun <T> defaultSubtitleTrack(
     val inLang = tracks.filter { normalizeLang(lang(it)) == want }
     return inLang.firstOrNull { !forced(it) } ?: inLang.firstOrNull()
 }
+
+/** The forced track in the language of the audio playing, or null — the one
+ *  a film carries for what is said or written in another language than its
+ *  audio's (a sign, a letter, a call abroad) — a text one before a picture
+ *  one (PGS). None when the audio's language is not known. chino-web's
+ *  forcedSubtitleTrack. */
+fun <T> forcedSubtitleTrack(
+    tracks: List<T>,
+    lang: (T) -> String?,
+    forced: (T) -> Boolean,
+    text: (T) -> Boolean,
+    audioLang: String?,
+): T? {
+    val audio = normalizeLang(audioLang)
+    if (audio.isEmpty()) return null
+    val inLang = tracks.filter { forced(it) && normalizeLang(lang(it)) == audio }
+    return inLang.firstOrNull(text) ?: inLang.firstOrNull()
+}
+
+/**
+ * The subtitle that comes on by itself, or null: the one [defaultSubtitleTrack]
+ * picks — a full track in the Settings language, for audio in a language the
+ * viewer does not follow — else, where none would come on (the audio is in
+ * the viewer's own language, or subtitles are off in Settings), the forced
+ * track in the audio's language ([forcedSubtitleTrack]), which is part of
+ * the film rather than subtitles to read along. Asked again whenever the
+ * audio's language changes, until the viewer picks ([SubtitleSession]).
+ * chino-web's autoSubtitleTrack.
+ */
+fun <T> autoSubtitleTrack(
+    tracks: List<T>,
+    lang: (T) -> String?,
+    forced: (T) -> Boolean,
+    text: (T) -> Boolean,
+    audioLang: String?,
+    subtitlePref: String?,
+    audioPref: String? = null,
+): T? = defaultSubtitleTrack(tracks, lang, forced, audioLang, subtitlePref, audioPref)
+    ?: forcedSubtitleTrack(tracks, lang, forced, text, audioLang)

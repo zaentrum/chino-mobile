@@ -487,12 +487,16 @@ private data class SubtitleTrack(
     val language: String?,
     /** The track's own label: the sidecar's, or the rendition's NAME. */
     val title: String?,
-    /** Names the track across rebuilt players (a quality switch): a sidecar's
-     *  `sidecar:<id>`, else the format's id, else its language and label. */
+    /** Names the track across rebuilt players (a quality switch): its
+     *  format's id — a sidecar's `<source>:sidecar:<id>` — else its language
+     *  and label. */
     val key: String,
-    /** A forced track (FORCED=YES, or a label that says so): the default rule
-     *  takes a full one before it. */
+    /** A forced track (FORCED=YES, a sidecar that says so, or a label that
+     *  does): the default rule takes a full one before it, and where that
+     *  rule takes none the one in the audio's language comes on. */
     val forced: Boolean,
+    /** Drawn as pictures (PGS, VobSub, DVB): a text one comes first. */
+    val image: Boolean,
     val selected: Boolean,
     val group: Tracks.Group,
     val trackIndex: Int,
@@ -501,8 +505,18 @@ private data class SubtitleTrack(
 /** Format id prefix of the side-loaded sidecars, so a track tells which it is. */
 private const val SIDECAR_ID_PREFIX = "sidecar:"
 
+/** Whether a text track's [SubtitleTrack.key] is a side-loaded sidecar's:
+ *  Media3 merges the master and the sidecars into one source and puts each
+ *  one's place before its tracks' ids — "1:sidecar:<id>". */
+private fun isSidecarKey(key: String): Boolean =
+    key.startsWith(SIDECAR_ID_PREFIX) || key.substringAfter(':', "").startsWith(SIDECAR_ID_PREFIX)
+
 /** [SubtitleTrack.key] of "no subtitles". */
 private const val SUBTITLES_OFF = ""
+
+/** The subtitle formats Media3 draws as pictures, as themselves or as cues
+ *  parsed from them. */
+private val IMAGE_SUBTITLE_MIMES = setOf(MimeTypes.APPLICATION_PGS, MimeTypes.APPLICATION_VOBSUB, MimeTypes.APPLICATION_DVBSUBS)
 
 private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
     tracks.groups
@@ -518,6 +532,8 @@ private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
                     key = fmt.id ?: "${fmt.language.orEmpty()}:${fmt.label.orEmpty()}",
                     forced = (fmt.selectionFlags and C.SELECTION_FLAG_FORCED) != 0 ||
                         fmt.label.orEmpty().contains("forced", ignoreCase = true),
+                    image = fmt.sampleMimeType in IMAGE_SUBTITLE_MIMES ||
+                        (fmt.sampleMimeType == MimeTypes.APPLICATION_MEDIA3_CUES && fmt.codecs in IMAGE_SUBTITLE_MIMES),
                     selected = g.isTrackSelected(i),
                     group = g,
                     trackIndex = i,
@@ -755,13 +771,15 @@ private fun PlaybackSurface(
                 "srt", "subrip" -> MimeTypes.APPLICATION_SUBRIP
                 else -> MimeTypes.TEXT_VTT
             }
-            // No selection flags: a file's default flag counts for nothing
-            // (the default subtitle rule decides, below).
+            // A file's default flag counts for nothing (the default subtitle
+            // rule decides, below). A forced sidecar says so, as a FORCED=YES
+            // rendition does: the rule reads it, Media3 ignores it.
             MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(sub.url))
                 .setId(SIDECAR_ID_PREFIX + sub.id)
                 .setMimeType(mime)
                 .setLanguage(sub.lang.takeIf { it.isNotBlank() })
                 .setLabel(sub.label?.takeIf { it.isNotBlank() })
+                .setSelectionFlags(if (sidecarForced(sub)) C.SELECTION_FLAG_FORCED else 0)
                 .build()
         }
         // A 404 on the manifest (.m3u8) means chino-stream has no playback
@@ -866,11 +884,12 @@ private fun PlaybackSurface(
             // The preferred audio language (Settings; "orig" leaves the
             // title's own) — Media3 picks the closest matching track, as
             // chino-androidtv and chino-web's auto-pick do. Subtitles start
-            // off; once the tracks are known the viewer's pick, else the
-            // default rule, turns one on (onTracksChanged). A track's
+            // off; once the tracks are known the viewer's pick or the
+            // subtitle rule turns one on (onTracksChanged). A track's
             // DEFAULT or FORCED flag never selects it by itself: Media3's own
-            // selection takes a DEFAULT track, and a FORCED=YES rendition in
-            // the audio's language, as wanted whenever text is on.
+            // selection takes a DEFAULT track, and a FORCED=YES one in the
+            // audio's language whenever text is on — the rule decides when
+            // a forced track comes on.
             it.trackSelectionParameters = it.trackSelectionParameters.buildUpon()
                 .apply {
                     val audioPref = state.audioPref
@@ -931,9 +950,12 @@ private fun PlaybackSurface(
     var subtitleTracks by remember { mutableStateOf<List<SubtitleTrack>>(emptyList()) }
     var subtitlesEnabled by remember { mutableStateOf(false) }
     // The subtitle this screen shows, by [SubtitleTrack.key] ([SUBTITLES_OFF]
-    // for none); null until the default rule has decided. Kept across a
-    // rebuilt player, so a quality switch keeps what was on.
+    // for none); null until the player has decided. Kept across a rebuilt
+    // player, so a quality switch keeps what was on.
     var subtitleKey by remember { mutableStateOf<String?>(null) }
+    // Who decides it: the player, for the audio playing, until the viewer
+    // picks one (SubtitleSession) — one for the screen, as the key is.
+    val subtitleSession = remember { SubtitleSession() }
     // The audio the viewer picked, by its rendition's NAME — "English 5.1" —
     // kept across a rebuilt player as the subtitle is: a new player starts
     // on Media3's own pick.
@@ -962,42 +984,54 @@ private fun PlaybackSurface(
             }
             override fun onTracksChanged(t: Tracks) {
                 audioTracks = collectAudioTracks(t, state.info?.audioTracks.orEmpty())
-                // Once per player: the viewer's pick, if they made one.
-                if (!audioSet && !t.isEmpty) {
-                    audioSet = true
-                    pickedAudio?.let { name ->
-                        audioTracks.firstOrNull { it.name == name && it.playable && !it.selected }?.let { applyAudioSelection(player, it) }
-                    }
-                }
                 // The sidecars, then the master's SUBTITLES renditions that
                 // are not a sidecar again: a package's HLS subtitles are its
-                // sidecars twice. The menu and the default rule read this,
+                // sidecars twice. The menu and the subtitle rule read this,
                 // each track labelled by its language.
                 subtitleTracks = withMenuLabels(
                     sidecarsThenOtherRenditions(
                         tracks = collectSubtitleTracks(t),
-                        isSidecar = { it.key.startsWith(SIDECAR_ID_PREFIX) },
+                        isSidecar = { isSidecarKey(it.key) },
                         lang = { it.language },
                         forced = { it.forced },
                     ),
                 )
                 subtitlesEnabled = subtitleTracks.any { it.selected }
-                // Once per player, when its tracks are known: the viewer's
-                // pick, else the default rule (Languages.kt) — off unless the
-                // audio is in a language the viewer has not said they follow;
-                // a full track before a forced one.
-                if (!subtitlesSet && !t.isEmpty) {
-                    subtitlesSet = true
-                    val key = subtitleKey ?: defaultSubtitleTrack(
+                if (t.isEmpty) return
+                // Once per player: the viewer's audio pick, if they made one;
+                // the subtitle waits for the tracks it brings.
+                if (!audioSet) {
+                    audioSet = true
+                    val pick = pickedAudio?.let { name -> audioTracks.firstOrNull { it.name == name && it.playable && !it.selected } }
+                    if (pick != null) {
+                        applyAudioSelection(player, pick)
+                        return
+                    }
+                }
+                // The player's subtitle for the audio playing (Languages.kt
+                // autoSubtitleTrack), at the start and again whenever the
+                // audio's language changes, until the viewer picks one
+                // (SubtitleSession): off unless the audio is in a language
+                // the viewer does not follow — then a full track in the
+                // Settings language — and where none comes on that way, the
+                // forced track in the audio's language, text before PGS.
+                val audioLang = audioTracks.firstOrNull { it.selected }?.language ?: state.firstAudioLang
+                if (subtitleSession.playerDecides(audioLang)) {
+                    subtitleKey = autoSubtitleTrack(
                         tracks = subtitleTracks,
                         lang = { it.language },
                         forced = { it.forced },
-                        audioLang = state.firstAudioLang ?: audioTracks.firstOrNull { it.selected }?.language,
+                        text = { !it.image },
+                        audioLang = audioLang,
                         subtitlePref = state.subtitlePref,
                         audioPref = state.audioPref,
                     )?.key ?: SUBTITLES_OFF
-                    subtitleKey = key
-                    applySubtitleSelection(player, subtitleTracks.firstOrNull { it.key == key })
+                    subtitlesSet = false
+                }
+                // Once per player, and at each decision: what is on.
+                if (!subtitlesSet) {
+                    subtitlesSet = true
+                    applySubtitleSelection(player, subtitleTracks.firstOrNull { it.key == subtitleKey })
                 }
             }
             override fun onPlayerError(e: androidx.media3.common.PlaybackException) {
@@ -1416,6 +1450,9 @@ private fun PlaybackSurface(
                     noteInteraction()
                 },
                 onSelectSubtitle = { t ->
+                    // The viewer's from now on: a track stays on whatever
+                    // the audio, an Off stays off.
+                    subtitleSession.viewerPicks()
                     subtitleKey = t?.key ?: SUBTITLES_OFF
                     applySubtitleSelection(player, t)
                     openPopover = OpenPopover.NONE

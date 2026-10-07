@@ -315,4 +315,61 @@ class LanguagesTest {
         // No track in the chosen language: off, not some other language.
         assertNull(pick(tracks, audio = "fre", pref = "ita"))
     }
+
+    /** A subtitle track with its format: PGS is drawn as pictures. */
+    private data class Sub(val id: String, val lang: String, val forced: Boolean = false, val pgs: Boolean = false)
+
+    private fun auto(tracks: List<Sub>, audio: String?, pref: String, audioPref: String? = null) =
+        autoSubtitleTrack(tracks, { it.lang }, { it.forced }, { !it.pgs }, audioLang = audio, subtitlePref = pref, audioPref = audioPref)?.id
+
+    private val forcedBoth = listOf(
+        Sub("en", "eng"),
+        Sub("en-forced", "eng", forced = true),
+        Sub("de", "ger"),
+        Sub("de-forced", "deu", forced = true),
+    )
+
+    @Test
+    fun whereNoSubtitlesWouldComeOnTheForcedTrackInTheAudiosLanguageDoes() {
+        // English audio, an English viewer: no subtitles by the default rule,
+        // the forced English ones — the lines in another language.
+        assertNull(defaultSubtitleTrack(forcedBoth, { it.lang }, { it.forced }, audioLang = "eng", subtitlePref = "eng", audioPref = "eng"))
+        assertEquals("en-forced", auto(forcedBoth, audio = "eng", pref = "eng", audioPref = "eng"))
+        // Subtitles off in Settings: the forced track still, part of the film.
+        assertEquals("en-forced", auto(forcedBoth, audio = "eng", pref = "off"))
+        // German dubs preferred, English subtitles: each audio its own forced
+        // track — asked again as the audio's language changes.
+        assertEquals("de-forced", auto(forcedBoth, audio = "ger", pref = "eng", audioPref = "deu"))
+        assertEquals("en-forced", auto(forcedBoth, audio = "en", pref = "eng", audioPref = "deu"))
+    }
+
+    @Test
+    fun fullSubtitlesTheRulePicksComeBeforeAnyForcedTrack() {
+        val tracks = listOf(Sub("fr-forced", "fre", forced = true), Sub("en", "eng"), Sub("en-forced", "eng", forced = true))
+        // French audio, an English viewer: the full English subtitles.
+        assertEquals("en", auto(tracks, audio = "fre", pref = "eng", audioPref = "eng"))
+        // German audio for an English viewer: the full English ones again.
+        assertEquals("en", auto(forcedBoth, audio = "ger", pref = "eng", audioPref = "eng"))
+    }
+
+    @Test
+    fun noForcedTrackInTheAudiosLanguageOrNoLanguageKnownNone() {
+        assertNull(auto(forcedBoth, audio = "fre", pref = "off"))
+        assertNull(auto(listOf(Sub("en", "eng"), Sub("de-forced", "ger", forced = true)), audio = "eng", pref = "eng"))
+        for (audio in listOf("und", "zxx", "", null)) {
+            assertNull(auto(forcedBoth, audio = audio, pref = "off"), audio.toString())
+        }
+    }
+
+    @Test
+    fun aTextForcedTrackBeforeAPictureOne() {
+        val tracks = listOf(Sub("en-pgs", "eng", forced = true, pgs = true), Sub("en-vtt", "en", forced = true))
+        assertEquals("en-vtt", auto(tracks, audio = "eng", pref = "off"))
+        // Only the picture one: it.
+        assertEquals("en-pgs", auto(tracks.take(1), audio = "eng", pref = "off"))
+        assertEquals(
+            "en-vtt",
+            forcedSubtitleTrack(tracks, { it.lang }, { it.forced }, { !it.pgs }, audioLang = "en-GB")?.id,
+        )
+    }
 }

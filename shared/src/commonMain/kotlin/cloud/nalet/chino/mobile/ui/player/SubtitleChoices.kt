@@ -79,7 +79,7 @@ fun buildSubtitleChoices(
             title = s.label,
             path = s.url.ifBlank { "/api/v1/play/subs/${s.id}.vtt" },
             kind = kind,
-            forced = false,
+            forced = sidecarForced(s),
             available = kind == SubtitleKind.Text || (kind == SubtitleKind.Pgs && drawsPgs),
         )
     }
@@ -111,6 +111,11 @@ fun buildSubtitleChoices(
     }
 }
 
+/** Whether a sidecar is a forced track: it says so (`forced`), or — from a
+ *  server that does not pass the flag on — its label does, as the Android
+ *  player reads a track's label. */
+fun sidecarForced(s: SidecarSubtitle): Boolean = s.forced || s.label.orEmpty().contains("forced", ignoreCase = true)
+
 /**
  * The captions menu of a player that side-loads the sidecars and also plays
  * what the HLS master lists (Media3 does): the sidecars first, then the
@@ -134,21 +139,59 @@ fun <T> sidecarsThenOtherRenditions(
     return sidecars + renditions.filter { (normalizeLang(lang(it)) to forced(it)) !in carried }
 }
 
-/** The subtitle on by default ([defaultSubtitleTrack]) among the ones this
- *  player can show, or null for off. */
-fun defaultSubtitleChoice(
+/** The subtitle that comes on by itself ([autoSubtitleTrack]) among the ones
+ *  this player can show: the default rule's ([defaultSubtitleTrack]), else
+ *  the forced one in the audio's language, a text one before a picture one.
+ *  Null for off. */
+fun autoSubtitleChoice(
     choices: List<SubtitleChoice>,
     audioLang: String?,
     subtitlePref: String?,
     audioPref: String?,
-): SubtitleChoice? = defaultSubtitleTrack(
+): SubtitleChoice? = autoSubtitleTrack(
     tracks = choices.filter { it.available },
     lang = { it.lang },
     forced = { it.forced },
+    text = { it.kind == SubtitleKind.Text },
     audioLang = audioLang,
     subtitlePref = subtitlePref,
     audioPref = audioPref,
 )
+
+/**
+ * Who decides a playback's subtitles. The player, as it starts and again
+ * whenever the audio's language changes ([autoSubtitleTrack]), until the
+ * viewer picks in the subtitles menu; from then on the viewer, for the rest
+ * of the session: an Off — a forced track turned off too — stays off
+ * whatever the audio, and a track picked stays on. A switch between a
+ * track's stereo and 5.1 renditions is no change of language and changes
+ * nothing. chino-web's rule.
+ */
+class SubtitleSession {
+    /** The viewer has picked in the subtitles menu: a track, or Off. */
+    var viewerPicked: Boolean = false
+        private set
+
+    /** The language ([normalizeLang]) of the audio the player last decided
+     *  for; null before its first decision. */
+    private var decidedFor: String? = null
+
+    /** Whether the player decides the subtitle now, for audio playing in
+     *  [audioLang]: its first time, and whenever the language has changed
+     *  since — never once the viewer has picked. */
+    fun playerDecides(audioLang: String?): Boolean {
+        if (viewerPicked) return false
+        val lang = normalizeLang(audioLang)
+        if (lang == decidedFor) return false
+        decidedFor = lang
+        return true
+    }
+
+    /** The viewer picked a track, or Off: theirs from now on. */
+    fun viewerPicks() {
+        viewerPicked = true
+    }
+}
 
 /**
  * The audio track that plays first, of the ones /play/info lists — chino-web's
