@@ -39,6 +39,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Icon
 import com.composables.icons.lucide.Bookmark
 import com.composables.icons.lucide.Film
@@ -68,7 +70,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
@@ -236,6 +238,9 @@ private fun SectionContent(
     }
 }
 
+/** A tab of the shell. The nav draws its [icon] alone, in the side rail and
+ *  the bottom bar alike; [label] is the tab's name for TalkBack and
+ *  VoiceOver, its icon's description, and is not drawn. */
 enum class Section(val label: String, val icon: ImageVector) {
     // Order MUST match chino-web's nav (ChinoSidebar / ChinoMobileNav) and the
     // TV side-rail: Home, Movies, Series, Watchlist, Zap, Settings. The nav
@@ -316,7 +321,10 @@ private fun SideRail(active: Section, onChange: (Section) -> Unit) {
                 // ended up at a higher Y than web. Settings can sit
                 // behind the gesture pill — it's still visible and
                 // tappable above the system pill.
-                .windowInsetsPadding(WindowInsets.statusBars),
+                .windowInsetsPadding(WindowInsets.statusBars)
+                // The tabs, Settings with them, one group of selectable
+                // items to TalkBack and VoiceOver.
+                .selectableGroup(),
         ) {
         // Logo cell: 64dp tall, matches header height. CDP-verified web
         // structure: `<div class="h-16 flex items-center justify-center
@@ -392,12 +400,14 @@ private fun RailButton(section: Section, isActive: Boolean, onClick: () -> Unit)
     // Active slot uses #161B22 — stands out against the canvas-color rail
     // (#0D1117). The accent strip in App.kt's Content() root uses the same
     // colour, so the whole chrome reads as a single elevation family.
+    // Icon only, as the web's rail: the tab's name is its icon's
+    // description, and the open tab says it is selected.
     Box(
         modifier = Modifier
             .size(48.dp)
             .clip(RectangleShape)
             .background(if (isActive) ChinoSurface else Color.Transparent)
-            .clickable(onClick = onClick),
+            .selectable(selected = isActive, onClick = onClick, role = Role.Tab),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -429,38 +439,43 @@ private fun BottomNav(active: Section, onChange: (Section) -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .height(63.dp),
+                .height(63.dp)
+                .selectableGroup(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             Section.entries.forEach { s ->
-                BottomNavItem(section = s, isActive = s == active, onClick = { onChange(s) })
+                BottomNavItem(
+                    section = s,
+                    isActive = s == active,
+                    onClick = { onChange(s) },
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }
 }
 
+/**
+ * One tab of the bottom bar: its icon alone, as the side rail's, no label
+ * under it. The tab's name is the icon's description (TalkBack, VoiceOver);
+ * the open tab is the accent-tinted one, and says it is selected. The cell is
+ * the bar's height and an equal share of its width — 68 dp on a 411 dp phone
+ * — so a touch anywhere on the bar lands on a tab.
+ */
 @Composable
-private fun BottomNavItem(section: Section, isActive: Boolean, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier
+private fun BottomNavItem(section: Section, isActive: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
             .clip(RectangleShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .selectable(selected = isActive, onClick = onClick, role = Role.Tab),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = section.icon,
             contentDescription = section.label,
             tint = if (isActive) ChinoCloudBlue else ChinoMuted,
             modifier = Modifier.size(22.dp),
-        )
-        Text(
-            text = section.label,
-            color = if (isActive) ChinoCloudBlue else ChinoMuted,
-            fontSize = 11.sp,
-            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
 }
