@@ -242,4 +242,26 @@ class DtoDecodingTest {
         assertNull(info.rungs[1].bitrate)
         assertNull(info.subtitleTracks.single().index)
     }
+
+    @Test
+    fun playInfoForAClientServedTheFiveOneCompanionsListsTheGroupByName() {
+        // writePackagedInfo with `eac3` in the caps (unionAudioTracks): the
+        // master's one group in its order, each track with its group and
+        // rendition — the demo's Sintel.
+        val info = ChinoJson.decodeFromString<PlayInfo>(
+            """
+            {"mode":"packaged","audio_codec":"eac3","default_quality":"auto","qualities":null,
+             "audio_tracks":[
+               {"channels":6,"codec":"ec-3","default":true,"group":"audio-surround","index":0,"language":"eng",
+                "name":"English 5.1","rendition":"a1","title":"English 5.1"},
+               {"channels":2,"codec":"mp4a.40.2","default":false,"group":"audio-surround","index":1,"language":"eng",
+                "name":"English","rendition":"a0","title":"English"}]}
+            """,
+        )
+        assertEquals(listOf("English 5.1", "English"), info.audioTracks.map { it.name })
+        assertEquals(listOf("audio-surround", "audio-surround"), info.audioTracks.map { it.group })
+        assertEquals(listOf("a1", "a0"), info.audioTracks.map { it.rendition })
+        assertEquals(listOf("ec-3", "mp4a.40.2"), info.audioTracks.map { it.codec })
+        assertEquals(listOf(true, false), info.audioTracks.map { it.default })
+    }
 }

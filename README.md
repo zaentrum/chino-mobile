@@ -135,6 +135,17 @@ codec caps and the chosen quality, and play by the same rules in
   `/play/info`, intro/recap/credits skipping and the next-episode countdown.
   Without play info (it failed, or took more than 8 s) playback starts at
   Auto, the master's own pick, never the top rung.
+- **5.1** — the caps say `eac3` (and `ac3`) only where the device plays
+  them: a Dolby decoder, or on Android an output that takes the bitstream as
+  it is (a receiver on HDMI), to which Media3 passes it through. With them
+  chino-stream serves a package's 5.1 companions next to their stereo
+  twins, and the audio menu lists both as `/play/info` describes them:
+  "English", E-AC-3 · 5.1, and "English", AAC · Stereo. Android finds each
+  rendition by its group and name and picks it with Media3, keeps the pick
+  when the player is built again, and greys one the output no longer takes.
+  It reads each rendition's codec off `/play/info`, so Media3 starts from the
+  master alone instead of loading every rendition first. Zap keeps to the
+  stereo group.
 
 The iOS player draws subtitles itself — sidecar files and the stream's text
 tracks, named by language ("English · SDH", "German (forced)"); image-based

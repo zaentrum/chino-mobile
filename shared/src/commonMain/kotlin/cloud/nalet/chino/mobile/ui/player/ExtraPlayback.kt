@@ -158,11 +158,16 @@ fun extraPlayInfo(master: String?, durationMs: Long?): PlayInfo {
         audioTracks = audio.mapIndexed { i, a ->
             TrackInfo(
                 index = i,
-                codec = audioCodec?.substringBefore('.'),
+                // The variant's audio codec is each rendition's when it names
+                // one; with the 5.1 companions beside their stereo twins it
+                // names two, and which is whose the master does not say.
+                codec = first?.audioCodecs?.singleOrNull()?.substringBefore('.'),
                 language = a.language,
                 title = a.name,
+                name = a.name,
                 default = a.default,
                 channels = a.channels,
+                group = a.group,
             )
         },
     )

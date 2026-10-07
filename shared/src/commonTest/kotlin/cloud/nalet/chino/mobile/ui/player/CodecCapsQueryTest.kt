@@ -66,6 +66,19 @@ class CodecCapsQueryTest {
     }
 
     @Test
+    fun anOutputThatTakesTheBitstreamAddsTheDolbyTokensWithoutADecoder() {
+        // A receiver on HDMI takes E-AC-3 as it is: Media3 passes it through.
+        assertEquals(
+            setOf("aac", "mp3", "opus", "eac3"),
+            CodecCapsQuery.audioTokensFor(phoneDecoders, passthrough = setOf("eac3")),
+        )
+        // Only the Dolby tokens pass through; a token without a decoder else
+        // is never claimed.
+        assertEquals(setOf("aac"), CodecCapsQuery.audioTokensFor(listOf("audio/mp4a-latm"), passthrough = setOf("opus", "mp3")))
+        assertEquals(setOf("ac3", "eac3"), CodecCapsQuery.SURROUND_TOKENS)
+    }
+
+    @Test
     fun vorbisAndMultichannelAacAreNeverSent() {
         val tokens = CodecCapsQuery.audioTokensFor(phoneDecoders)
 

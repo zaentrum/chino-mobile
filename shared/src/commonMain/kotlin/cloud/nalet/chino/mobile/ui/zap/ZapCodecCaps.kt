@@ -7,7 +7,9 @@ package cloud.nalet.chino.mobile.ui.zap
  * decode — the same negotiation the full player does. Lives behind an
  * expect/actual so the ScreenModel can build the per-card URL in commonMain.
  *
- * Android delegates to the existing player [CodecCaps]; iOS returns empty
- * until AVPlayer caps detection lands (the stub preview never fetches).
+ * Android delegates to the existing player [CodecCaps], without the 5.1
+ * companions' codecs: a card keeps to the stereo group its bytes are
+ * prefetched for. iOS returns empty until AVPlayer caps detection lands (the
+ * stub preview never fetches).
  */
 expect fun zapCodecCaps(): String

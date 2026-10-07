@@ -168,10 +168,34 @@ class ExtraPlaybackTest {
         )
         assertEquals(AUTO_QUALITY, info.defaultQuality)
         assertEquals(
-            listOf(TrackInfo(index = 0, codec = "mp4a", language = "en", title = "English", default = true, channels = 2)),
+            listOf(
+                TrackInfo(
+                    index = 0, codec = "mp4a", language = "en", title = "English", name = "English",
+                    default = true, channels = 2, group = "audio",
+                ),
+            ),
             info.audioTracks,
         )
         assertEquals(emptyList(), info.subtitleTracks)
+    }
+
+    @Test
+    fun withTheFiveOneCompanionsInTheGroupNoRenditionGetsACodecTheMasterDoesNotSay() {
+        // `eac3` in the caps: one group, each variant naming both codecs.
+        val master = """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,URI="a1/playlist.m3u8?stream=t",GROUP-ID="audio-surround",LANGUAGE="en",NAME="English 5.1",DEFAULT=YES,AUTOSELECT=YES,CHANNELS="6"
+            #EXT-X-MEDIA:TYPE=AUDIO,URI="a0/playlist.m3u8?stream=t",GROUP-ID="audio-surround",LANGUAGE="en",NAME="English",DEFAULT=NO,AUTOSELECT=YES,CHANNELS="2"
+            #EXT-X-STREAM-INF:BANDWIDTH=1700000,CODECS="avc1.64001f,ec-3,mp4a.40.2",RESOLUTION=1280x720,AUDIO="audio-surround"
+            v0/playlist.m3u8?stream=t
+        """.trimIndent()
+
+        val tracks = extraPlayInfo(master, durationMs = 33_000).audioTracks
+
+        assertEquals(listOf("English 5.1", "English"), tracks.map { it.name })
+        assertEquals(listOf(6, 2), tracks.map { it.channels })
+        assertEquals(listOf(null, null), tracks.map { it.codec })
+        assertEquals(listOf("audio-surround", "audio-surround"), tracks.map { it.group })
     }
 
     @Test

@@ -206,13 +206,16 @@ actual class PlayerScreen actual constructor(
         // An extra that is not there: gone from the detail, or its master
         // answers 404 (at the load, or once playing).
         var notAvailable: ExtraPlayback.NotAvailable? by remember { mutableStateOf(null) }
+        val appContext = LocalContext.current.applicationContext
         LaunchedEffect(itemId, fromStart, resumeSec, extraId) {
             ready = null
             error = null
             notAvailable = null
             try {
                 val base = container.config.apiBaseUrl.trimEnd('/')
-                val caps = CodecCaps.queryParam
+                // The caps as playback starts: the output the sound goes to
+                // now says whether a Dolby bitstream passes through.
+                val caps = CodecCaps.queryParam(appContext)
                 // An extra: the title's detail and the extra's master, and
                 // nothing else of the server's (PlayerMode.Extra) — what
                 // /play/info says of a title is read off the master, signed
@@ -477,18 +480,6 @@ private data class PlayState(
 
 private enum class OpenPopover { NONE, SPEED, AUDIO, CAPTIONS, INFO, VOLUME, QUALITY }
 
-/** Audio track surface for the inline menu. Wraps the Media3 group +
- *  index so the apply step can rebuild the override. Ported verbatim
- *  from chino-androidtv's PlayerScreen. */
-private data class AudioTrack(
-    val id: String,
-    val label: String,
-    val language: String?,
-    val selected: Boolean,
-    val group: Tracks.Group,
-    val trackIndex: Int,
-)
-
 private data class SubtitleTrack(
     val id: String,
     /** What the menu shows ([withMenuLabels]). */
@@ -512,41 +503,6 @@ private const val SIDECAR_ID_PREFIX = "sidecar:"
 
 /** [SubtitleTrack.key] of "no subtitles". */
 private const val SUBTITLES_OFF = ""
-
-/** The audio menu's rows. Each is labelled by the language it is tagged with
- *  ("German", "No dialogue" for zxx), by its NAME where it has none, two of
- *  one language and format told apart by their NAMEs ([audioLabels]); then
- *  its channels and codec. */
-private fun collectAudioTracks(tracks: Tracks): List<AudioTrack> {
-    val found = tracks.groups
-        .filter { it.type == C.TRACK_TYPE_AUDIO }
-        .flatMap { g -> (0 until g.length).map { i -> g to i } }
-    val formats = found.map { (g, i) -> g.getTrackFormat(i) }
-    val details = formats.map { fmt ->
-        listOfNotNull(
-            fmt.channelCount.takeIf { it > 0 }?.let {
-                when (it) {
-                    1 -> "Mono"; 2 -> "Stereo"; 6 -> "5.1"; 8 -> "7.1"
-                    else -> "${it}ch"
-                }
-            },
-            fmt.codecs?.takeIf { it.isNotBlank() },
-        )
-    }
-    val labels = audioLabels(
-        formats.mapIndexed { k, fmt -> AudioLabelInput(fmt.language, fmt.label, details[k].joinToString(" • ")) },
-    )
-    return found.mapIndexed { k, (g, i) ->
-        AudioTrack(
-            id = "${g.mediaTrackGroup.id}#$i",
-            label = (listOf(labels[k]) + details[k]).joinToString(" • "),
-            language = formats[k].language,
-            selected = g.isTrackSelected(i),
-            group = g,
-            trackIndex = i,
-        )
-    }
-}
 
 private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
     tracks.groups
@@ -824,8 +780,15 @@ private fun PlaybackSurface(
                 return super.getRetryDelayMsFor(info)
             }
         }
-        val hlsSource = HlsMediaSource.Factory(httpFactory)
-            .setLoadErrorHandlingPolicy(retryPolicy)
+        val hlsFactory = HlsMediaSource.Factory(httpFactory).setLoadErrorHandlingPolicy(retryPolicy)
+        // The 5.1 companions next to their stereo twins, in one group:
+        // Media3 is told each rendition's codec, /play/info's, so it starts
+        // from the master alone instead of loading every rendition first
+        // (KnownAudioCodecs).
+        state.info?.audioTracks?.takeIf { tracks -> tracks.any { it.group != null } }?.let {
+            hlsFactory.setPlaylistParserFactory(KnownAudioCodecs(it))
+        }
+        val hlsSource = hlsFactory
             .createMediaSource(
                 MediaItem.Builder()
                     .setUri(activeMasterUrl)
@@ -971,7 +934,12 @@ private fun PlaybackSurface(
     // for none); null until the default rule has decided. Kept across a
     // rebuilt player, so a quality switch keeps what was on.
     var subtitleKey by remember { mutableStateOf<String?>(null) }
+    // The audio the viewer picked, by its rendition's NAME — "English 5.1" —
+    // kept across a rebuilt player as the subtitle is: a new player starts
+    // on Media3's own pick.
+    var pickedAudio by remember { mutableStateOf<String?>(null) }
     DisposableEffect(player) {
+        var audioSet = false
         var subtitlesSet = false
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(p: Boolean) {
@@ -993,7 +961,14 @@ private fun PlaybackSurface(
                 if (playbackState == Player.STATE_ENDED && state.playerMode.closesAtEnd) onEnded()
             }
             override fun onTracksChanged(t: Tracks) {
-                audioTracks = collectAudioTracks(t)
+                audioTracks = collectAudioTracks(t, state.info?.audioTracks.orEmpty())
+                // Once per player: the viewer's pick, if they made one.
+                if (!audioSet && !t.isEmpty) {
+                    audioSet = true
+                    pickedAudio?.let { name ->
+                        audioTracks.firstOrNull { it.name == name && it.playable && !it.selected }?.let { applyAudioSelection(player, it) }
+                    }
+                }
                 // The sidecars, then the master's SUBTITLES renditions that
                 // are not a sidecar again: a package's HLS subtitles are its
                 // sidecars twice. The menu and the default rule read this,
@@ -1432,7 +1407,14 @@ private fun PlaybackSurface(
                     }
                     noteInteraction()
                 },
-                onSelectAudio = { t -> applyAudioSelection(player, t); openPopover = OpenPopover.NONE; noteInteraction() },
+                onSelectAudio = { t ->
+                    if (t.playable) {
+                        pickedAudio = t.name
+                        applyAudioSelection(player, t)
+                    }
+                    openPopover = OpenPopover.NONE
+                    noteInteraction()
+                },
                 onSelectSubtitle = { t ->
                     subtitleKey = t?.key ?: SUBTITLES_OFF
                     applySubtitleSelection(player, t)
@@ -2428,9 +2410,10 @@ private fun AudioLangChip(
 
 /** Inline audio-track selector — mirrors chino-web's audio menu at
  *  PlayerPage.tsx L2946-2962. Header is uppercase "AUDIO"; each row
- *  renders the primary track title and a dimmed format suffix
- *  (`AAC · 1ch`). Labels wrap freely so long titles like "Original
- *  Japanese theatrical mono (unfiltered)" stay legible. */
+ *  renders the track's label and a dimmed format line (`E-AC-3 · 5.1`).
+ *  Labels wrap freely so long titles like "Original Japanese theatrical
+ *  mono (unfiltered)" stay legible. A track Media3 cannot play here is
+ *  listed, greyed, and not picked. */
 @Composable
 private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Unit) {
     Box(
@@ -2452,25 +2435,29 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
                 )
             } else {
                 tracks.forEach { t ->
-                    val (primary, suffix) = splitAudioLabel(t.label)
+                    val detail = if (t.playable) t.detail else listOfNotNull(t.detail, "Not available on this device").joinToString(" · ")
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelect(t) }
+                            .clickable(enabled = t.playable) { onSelect(t) }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = primary,
-                                color = if (t.selected) Color(0xFF58A6FF) else Color.White,
+                                text = t.label,
+                                color = when {
+                                    t.selected -> Color(0xFF58A6FF)
+                                    t.playable -> Color.White
+                                    else -> Color.White.copy(alpha = 0.35f)
+                                },
                                 fontSize = 14.sp,
                                 fontWeight = if (t.selected) FontWeight.SemiBold else FontWeight.Normal,
                                 lineHeight = 18.sp,
                             )
-                            if (suffix != null) {
+                            if (detail != null) {
                                 Text(
-                                    text = suffix,
+                                    text = detail,
                                     color = Color(0xFF8B949E),
                                     fontSize = 11.sp,
                                     lineHeight = 14.sp,
@@ -2484,25 +2471,6 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
         }
     }
 }
-
-/** Splits "Original Japanese mono • Stereo • aac" into ("Original Japanese
- *  mono", "AAC · Stereo"). The TV's collectAudioTracks emits the primary
- *  label first then channels and codec joined by " • " — we re-render
- *  them so the format suffix matches web's `AAC · 1ch` styling. */
-private fun splitAudioLabel(label: String): Pair<String, String?> {
-    val parts = label.split(" • ")
-    if (parts.size <= 1) return label to null
-    val primary = parts[0]
-    // TV order is [primary, channels, codec]. Web shows [codec · channels].
-    val rest = parts.drop(1)
-    val codec = rest.lastOrNull { !it.isChannelLabel() }?.uppercase()
-    val channels = rest.firstOrNull { it.isChannelLabel() }
-    val suffix = listOfNotNull(codec, channels).joinToString(" · ")
-    return primary to suffix.ifBlank { null }
-}
-
-private fun String.isChannelLabel() =
-    this in setOf("Mono", "Stereo", "5.1", "7.1") || endsWith("ch")
 
 /** Inline subtitle-track selector — mirrors chino-web's captions menu
  *  at PlayerPage.tsx L2975-3050. Layout:

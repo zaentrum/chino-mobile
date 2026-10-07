@@ -17,6 +17,11 @@ data class VideoDecoderCaps(val token: String, val maxHardwareHeight: Int? = nul
  * included — and an AC-3 / E-AC-3 track never reached a device with a Dolby
  * decoder.
  *
+ * `eac3` (and `ac3`) also gets a client a package's 5.1 companions: the
+ * master's one audio group then holds the E-AC-3 5.1 tracks next to their
+ * stereo twins ("English 5.1", "English"), which /play/info lists with their
+ * group and name. So the tokens go only to a device that plays the codec.
+ *
  * Shared so the iOS player can build the same value from its own decoders.
  */
 object CodecCapsQuery {
@@ -28,6 +33,11 @@ object CodecCapsQuery {
      * and the TV client do).
      */
     val AUDIO_TOKENS: List<String> = listOf("aac", "mp3", "opus", "ac3", "eac3")
+
+    /** The Dolby tokens, which also get a client the 5.1 companions: a
+     *  device plays them with a decoder, or by passing the bitstream on to
+     *  the output the sound goes to (a receiver, a TV). */
+    val SURROUND_TOKENS: Set<String> = setOf("ac3", "eac3")
 
     /** The decoder MIME type (MediaCodec's) behind each [AUDIO_TOKENS] entry. */
     val AUDIO_DECODER_MIMES: Map<String, String> = mapOf(
@@ -41,13 +51,14 @@ object CodecCapsQuery {
     /**
      * The audio tokens for a device whose decoders take [decoderMimes]: a
      * token when some decoder takes its MIME type, hardware or software —
-     * audio decodes cheaply. So AC-3 / E-AC-3 only where the device ships a
-     * Dolby decoder; passing the bitstream through to a receiver is not
-     * counted, and without a decoder the server's stereo AAC is the answer.
+     * audio decodes cheaply. AC-3 / E-AC-3 where the device ships a Dolby
+     * decoder, and where the output passes the bitstream through as it is
+     * ([passthrough], the [SURROUND_TOKENS] it takes); without either the
+     * server's stereo AAC is the answer.
      */
-    fun audioTokensFor(decoderMimes: Collection<String>): Set<String> {
+    fun audioTokensFor(decoderMimes: Collection<String>, passthrough: Collection<String> = emptySet()): Set<String> {
         val mimes = decoderMimes.mapTo(HashSet()) { it.lowercase() }
-        return AUDIO_DECODER_MIMES.filterValues { it in mimes }.keys
+        return AUDIO_DECODER_MIMES.filter { (token, mime) -> mime in mimes || (token in SURROUND_TOKENS && token in passthrough) }.keys
     }
 
     /** Video tokens in the order given, then the known [audio] tokens in

@@ -527,9 +527,18 @@ data class TrackInfo(
     val codec: String? = null,
     val language: String? = null,
     val title: String? = null,
+    /** What the track is called: its rendition's NAME in the master, which
+     *  chino-stream gives every track it lists, unique in its group. */
+    val name: String? = null,
     val default: Boolean = false,
     val forced: Boolean = false,
     val channels: Int? = null,
+    /** The audio group the track is in (its GROUP-ID), for a client served
+     *  the 5.1 companions next to the stereo tracks (`eac3` in its caps): the
+     *  master's one group, listed in its order. */
+    val group: String? = null,
+    /** The track's rendition in that group ("a1"), with [group]. */
+    val rendition: String? = null,
 )
 
 @Serializable
