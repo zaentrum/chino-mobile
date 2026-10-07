@@ -65,6 +65,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -351,8 +352,9 @@ private fun ZapColdStartBackdrop(
 }
 
 /** Save and Watch, one over the other at the card's right edge: translucent
- *  squares with their label under them. Each has its own clickable, so a
- *  tap on one doesn't reach the card's tap-to-watch (which Watch also is). */
+ *  squares, their icons alone, as the web's card has its buttons — no label
+ *  under them. Each has its own clickable, so a tap on one doesn't reach the
+ *  card's tap-to-watch (which Watch also is). */
 @Composable
 private fun ZapRail(saved: Boolean, onWatch: () -> Unit, onToggleSave: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -369,29 +371,26 @@ private fun ZapRail(saved: Boolean, onWatch: () -> Unit, onToggleSave: () -> Uni
 @Composable
 private fun ZapRailButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    /** What the button is, for TalkBack and VoiceOver: its icon's
+     *  description, not drawn. */
     label: String,
     tint: Color = Color.White,
     onClick: () -> Unit,
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = onClick,
-        ),
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(RectangleShape)
+            .background(Color.White.copy(alpha = 0.12f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RectangleShape)
-                .background(Color.White.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(imageVector = icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
-        }
-        Text(text = label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+        Icon(imageVector = icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
     }
 }
 
