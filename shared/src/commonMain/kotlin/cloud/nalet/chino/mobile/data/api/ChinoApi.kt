@@ -539,6 +539,20 @@ data class TrackInfo(
     val group: String? = null,
     /** The track's rendition in that group ("a1"), with [group]. */
     val rendition: String? = null,
+    /** For a native player (`native` in its caps): the 5.1 companion that
+     *  plays this track where the player picks the 5.1 group; null where
+     *  none does. The player lists the track once, whichever group plays. */
+    val surround: SurroundRendition? = null,
+)
+
+/** The rendition of a native player's 5.1 group that plays a track: that
+ *  group, its rendition ("a1"), codec ("ec-3") and channels. */
+@Serializable
+data class SurroundRendition(
+    val group: String? = null,
+    val rendition: String? = null,
+    val codec: String? = null,
+    val channels: Int? = null,
 )
 
 @Serializable

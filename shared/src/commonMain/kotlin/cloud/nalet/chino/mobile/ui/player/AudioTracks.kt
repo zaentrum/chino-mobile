@@ -41,6 +41,14 @@ fun audioDetail(codec: String?, channels: Int?): String? =
         .joinToString(" · ")
         .ifEmpty { null }
 
+/** What the audio menu says under a /play/info track: its codec and
+ *  channels, and for a native player the 5.1 companion's that plays it where
+ *  the player picks the 5.1 group ("AAC · Stereo or E-AC-3 · 5.1"). */
+fun audioDetail(track: TrackInfo): String? =
+    listOfNotNull(audioDetail(track.codec, track.channels), track.surround?.let { audioDetail(it.codec, it.channels) })
+        .joinToString(" or ")
+        .ifEmpty { null }
+
 /** What /play/info calls a track: its name — its rendition's NAME — else its
  *  title; null for neither. */
 val TrackInfo.displayName: String?

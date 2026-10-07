@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.ui.player
 
+import cloud.nalet.chino.mobile.data.api.SurroundRendition
 import cloud.nalet.chino.mobile.data.api.TrackInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -23,19 +24,60 @@ class AudioChoicesTest {
             tracks,
         )
         assertEquals(listOf("English", "German"), choices.map { it.label })
-        assertEquals(listOf("AAC · Stereo", "EAC3 · 5.1"), choices.map { it.detail })
+        assertEquals(listOf("AAC · Stereo", "E-AC-3 · 5.1"), choices.map { it.detail })
         assertEquals(listOf(true, false), choices.map { it.selected })
         assertEquals(listOf(0, 1), choices.map { it.index })
     }
 
     @Test
-    fun countsThatDifferMatchByLanguage() {
+    fun countsThatDifferMatchByName() {
         val choices = audioChoicesFor(
             listOf(AudioRendition(index = 0, name = "Deutsch", language = "ger", selected = true)),
             tracks,
         )
         assertEquals("German", choices.single().label)
-        assertEquals("EAC3 · 5.1", choices.single().detail)
+        assertEquals("E-AC-3 · 5.1", choices.single().detail)
+    }
+
+    @Test
+    fun anOptionIsTheTrackOfItsNameInWhicheverOrder() {
+        // chino-stream names each track as the master names its rendition.
+        val named = listOf(
+            TrackInfo(index = 0, codec = "mp4a", language = "eng", name = "English", channels = 2),
+            TrackInfo(index = 1, codec = "mp4a", language = "ger", name = "German", channels = 1),
+        )
+        val choices = audioChoicesFor(
+            listOf(
+                AudioRendition(index = 0, name = "German", language = "de", selected = false),
+                AudioRendition(index = 1, name = "English", language = "en", selected = true),
+            ),
+            named,
+        )
+        assertEquals(listOf("German", "English"), choices.map { it.label })
+        assertEquals(listOf("AAC · Mono", "AAC · Stereo"), choices.map { it.detail })
+    }
+
+    @Test
+    fun aNativePlayersTrackSaysTheCompanionThatMayPlayIt() {
+        // `native` in the caps: AVPlayer lists the member once, whichever of
+        // its groups plays it; /play/info marks the companion that may.
+        val native = listOf(
+            TrackInfo(
+                index = 0, codec = "mp4a", language = "eng", name = "English", title = "English", default = true, channels = 2,
+                surround = SurroundRendition(group = "audio-surround", rendition = "a1", codec = "ec-3", channels = 6),
+            ),
+            // A stereo source: no companion, the 5.1 group plays it stereo.
+            TrackInfo(index = 1, codec = "mp4a", language = "ger", name = "German", channels = 2),
+        )
+        val choices = audioChoicesFor(
+            listOf(
+                AudioRendition(index = 0, name = "English", language = "en", selected = true),
+                AudioRendition(index = 1, name = "German", language = "de", selected = false),
+            ),
+            native,
+        )
+        assertEquals(listOf("English", "German"), choices.map { it.label })
+        assertEquals(listOf("AAC · Stereo or E-AC-3 · 5.1", "AAC · Stereo"), choices.map { it.detail })
     }
 
     @Test

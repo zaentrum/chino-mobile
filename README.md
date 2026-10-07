@@ -144,8 +144,13 @@ codec caps and the chosen quality, and play by the same rules in
   rendition by its group and name and picks it with Media3, keeps the pick
   when the player is built again, and greys one the output no longer takes.
   It reads each rendition's codec off `/play/info`, so Media3 starts from the
-  master alone instead of loading every rendition first. Zap keeps to the
-  stereo group.
+  master alone instead of loading every rendition first; its Zap keeps to
+  the stereo group. The iOS app adds `native` to its caps on the master,
+  `/play/info` and `/prewarm`: chino-stream serves AVPlayer Apple's shape, a
+  5.1 group of the stereo group's members under the same names. The menu
+  shows AVPlayer's options, one per track, matched to `/play/info`'s by
+  name ("AAC · Stereo or E-AC-3 · 5.1" under one a companion plays), and
+  which group plays is AVPlayer's own pick, by the output.
 
 The iOS player draws subtitles itself — sidecar files and the stream's text
 tracks, named by language ("English · SDH", "German (forced)"); image-based

@@ -39,6 +39,19 @@ class CodecCapsQueryTest {
     }
 
     @Test
+    fun aNativePlayerSaysSoLast() {
+        // AVPlayer picks between audio groups itself (the iOS app).
+        val caps = CodecCapsQuery.build(
+            video = listOf(VideoDecoderCaps("avc"), VideoDecoderCaps("hvc")),
+            audio = setOf("eac3", "aac", "mp3"),
+            native = true,
+        )
+
+        assertEquals("avc,hvc,aac,mp3,eac3,native", caps)
+        assertEquals("avc,aac", CodecCapsQuery.build(listOf(VideoDecoderCaps("avc")), setOf("aac")))
+    }
+
+    @Test
     fun tokensTheServerDoesNotKnowAreNotSent() {
         assertEquals("avc,aac", CodecCapsQuery.build(listOf(VideoDecoderCaps("avc")), setOf("aac", "flac", "dts", "vorbis")))
         assertEquals("", CodecCapsQuery.build(emptyList(), emptySet()))
@@ -107,5 +120,7 @@ class CodecCapsQueryTest {
         val parseCaps = setOf("aac", "mp3", "opus", "vorbis", "ac3", "eac3", "ec3", "aacmc")
 
         assertTrue(CodecCapsQuery.AUDIO_TOKENS.all { it in parseCaps }, CodecCapsQuery.AUDIO_TOKENS.toString())
+        // And its player case.
+        assertEquals("native", CodecCapsQuery.NATIVE_TOKEN)
     }
 }

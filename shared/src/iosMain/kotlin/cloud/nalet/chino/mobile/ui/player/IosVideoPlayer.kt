@@ -9,6 +9,8 @@ import platform.AVFoundation.AVMediaCharacteristicContainsOnlyForcedSubtitles
 import platform.AVFoundation.AVMediaCharacteristicLegible
 import platform.AVFoundation.AVMediaSelectionGroup
 import platform.AVFoundation.AVMediaSelectionOption
+import platform.AVFoundation.AVMetadataCommonKeyTitle
+import platform.AVFoundation.AVMetadataItem
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerAudiovisualBackgroundPlaybackPolicyContinuesIfPossible
 import platform.AVFoundation.AVPlayerItem
@@ -26,6 +28,7 @@ import platform.AVFoundation.appliesMediaSelectionCriteriaAutomatically
 import platform.AVFoundation.asset
 import platform.AVFoundation.audiovisualBackgroundPlaybackPolicy
 import platform.AVFoundation.automaticallyWaitsToMinimizeStalling
+import platform.AVFoundation.commonKey
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.duration
 import platform.AVFoundation.errorLog
@@ -38,6 +41,7 @@ import platform.AVFoundation.replaceCurrentItemWithPlayerItem
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.selectMediaOption
 import platform.AVFoundation.selectedMediaOptionInMediaSelectionGroup
+import platform.AVFoundation.stringValue
 import platform.AVFoundation.timeControlStatus
 import platform.AVFoundation.volume
 import platform.AVKit.AVPictureInPictureController
@@ -91,10 +95,12 @@ internal data class PlayerFailure(
     val signature: String,
 )
 
-/** An audio rendition of the master playlist (AVFoundation's audible group). */
+/** An audio rendition of the master playlist (AVFoundation's audible group):
+ *  for a native player one option per track, whichever group plays it. */
 internal data class AudioRendition(
     val index: Int,
-    /** The rendition's NAME. */
+    /** The rendition's NAME, the option's title — what /play/info names the
+     *  track. */
     val name: String,
     /** Its LANGUAGE, as tagged ("eng", "ger"). */
     val language: String?,
@@ -324,7 +330,7 @@ internal class IosVideoPlayer {
         val it = item ?: return emptyList()
         val selected = it.selectedMediaOptionInMediaSelectionGroup(group)
         return group.options.filterIsInstance<AVMediaSelectionOption>().mapIndexed { i, o ->
-            AudioRendition(index = i, name = o.displayName, language = o.extendedLanguageTag ?: o.locale?.languageCode, selected = o == selected)
+            AudioRendition(index = i, name = o.renditionName(), language = o.extendedLanguageTag ?: o.locale?.languageCode, selected = o == selected)
         }
     }
 
@@ -339,7 +345,7 @@ internal class IosVideoPlayer {
         return group.options.filterIsInstance<AVMediaSelectionOption>().mapIndexed { i, o ->
             SubtitleRendition(
                 index = i,
-                name = o.displayName,
+                name = o.renditionName(),
                 language = o.extendedLanguageTag ?: o.locale?.languageCode,
                 forced = o.hasMediaCharacteristic(AVMediaCharacteristicContainsOnlyForcedSubtitles),
             )
@@ -451,6 +457,16 @@ private class PipDelegate : NSObject(), AVPictureInPictureControllerDelegateProt
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler(true)
     }
 }
+
+/** The option's NAME in the master, which AVFoundation keeps as its title
+ *  ("English 5.1"): its displayName is its language's name in the device's
+ *  locale ("English", "Englisch"), the same for two renditions of one
+ *  language. The displayName where it has no title. */
+private fun AVMediaSelectionOption.renditionName(): String =
+    commonMetadata.filterIsInstance<AVMetadataItem>()
+        .firstOrNull { it.commonKey == AVMetadataCommonKeyTitle }
+        ?.stringValue?.trim()?.takeIf { it.isNotEmpty() }
+        ?: displayName
 
 @OptIn(ExperimentalForeignApi::class)
 private fun seconds(t: kotlinx.cinterop.CValue<platform.CoreMedia.CMTime>): Double =

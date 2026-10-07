@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.ui.player
 
+import cloud.nalet.chino.mobile.data.api.SurroundRendition
 import cloud.nalet.chino.mobile.data.api.TrackInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -26,6 +27,17 @@ class AudioTracksTest {
         assertEquals("7.1", audioDetail(null, 8))
         assertEquals("3ch", audioDetail(null, 3))
         assertNull(audioDetail(null, null))
+    }
+
+    @Test
+    fun aNativePlayersTrackSaysWhatPlaysItInEitherGroup() {
+        val track = TrackInfo(
+            index = 0, codec = "mp4a", language = "eng", name = "English", channels = 2,
+            surround = SurroundRendition(group = "audio-surround", rendition = "a1", codec = "ec-3", channels = 6),
+        )
+        assertEquals("AAC · Stereo or E-AC-3 · 5.1", audioDetail(track))
+        assertEquals("AAC · Stereo", audioDetail(track.copy(surround = null)))
+        assertNull(audioDetail(TrackInfo()))
     }
 
     /** /play/info of a client served the 5.1 companions: the demo's Sintel. */

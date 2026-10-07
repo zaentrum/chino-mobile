@@ -61,14 +61,26 @@ object CodecCapsQuery {
         return AUDIO_DECODER_MIMES.filter { (token, mime) -> mime in mimes || (token in SURROUND_TOKENS && token in passthrough) }.keys
     }
 
+    /**
+     * The token of a client that plays the master with the platform's own
+     * HLS player, which picks between audio groups itself (AVPlayer).
+     * chino-stream then serves Apple's shape: a group per codec, each with
+     * the same members under the same names, the 5.1 group's played by the
+     * companions; /play/info lists the stereo tracks, each with `surround`
+     * where a companion plays it. It says nothing of what the client decodes.
+     */
+    const val NATIVE_TOKEN: String = "native"
+
     /** Video tokens in the order given, then the known [audio] tokens in
-     *  [AUDIO_TOKENS] order; comma-separated, "" for nothing at all. */
-    fun build(video: List<VideoDecoderCaps>, audio: Collection<String>): String =
+     *  [AUDIO_TOKENS] order, then [NATIVE_TOKEN] for a [native] player;
+     *  comma-separated, "" for nothing at all. */
+    fun build(video: List<VideoDecoderCaps>, audio: Collection<String>, native: Boolean = false): String =
         buildList {
             for (v in video) {
                 val ceiling = v.maxHardwareHeight?.takeIf { it > 0 }
                 add(if (ceiling != null) "${v.token}:$ceiling" else v.token)
             }
             for (token in AUDIO_TOKENS) if (token in audio) add(token)
+            if (native) add(NATIVE_TOKEN)
         }.joinToString(",")
 }

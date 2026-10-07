@@ -264,4 +264,22 @@ class DtoDecodingTest {
         assertEquals(listOf("ec-3", "mp4a.40.2"), info.audioTracks.map { it.codec })
         assertEquals(listOf(true, false), info.audioTracks.map { it.default })
     }
+
+    @Test
+    fun playInfoForANativePlayerMarksTheTracksACompanionPlays() {
+        // `native` in the caps (addSurroundHints): the stereo tracks, each
+        // with the 5.1 group's rendition that plays it there.
+        val info = ChinoJson.decodeFromString<PlayInfo>(
+            """
+            {"mode":"packaged","audio_codec":"aac",
+             "audio_tracks":[
+               {"channels":2,"codec":"mp4a.40.2","default":true,"index":0,"language":"eng","name":"English","title":"English",
+                "surround":{"channels":6,"codec":"ec-3","group":"audio-surround","rendition":"a1"}},
+               {"channels":2,"codec":"mp4a.40.2","index":1,"language":"eng","name":"English · Commentary","title":"English · Commentary"}]}
+            """,
+        )
+        assertEquals(SurroundRendition(group = "audio-surround", rendition = "a1", codec = "ec-3", channels = 6), info.audioTracks[0].surround)
+        assertNull(info.audioTracks[1].surround)
+        assertNull(info.audioTracks[0].group)
+    }
 }

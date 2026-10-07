@@ -22,9 +22,18 @@ import platform.VideoToolbox.VTIsHardwareDecodeSupported
  * covers MP4 files, and whether AVPlayer plays Opus copied into chino-stream's
  * HLS segments is untried — the server's AAC always plays. `vorbis` and
  * `aacmc` stay out as on Android.
+ *
+ * And `native`: AVPlayer picks between audio groups itself, so chino-stream
+ * serves it Apple's shape — with `eac3`, the stereo group and a 5.1 group of
+ * the same members under the same names, each played by its companion where
+ * it has one. AVPlayer lists each member once and plays the group that suits
+ * the output — the 5.1 one where it takes multichannel sound. Without
+ * `native` the companions came in one group with their stereo twins, two
+ * options of one track. The master, /play/info and /prewarm all carry this
+ * one value.
  */
 internal object CodecCaps {
-    val queryParam: String by lazy { CodecCapsQuery.build(videoCaps(), audioTokens()) }
+    val queryParam: String by lazy { CodecCapsQuery.build(videoCaps(), audioTokens(), native = true) }
 }
 
 private fun videoCaps(): List<VideoDecoderCaps> = buildList {

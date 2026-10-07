@@ -134,7 +134,7 @@ internal class IosPlaybackController(
             val renditions = engine.audioRenditions()
             val want = normalizeLang(pickedAudioLang ?: state.preferredAudio?.language)
             val match = (if (want.isEmpty()) null else renditions.firstOrNull { normalizeLang(it.language) == want })
-                ?: state.preferredAudio?.title?.takeIf { pickedAudioLang == null && it.isNotBlank() }
+                ?: state.preferredAudio?.displayName?.takeIf { pickedAudioLang == null }
                     ?.let { t -> renditions.firstOrNull { it.name.equals(t, ignoreCase = true) } }
             if (match != null && !match.selected) engine.selectAudio(match.index)
             refreshAudioChoices()
@@ -427,30 +427,28 @@ internal class IosPlaybackController(
     }
 }
 
-/** The audio menu: the renditions as chino-web names them ([audioLabels]) —
- *  by the language they are tagged with ("German", "No dialogue" for zxx),
- *  by the track's title or the rendition's NAME where there is none — with
- *  "AAC · Stereo" from /play/info. */
+/**
+ * The audio menu: AVPlayer's options — for a native player one per track,
+ * whichever of its groups plays it — each described by the /play/info track
+ * of its name ([audioTrackFor]: /play/info names every track as the master
+ * names its rendition, the option's title, [AudioRendition.name]). Named as
+ * chino-web names a track ([audioLabels]): by the language it is tagged with
+ * ("German", "No dialogue" for zxx), by the track's name where there is
+ * none; under it its codec and channels, and the 5.1 companion's where one
+ * plays it ("AAC · Stereo or E-AC-3 · 5.1"). Which of the two plays is
+ * AVPlayer's pick of the group, not the menu's: a 5.1 choice is the track's.
+ */
 internal fun audioChoicesFor(
     renditions: List<AudioRendition>,
     tracks: List<cloud.nalet.chino.mobile.data.api.TrackInfo>,
 ): List<AudioChoice> {
-    // chino-stream lists the renditions in /play/info's order; by language
-    // when the counts differ.
-    val matched = renditions.map { r ->
-        if (tracks.size == renditions.size) tracks[r.index] else tracks.firstOrNull { normalizeLang(it.language) == normalizeLang(r.language) }
+    val matched = renditions.mapIndexed { k, r ->
+        audioTrackFor(tracks, place = k, count = renditions.size, language = r.language) { it.displayName == r.name }
     }
-    val details = matched.map { track ->
-        listOfNotNull(
-            track?.codec?.takeIf { it.isNotBlank() }?.let { if (it.equals("mp4a", ignoreCase = true)) "AAC" else it.uppercase() },
-            track?.channels?.takeIf { it > 0 }?.let { channelLabel(it) },
-        ).joinToString(" · ").ifEmpty { null }
-    }
+    val details = matched.map { track -> track?.let(::audioDetail) }
     val langs = renditions.mapIndexed { i, r -> r.language ?: matched[i]?.language }
     val labels = audioLabels(
-        renditions.mapIndexed { i, r ->
-            AudioLabelInput(langs[i], name = matched[i]?.title?.trim()?.takeIf { it.isNotEmpty() } ?: r.name, detail = details[i])
-        },
+        renditions.mapIndexed { i, r -> AudioLabelInput(langs[i], name = matched[i]?.displayName ?: r.name, detail = details[i]) },
     )
     return renditions.mapIndexed { i, r ->
         AudioChoice(index = r.index, label = labels[i], detail = details[i], language = langs[i], selected = r.selected)
@@ -484,11 +482,3 @@ internal fun masterSubtitleChoices(renditions: List<SubtitleRendition>): List<Su
  *  off, or a row of another kind. */
 internal fun masterSubtitleIndex(id: String?): Int? =
     id?.takeIf { it.startsWith(MASTER_SUBTITLE_ID) }?.removePrefix(MASTER_SUBTITLE_ID)?.toIntOrNull()
-
-private fun channelLabel(n: Int): String = when (n) {
-    1 -> "Mono"
-    2 -> "Stereo"
-    6 -> "5.1"
-    8 -> "7.1"
-    else -> "${n}ch"
-}
