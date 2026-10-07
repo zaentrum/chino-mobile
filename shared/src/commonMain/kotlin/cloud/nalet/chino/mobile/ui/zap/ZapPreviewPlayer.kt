@@ -30,8 +30,9 @@ import androidx.compose.ui.graphics.ImageBitmap
  *   (Media3 Player.Listener.onRenderedFirstFrame). The card uses this to fade
  *   out the cold-start backdrop image layered underneath the surface.
  * @param onAmbientFrame while the card plays, a small copy of the frame on
- *        screen a few times a second, for the card's ambient light; never
- *        called where the platform takes none (iOS for now)
+ *        screen about once a second, for the card's ambient light
+ *        ([ZapAmbientLight]); never called where the platform takes none
+ *        (iOS for now)
  */
 @Composable
 expect fun ZapPreviewPlayer(

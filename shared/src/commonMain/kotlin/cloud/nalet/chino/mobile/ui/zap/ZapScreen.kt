@@ -1,8 +1,8 @@
 package cloud.nalet.chino.mobile.ui.zap
 
-import androidx.compose.animation.Crossfade
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
@@ -213,8 +213,8 @@ private fun ZapCard(
         animationSpec = tween(durationMillis = 350),
         label = "zapBackdropFade",
     )
-    // The latest small copy of the frame on screen, for the ambient light.
-    var ambientFrame by remember(card.masterUrl) { mutableStateOf<ImageBitmap?>(null) }
+    // The ambient light, the title's: links signed again keep it as it is.
+    val ambient = rememberZapAmbientLight(card.item.id)
 
     BoxWithConstraints(
         modifier = Modifier
@@ -241,7 +241,7 @@ private fun ZapCard(
             Modifier.fillMaxHeight().aspectRatio(16f / 9f, matchHeightConstraintsFirst = true)
         }
 
-        ZapAmbient(frame = ambientFrame, backdropUrl = card.backdropUrl, modifier = Modifier.fillMaxSize())
+        ZapAmbient(light = ambient, backdropUrl = card.backdropUrl, modifier = Modifier.fillMaxSize())
 
         // The clip, in the middle. Over it until the first frame renders: the
         // backdrop (poster fallback), covering the surface's black pre-frame
@@ -261,7 +261,7 @@ private fun ZapCard(
                 // controls the pager). Bounded auto-skip is a TV-remote concern.
                 onError = {},
                 onFirstFrame = { hasFirstFrame = true },
-                onAmbientFrame = { ambientFrame = it },
+                onAmbientFrame = ambient::offer,
             )
             if (backdropAlpha > 0f) {
                 ZapColdStartBackdrop(
@@ -293,38 +293,61 @@ private fun ZapCard(
 }
 
 /**
- * The card's ambient light: the playing clip's own frame, small, blown up to
- * fill the card, blurred and dimmed behind the clip, so the card reads full
- * screen while the clip plays whole in the middle. Each new frame fades in
- * over the last. Before one is in (and where the platform takes none), the
- * title's backdrop gives the light.
+ * The card's ambient light: the playing clip's colours, blown up to fill the
+ * card, blurred and dimmed behind the clip, so the card reads full screen
+ * while the clip plays whole in the middle. It follows the clip slowly
+ * ([ZapAmbientLight]): a coarse grid of its colours, eased to over 1.8 s.
+ * Before the clip's light is in (and where the platform gives none), the
+ * title's backdrop is the light.
+ *
+ * The layers are opaque - the backdrop or [ZapAmbientLight.under], with
+ * [ZapAmbientLight.over] fading in over it - and the dimming is one veil over
+ * both: a fade never lets the black behind them through. (Each frame faded
+ * in over the last in a Crossfade made the light dip to near black at every
+ * frame: interrupted every 400 ms, the frames fading out went in a fast
+ * spring while the next one was still coming in.)
  */
 @Composable
-private fun ZapAmbient(frame: ImageBitmap?, backdropUrl: String, modifier: Modifier = Modifier) {
+private fun ZapAmbient(light: ZapAmbientLight, backdropUrl: String, modifier: Modifier = Modifier) {
     Box(modifier = modifier.background(Color.Black)) {
-        val glow = Modifier.fillMaxSize().blur(48.dp).alpha(0.8f)
-        Crossfade(targetState = frame, animationSpec = tween(durationMillis = 600), label = "zapAmbient") { shown ->
-            if (shown != null) {
-                Image(
-                    bitmap = shown,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    filterQuality = FilterQuality.Low,
-                    modifier = glow,
-                )
-            } else {
-                AsyncImage(
-                    model = backdropUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = glow,
-                )
-            }
+        val under = light.under
+        if (under == null) {
+            AsyncImage(
+                model = backdropUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().blur(AMBIENT_BLUR),
+            )
+        } else {
+            AmbientImage(under, Modifier.fillMaxSize().blur(AMBIENT_BLUR))
+        }
+        light.over?.let { over ->
+            AmbientImage(
+                over,
+                // The ease's alpha read in the draw phase: a frame of it
+                // recomposes nothing.
+                Modifier.fillMaxSize().graphicsLayer { alpha = light.overAlpha }.blur(AMBIENT_BLUR),
+            )
         }
         // A veil, so the clip stays the brightest thing on the card.
-        Box(modifier = Modifier.fillMaxSize().background(Color(0x40000000)))
+        Box(modifier = Modifier.fillMaxSize().background(Color(0x66000000)))
     }
 }
+
+/** A light grid drawn over the card: blown up with smoothing, cropped as the
+ *  backdrop is. */
+@Composable
+private fun AmbientImage(image: ImageBitmap, modifier: Modifier) {
+    Image(
+        bitmap = image,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        filterQuality = FilterQuality.Low,
+        modifier = modifier,
+    )
+}
+
+private val AMBIENT_BLUR = 48.dp
 
 /**
  * Full-bleed cold-start image for a Zap card: the item's backdrop, cropped to

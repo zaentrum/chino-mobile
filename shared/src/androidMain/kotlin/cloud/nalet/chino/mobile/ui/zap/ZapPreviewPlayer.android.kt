@@ -194,8 +194,9 @@ actual fun ZapPreviewPlayer(
         }
     }
 
-    // The card's ambient light: a small copy of the frame on screen, a few
-    // times a second while this card plays. PixelCopy scales the video
+    // The card's ambient light: a small copy of the frame on screen, once a
+    // second while this card plays (the card averages it into a coarse grid
+    // and eases to it slowly: ZapAmbientLight). PixelCopy scales the video
     // surface down into the bitmap, so a copy costs next to nothing; one that
     // finds no frame yet (before the first, a surface going away) is skipped.
     // The view is held, not state: the loop asks for its surface each time.
@@ -233,11 +234,13 @@ actual fun ZapPreviewPlayer(
     )
 }
 
-/** The ambient copy: 16:9, small (the card blows it up and blurs it), and
- *  how often it is taken. */
-private const val AMBIENT_WIDTH = 48
-private const val AMBIENT_HEIGHT = 27
-private const val AMBIENT_EVERY_MS = 400L
+/** The ambient copy: 16:9, ten pixels to each cell of the card's 16 x 9 grid
+ *  (PixelCopy samples rather than averages as it scales down; the card's
+ *  average of a hundred samples a cell is what makes it steady), and how
+ *  often it is taken. */
+private const val AMBIENT_WIDTH = 160
+private const val AMBIENT_HEIGHT = 90
+private const val AMBIENT_EVERY_MS = 1000L
 
 /**
  * The audio a card starts on is the rendition the master's first variant
