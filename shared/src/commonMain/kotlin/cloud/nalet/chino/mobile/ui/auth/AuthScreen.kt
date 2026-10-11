@@ -1,10 +1,13 @@
 package cloud.nalet.chino.mobile.ui.auth
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -19,10 +22,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import cafe.adriel.voyager.core.screen.uniqueScreenKey
@@ -30,7 +36,9 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.auth.LocalSignInLauncher
+import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import kotlinx.coroutines.launch
 
 /**
@@ -103,6 +111,7 @@ class AuthScreen : Screen {
                                     onClick = { scope.launch { model.signIn(launcher) } },
                                     shape = RectangleShape,
                                 ) { Text("Sign in") }
+                                ChangeServerLink { nav.push(AddServerScreen(changeServer = true)) }
                             }
                             AuthUiState.Signing -> CircularProgressIndicator()
                             AuthUiState.Authenticated -> Unit
@@ -116,6 +125,7 @@ class AuthScreen : Screen {
                                     onClick = { scope.launch { model.signIn(launcher) } },
                                     shape = RectangleShape,
                                 ) { Text("Try again") }
+                                ChangeServerLink { nav.push(AddServerScreen(changeServer = true)) }
                             }
                         }
                     }
@@ -123,4 +133,24 @@ class AuthScreen : Screen {
             }
         }
     }
+}
+
+/**
+ * "Change server" under the sign-in button: signed out, this screen is the
+ * only one there is, and the server it signs in to was otherwise fixed until
+ * a sign-in succeeded (Settings holds the other way to it). A 48dp touch.
+ */
+@Composable
+private fun ChangeServerLink(onClick: () -> Unit) {
+    Text(
+        text = "Change server",
+        color = ChinoMuted,
+        fontSize = 14.sp,
+        modifier = Modifier
+            .clip(RectangleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp)
+            .wrapContentHeight(Alignment.CenterVertically),
+    )
 }
