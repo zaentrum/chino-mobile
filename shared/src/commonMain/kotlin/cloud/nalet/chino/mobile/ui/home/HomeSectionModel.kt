@@ -5,6 +5,8 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.api.ProgressBody
+import cloud.nalet.chino.mobile.data.api.catalogueMessage
+import cloud.nalet.chino.mobile.data.api.signInRefused
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -32,7 +34,9 @@ sealed interface HomeUiState {
         val baseUrl: String,
         val streamToken: String,
     ) : HomeUiState
-    data class Error(val message: String) : HomeUiState
+    /** [signInRefused]: the server refuses the sign-in (a 401 or 403), so
+     *  the page offers the ways out - another server, signing in again. */
+    data class Error(val message: String, val signInRefused: Boolean = false) : HomeUiState
 }
 
 /**
@@ -231,7 +235,9 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                     )
                 }
             } catch (e: Exception) {
-                HomeUiState.Error(e.message ?: e::class.simpleName.orEmpty())
+                // In words a person can act on (catalogueMessage), not the
+                // request's path and the server's error line.
+                HomeUiState.Error(e.catalogueMessage(), signInRefused = e.signInRefused)
             }
         }
     }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,10 +22,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cafe.adriel.voyager.navigator.LocalNavigator
+import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.model.Item
@@ -32,6 +37,7 @@ import cloud.nalet.chino.mobile.ui.components.EpisodeBadge
 import cloud.nalet.chino.mobile.ui.components.HeroBanner
 import cloud.nalet.chino.mobile.ui.components.MediaCard
 import cloud.nalet.chino.mobile.ui.components.MediaRow
+import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
 
@@ -65,7 +71,23 @@ fun HomeSection(
     when (val s = state) {
         HomeUiState.Loading -> Center { CircularProgressIndicator() }
         is HomeUiState.Error -> Center {
-            Text(s.message, color = MaterialTheme.colorScheme.error)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(horizontal = 24.dp),
+            ) {
+                Text(s.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                // A sign-in the server refuses: the page is a dead end
+                // without a way to another server (Settings holds one, but
+                // nothing says so here).
+                if (s.signInRefused) {
+                    val nav = LocalNavigator.currentOrThrow
+                    Button(
+                        onClick = { nav.push(AddServerScreen(changeServer = true)) },
+                        shape = RectangleShape,
+                    ) { Text("Change server") }
+                }
+            }
         }
         is HomeUiState.Ready -> ReadyContent(
             s,

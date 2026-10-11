@@ -10,6 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Every non-2xx answer from chino-api is an [ApiStatusException] with the
@@ -151,6 +152,33 @@ class ApiErrorsTest {
 
         assertEquals(401, failure.status)
         assertEquals("This server no longer accepts your sign-in. Sign in again.", failure.catalogueMessage())
+    }
+
+    @Test
+    fun aTokenMadeForAnotherAudienceIsTheServersToFix() = runTest {
+        // The server's /api/config named a sign-in client whose tokens the
+        // server does not take: signing in again gets the same token.
+        val server = FakeServer(accessToken = { "old" }, renewedToken = { "new" }) {
+            respondText(
+                "invalid token: oidc: expected audience \"chino\" got [\"chino-web\" \"account\"]\n",
+                HttpStatusCode.Unauthorized,
+            )
+        }
+
+        val failure = assertFailsWith<ApiStatusException> { server.api.me() }
+
+        assertTrue(failure.signInRefused)
+        assertTrue(failure.signInNotForThisServer)
+        assertEquals(
+            "This server does not accept the sign-in it sent the app to. " +
+                "Its operator has to set the server's sign-in up for the app; until then, connect to another server.",
+            failure.catalogueMessage(),
+        )
+        // A sign-in that merely ran out is not that.
+        val expired = ApiStatusException(401, "v1/me", "no subject")
+        assertTrue(expired.signInRefused)
+        assertFalse(expired.signInNotForThisServer)
+        assertFalse(ApiStatusException(502, "v1/items", "catalog unavailable").signInRefused)
     }
 
     @Test

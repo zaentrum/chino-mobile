@@ -80,12 +80,37 @@ fun Throwable.catalogueMessage(): String {
         is ResponseException -> response.status.value
         else -> return message ?: this::class.simpleName.orEmpty()
     }
-    return when (status) {
-        401, 403 -> "This server no longer accepts your sign-in. Sign in again."
-        in 500..599 -> "The catalogue is unavailable right now (HTTP $status)."
+    return when {
+        signInNotForThisServer -> "This server does not accept the sign-in it sent the app to. " +
+            "Its operator has to set the server's sign-in up for the app; until then, connect to another server."
+        status == 401 || status == 403 -> "This server no longer accepts your sign-in. Sign in again."
+        status in 500..599 -> "The catalogue is unavailable right now (HTTP $status)."
         else -> "The server answered HTTP $status."
     }
 }
+
+/**
+ * The server refuses the person's sign-in: a 401 or 403 of chino-api, which a
+ * renewed token did not mend. Signing in again or connecting to another
+ * server is what is left to do.
+ */
+val Throwable.signInRefused: Boolean
+    get() = when (this) {
+        is ApiStatusException -> status == 401 || status == 403
+        is ResponseException -> response.status.value == 401 || response.status.value == 403
+        else -> false
+    }
+
+/**
+ * A 401 for a token made for someone else: chino-api names the audience it
+ * expects and the one the token carries ("invalid token: oidc: expected
+ * audience ..."). The server's /api/config sent the app to a sign-in client
+ * whose tokens the server itself does not take - its operator's to fix, and
+ * signing in again gets the same token.
+ */
+val Throwable.signInNotForThisServer: Boolean
+    get() = this is ApiStatusException && status == 401 &&
+        serverMessage?.contains("audience", ignoreCase = true) == true
 
 /**
  * Why chino-api refused to create or rename a list, in words, or null when
