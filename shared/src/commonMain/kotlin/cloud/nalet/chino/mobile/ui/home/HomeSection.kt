@@ -16,10 +16,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -33,6 +35,8 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.model.Item
+import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
+import cloud.nalet.chino.mobile.ui.auth.AuthScreen
 import cloud.nalet.chino.mobile.ui.components.EpisodeBadge
 import cloud.nalet.chino.mobile.ui.components.HeroBanner
 import cloud.nalet.chino.mobile.ui.components.MediaCard
@@ -40,6 +44,7 @@ import cloud.nalet.chino.mobile.ui.components.MediaRow
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
+import kotlinx.coroutines.launch
 
 /**
  * Home tab content. Mirrors chino-web's HomeSection.tsx layout: hero banner
@@ -78,14 +83,27 @@ fun HomeSection(
             ) {
                 Text(s.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                 // A sign-in the server refuses: the page is a dead end
-                // without a way to another server (Settings holds one, but
-                // nothing says so here).
+                // without a way on. Sign in again signs the account out and
+                // opens the sign-in screen, which asks the server for its
+                // sign-in anew; Change server is the way to another one.
                 if (s.signInRefused) {
                     val nav = LocalNavigator.currentOrThrow
+                    val scope = rememberCoroutineScope()
                     Button(
-                        onClick = { nav.push(AddServerScreen(changeServer = true)) },
+                        onClick = {
+                            scope.launch {
+                                val accounts = container.accountStore
+                                accounts.snapshotBlocking().activeAccount?.id?.let { accounts.remove(it) }
+                                nav.replaceAll(
+                                    if (accounts.snapshotBlocking().accounts.isEmpty()) AuthScreen() else AccountPickerScreen(),
+                                )
+                            }
+                        },
                         shape = RectangleShape,
-                    ) { Text("Change server") }
+                    ) { Text("Sign in again") }
+                    TextButton(onClick = { nav.push(AddServerScreen(changeServer = true)) }) {
+                        Text("Change server")
+                    }
                 }
             }
         }

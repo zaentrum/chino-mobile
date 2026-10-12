@@ -81,8 +81,9 @@ fun Throwable.catalogueMessage(): String {
         else -> return message ?: this::class.simpleName.orEmpty()
     }
     return when {
-        signInNotForThisServer -> "This server does not accept the sign-in it sent the app to. " +
-            "Its operator has to set the server's sign-in up for the app; until then, connect to another server."
+        signInNotForThisServer -> "This server does not accept the sign-in the app used. Sign in again: " +
+            "the app asks the server for its sign-in anew. If this stays, the server's operator has to set its " +
+            "sign-in up for the app."
         status == 401 || status == 403 -> "This server no longer accepts your sign-in. Sign in again."
         status in 500..599 -> "The catalogue is unavailable right now (HTTP $status)."
         else -> "The server answered HTTP $status."
@@ -105,8 +106,9 @@ val Throwable.signInRefused: Boolean
  * A 401 for a token made for someone else: chino-api names the audience it
  * expects and the one the token carries ("invalid token: oidc: expected
  * audience ..."). The server's /api/config sent the app to a sign-in client
- * whose tokens the server itself does not take - its operator's to fix, and
- * signing in again gets the same token.
+ * whose tokens the server itself does not take. Signing in again asks the
+ * server for its sign-in anew (refreshServerConfig), which mends it once the
+ * operator has named the right client; until then it is the operator's to fix.
  */
 val Throwable.signInNotForThisServer: Boolean
     get() = this is ApiStatusException && status == 401 &&

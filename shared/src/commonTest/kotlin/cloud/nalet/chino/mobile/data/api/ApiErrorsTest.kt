@@ -157,7 +157,7 @@ class ApiErrorsTest {
     @Test
     fun aTokenMadeForAnotherAudienceIsTheServersToFix() = runTest {
         // The server's /api/config named a sign-in client whose tokens the
-        // server does not take: signing in again gets the same token.
+        // server does not take.
         val server = FakeServer(accessToken = { "old" }, renewedToken = { "new" }) {
             respondText(
                 "invalid token: oidc: expected audience \"chino\" got [\"chino-web\" \"account\"]\n",
@@ -170,8 +170,9 @@ class ApiErrorsTest {
         assertTrue(failure.signInRefused)
         assertTrue(failure.signInNotForThisServer)
         assertEquals(
-            "This server does not accept the sign-in it sent the app to. " +
-                "Its operator has to set the server's sign-in up for the app; until then, connect to another server.",
+            "This server does not accept the sign-in the app used. Sign in again: " +
+                "the app asks the server for its sign-in anew. If this stays, the server's operator has to set its " +
+                "sign-in up for the app.",
             failure.catalogueMessage(),
         )
         // A sign-in that merely ran out is not that.
