@@ -35,6 +35,7 @@ import cafe.adriel.voyager.core.screen.uniqueScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
+import cloud.nalet.chino.mobile.LocalAppRestart
 import cloud.nalet.chino.mobile.data.auth.LocalSignInLauncher
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
@@ -62,7 +63,20 @@ class AuthScreen : Screen {
         val launcher = LocalSignInLauncher.current
         val model = remember { AuthScreenModel(container) }
         val state by model.state.collectAsState()
+        val serverChanged by model.serverChanged.collectAsState()
+        val restart = LocalAppRestart.current
         val scope = rememberCoroutineScope()
+
+        // The server names another sign-in than the app had stored: the graph
+        // is rebuilt on the new settings before anyone signs in (as after
+        // Add-Server's connect; where the host's restart is a no-op, a fresh
+        // screen at least).
+        LaunchedEffect(serverChanged) {
+            if (serverChanged) {
+                restart()
+                nav.replaceAll(AuthScreen())
+            }
+        }
 
         LaunchedEffect(state) {
             if (state is AuthUiState.Authenticated) {
@@ -106,6 +120,7 @@ class AuthScreen : Screen {
                             color = MaterialTheme.colorScheme.onBackground,
                         )
                         when (val s = state) {
+                            AuthUiState.Checking -> CircularProgressIndicator()
                             AuthUiState.Idle -> {
                                 Button(
                                     onClick = { scope.launch { model.signIn(launcher) } },

@@ -4,15 +4,21 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.currentTimeMillis
 import cloud.nalet.chino.mobile.data.AppContainer
+import cloud.nalet.chino.mobile.data.ServerRefresh
 import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.data.auth.SignInLauncher
 import cloud.nalet.chino.mobile.data.auth.SignInResult
+import cloud.nalet.chino.mobile.data.refreshServerConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 sealed interface AuthUiState {
+    /** The connected server is asked for its sign-in settings before a sign-in
+     *  is offered (see [AuthScreenModel]). */
+    data object Checking : AuthUiState
     data object Idle : AuthUiState
     data object Signing : AuthUiState
     data object Authenticated : AuthUiState
@@ -27,11 +33,33 @@ sealed interface AuthUiState {
  * [AccountStore.addOrUpdate].
  */
 class AuthScreenModel(private val container: AppContainer) : ScreenModel {
-    private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
+    private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Checking)
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
+    /** True once the server was found to name another sign-in than the app
+     *  had stored: it is stored now, and the screen has the graph rebuilt
+     *  (LocalAppRestart) before anyone signs in through the old one. */
+    private val _serverChanged = MutableStateFlow(false)
+    val serverChanged: StateFlow<Boolean> = _serverChanged.asStateFlow()
+
+    init {
+        // The sign-in is the server's to name (/api/config), and it may name
+        // another than when the app connected. A server that does not answer
+        // in time does not hold the sign-in up: the stored settings stand.
+        screenModelScope.launch {
+            val refresh = withTimeoutOrNull(SERVER_CHECK_MS) {
+                refreshServerConfig(container.serverConfigStore, container.serverBootstrap::probe)
+            }
+            if (refresh == ServerRefresh.Changed) {
+                _serverChanged.value = true
+            } else if (_state.value == AuthUiState.Checking) {
+                _state.value = AuthUiState.Idle
+            }
+        }
+    }
+
     fun signIn(launcher: SignInLauncher) {
-        if (_state.value == AuthUiState.Signing) return
+        if (_state.value == AuthUiState.Signing || _state.value == AuthUiState.Checking) return
         _state.value = AuthUiState.Signing
         container.telemetry.event("auth_signin_started")
         screenModelScope.launch {
@@ -74,3 +102,7 @@ class AuthScreenModel(private val container: AppContainer) : ScreenModel {
         }
     }
 }
+
+/** How long the sign-in screen waits for the server's settings before it
+ *  offers the sign-in with the stored ones. */
+private const val SERVER_CHECK_MS = 4_000L
