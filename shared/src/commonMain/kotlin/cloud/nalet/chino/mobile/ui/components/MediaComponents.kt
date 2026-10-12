@@ -1,6 +1,7 @@
 package cloud.nalet.chino.mobile.ui.components
 
 import androidx.compose.ui.graphics.RectangleShape
+import cloud.nalet.chino.mobile.data.model.episodeCode
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
@@ -666,7 +667,13 @@ private fun SeeAllTile(cardWidth: Dp, onClick: () -> Unit) {
 
 /** Episode coordinates used by Continue Watching cards. Mirrors chino-
  *  web's MediaCard `episode` prop: SxxExx badge + optional episode title. */
-data class EpisodeBadge(val season: Int, val episode: Int, val episodeTitle: String?)
+data class EpisodeBadge(
+    val season: Int,
+    val episode: Int,
+    val episodeTitle: String?,
+    /** The last episode number of a file that holds several: S03E18–21. */
+    val episodeEnd: Int? = null,
+)
 
 /** SxxEyy coordinates for an EPISODE catalogue item, or null for anything
  *  else (or an episode missing its numbers). Used by surfaces whose item
@@ -676,7 +683,7 @@ data class EpisodeBadge(val season: Int, val episode: Int, val episodeTitle: Str
  *  (it would just duplicate the line above). */
 fun episodeBadgeFor(item: Item): EpisodeBadge? =
     if (item.kind == "episode" && item.seasonNumber != null && item.episodeNumber != null) {
-        EpisodeBadge(season = item.seasonNumber, episode = item.episodeNumber, episodeTitle = null)
+        EpisodeBadge(season = item.seasonNumber, episode = item.episodeNumber, episodeTitle = null, episodeEnd = item.episodeEnd)
     } else null
 
 /**
@@ -932,8 +939,7 @@ fun MediaCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        text = "S${episodeBadge.season.toString().padStart(2, '0')}" +
-                            "E${episodeBadge.episode.toString().padStart(2, '0')}",
+                        text = episodeCode(episodeBadge.season, episodeBadge.episode, episodeBadge.episodeEnd),
                         color = ChinoCloudBlue,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,

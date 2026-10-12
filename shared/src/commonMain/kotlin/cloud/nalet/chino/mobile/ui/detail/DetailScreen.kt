@@ -1,6 +1,10 @@
 package cloud.nalet.chino.mobile.ui.detail
 
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.text.style.TextAlign
+import cloud.nalet.chino.mobile.data.model.episodeCode
+import cloud.nalet.chino.mobile.data.model.fileEntries
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
@@ -981,7 +985,10 @@ private fun SeasonRow(
         }
         if (expanded) {
             Column(modifier = Modifier.padding(bottom = 8.dp)) {
-                season.episodes.forEachIndexed { index, ep ->
+                // One entry per file: a file that holds several episodes is
+                // one thing to play, a box around them (EpisodeRow's held).
+                fileEntries(season.episodes).forEachIndexed { index, entry ->
+                    val ep = entry.episode
                     // By its id, so what a row keeps stays its own.
                     key(ep.id) {
                         // Full-bleed 1dp separator between rows, matching web's
@@ -998,14 +1005,19 @@ private fun SeasonRow(
                         // Effective episode watched state: optimistic override
                         // (the user's tap this session) wins over the payload's
                         // watched_at. Mirrors chino-web's EpisodeRow.
-                        val epWatched = episodeWatched[ep.id] ?: (ep.watchedAt != null)
+                        // Watched and resume are the file's: chino-api keeps
+                        // them the same for every episode it holds.
+                        val epWatched = entry.ids.firstNotNullOfOrNull { episodeWatched[it] }
+                            ?: entry.held.any { it.watchedAt != null }
                         EpisodeRow(
                             episode = ep,
+                            held = entry.held,
+                            lastEpisodeNumber = entry.last,
                             baseUrl = baseUrl,
                             streamToken = streamToken,
                             watched = epWatched,
-                            resume = episodeResume[ep.id],
-                            focused = ep.id == focusEpisodeId,
+                            resume = entry.ids.firstNotNullOfOrNull { episodeResume[it] },
+                            focused = focusEpisodeId != null && focusEpisodeId in entry.ids,
                             compact = compact,
                             onClick = { onEpisodePlay(ep.id) },
                             onToggleWatched = { onToggleEpisodeWatched(ep.id, epWatched) },
@@ -1022,6 +1034,14 @@ private fun SeasonRow(
 @Composable
 private fun EpisodeRow(
     episode: cloud.nalet.chino.mobile.data.api.Episode,
+    /** The episodes the row's file holds: [episode], the holder, first. More
+     *  than one makes the row a box around them - the file is the truth, the
+     *  one thing that plays, named for them (S03E18–21) and as long as the
+     *  file is; the episodes in it are listed by number and title, and none
+     *  of them plays on its own. */
+    held: List<cloud.nalet.chino.mobile.data.api.Episode> = listOf(episode),
+    /** The last episode number the file holds (the range's end). */
+    lastEpisodeNumber: Int? = null,
     baseUrl: String,
     streamToken: String,
     watched: Boolean,
@@ -1045,9 +1065,17 @@ private fun EpisodeRow(
     // it stamped one, else the episode's catalogue runtime (durationMs).
     // Null when neither exists — then the row shows a plain "Resume" line
     // and no bar (nothing to compute a fraction against).
+    val several = held.size > 1
+    // The entry's length is the file's: for a file of several, its measured
+    // length where chino-api says it, else what its episodes' runtimes come to.
+    val fileDurationMs: Long? = if (several) {
+        episode.fileDurationMs ?: held.sumOf { it.durationMs ?: 0L }.takeIf { it > 0 }
+    } else {
+        episode.durationMs
+    }
     val effectiveDurationSec: Int? = resume?.let { r ->
         if (r.durationSec > 0) r.durationSec
-        else episode.durationMs?.let { (it / 1000L).toInt() }?.takeIf { it > 0 }
+        else fileDurationMs?.let { (it / 1000L).toInt() }?.takeIf { it > 0 }
     }
     // Scroll the redirected episode into view within the detail's outer
     // verticalScroll. Once per page, not each time the row is composed: back
@@ -1063,17 +1091,27 @@ private fun EpisodeRow(
     val rowModifier = Modifier
         .fillMaxWidth()
         .then(if (focused) Modifier.bringIntoViewRequester(bringIntoView) else Modifier)
+        // A file of several episodes: a box, with room around it so its
+        // border reads as a box and not as a row's divider.
+        .then(if (several) Modifier.padding(EPISODE_BOX_INSET) else Modifier)
         .then(
             if (focused) {
                 Modifier
                     .background(ChinoCloudBlue.copy(alpha = 0.12f))
                     .border(BorderStroke(1.dp, ChinoCloudBlue), RectangleShape)
+            } else if (several) {
+                Modifier
+                    .background(ChinoBg2.copy(alpha = 0.6f))
+                    .border(BorderStroke(1.dp, ChinoCloudBlue.copy(alpha = 0.5f)), RectangleShape)
             } else {
                 Modifier
             },
         )
         .clickable(onClick = onClick)
-        .padding(horizontal = EPISODE_ROW_PADDING, vertical = 12.dp)
+        .padding(
+            horizontal = if (several) EPISODE_ROW_PADDING - EPISODE_BOX_INSET else EPISODE_ROW_PADDING,
+            vertical = 12.dp,
+        )
     // On a phone as wide as a phone's poster card, and tall enough to keep
     // the watched and add-to-list chips apart.
     val stillWidth = if (compact) 128.dp else 160.dp
@@ -1149,11 +1187,37 @@ private fun EpisodeRow(
     }
     val details: @Composable (Modifier) -> Unit = { modifier ->
         Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = modifier) {
-            val epNum = listOfNotNull(
-                episode.seasonNumber?.let { "S${it.toString().padStart(2, '0')}" },
-                episode.episodeNumber?.let { "E${it.toString().padStart(2, '0')}" },
-            ).joinToString("")
-            val epRuntimeMin = episode.durationMs?.let { (it / 60_000L).toInt() } ?: 0
+            val epNum = episodeCode(episode.seasonNumber, episode.episodeNumber, lastEpisodeNumber.takeIf { several })
+            val epRuntimeMin = fileDurationMs?.let { ((it + 30_000L) / 60_000L).toInt() } ?: 0
+            // What a box holds, in place of a title: so many episodes in one
+            // file, each by its number and title. Text, not controls.
+            val heldList: @Composable () -> Unit = {
+                Text(
+                    text = "${held.size} episodes · one file",
+                    color = ChinoMuted,
+                    fontSize = 12.sp,
+                )
+                held.forEach { e ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = e.episodeNumber?.toString().orEmpty(),
+                            color = ChinoMuted,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.width(20.dp).alignByBaseline(),
+                        )
+                        Text(
+                            text = e.title,
+                            color = if (watched) ChinoMuted else Color.White,
+                            fontSize = EPISODE_TITLE_SIZE,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = if (compact) 2 else 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).alignByBaseline(),
+                        )
+                    }
+                }
+            }
             if (compact) {
                 // A phone: the number, and the runtime at the trailing edge —
                 // under it where even the two do not fit — then the title with
@@ -1182,36 +1246,45 @@ private fun EpisodeRow(
                         }
                     }
                 }
-                Text(
-                    text = episode.title,
-                    color = if (watched) ChinoMuted else Color.White,
-                    fontSize = EPISODE_TITLE_SIZE,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (several) {
+                    heldList()
+                } else {
+                    Text(
+                        text = episode.title,
+                        color = if (watched) ChinoMuted else Color.White,
+                        fontSize = EPISODE_TITLE_SIZE,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (epNum.isNotEmpty()) {
                         Text(text = epNum, color = ChinoCloudBlue, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                        Text(text = "·", color = ChinoMuted, fontSize = 13.sp)
+                        if (!several) Text(text = "·", color = ChinoMuted, fontSize = 13.sp)
                     }
-                    Text(
-                        text = episode.title,
-                        // Web dims a watched episode's title to #8b949e.
-                        color = if (watched) ChinoMuted else Color.White,
-                        fontSize = EPISODE_TITLE_SIZE,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
+                    if (several) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    } else {
+                        Text(
+                            text = episode.title,
+                            // Web dims a watched episode's title to #8b949e.
+                            color = if (watched) ChinoMuted else Color.White,
+                            fontSize = EPISODE_TITLE_SIZE,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     // Runtime pinned to the trailing edge (web's `ml-auto`); the
                     // title's weight(1f) above eats the slack between them.
                     if (epRuntimeMin > 0) {
                         Text(text = "${epRuntimeMin}m", color = ChinoMuted, fontSize = 12.sp)
                     }
                 }
+                if (several) heldList()
             }
             // Subtle resume meta line for in-progress rows. Click behaviour
             // is unchanged — the row tap opens the player, which auto-resumes.
@@ -1229,7 +1302,8 @@ private fun EpisodeRow(
                     fontWeight = FontWeight.Medium,
                 )
             }
-            episode.overview?.takeIf { it.isNotBlank() }?.let {
+            // A box lists its episodes; one episode's overview is not the file's.
+            episode.overview?.takeIf { it.isNotBlank() && !several }?.let {
                 Text(
                     text = it,
                     color = ChinoFg2,
@@ -1268,6 +1342,9 @@ private fun EpisodeRow(
  *  text, and its title's size: what the text beside the still has room for
  *  (EpisodeRow). */
 private val EPISODE_ROW_PADDING = 16.dp
+
+/** The room around the box of a file that holds several episodes. */
+private val EPISODE_BOX_INSET = 8.dp
 private val EPISODE_ROW_GAP = 12.dp
 private val EPISODE_TITLE_SIZE = 14.sp
 

@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class Item(
-    val id: String,
+    override val id: String,
     val title: String,
     /**
      * Catalogue type — "movie", "series", "episode", "album", "track" per
@@ -54,7 +54,11 @@ data class Item(
     /** For episodes, the parent series id. Null for movies / series-level items. */
     @SerialName("parent_id") val parentId: String? = null,
     @SerialName("season_number") val seasonNumber: Int? = null,
-    @SerialName("episode_number") val episodeNumber: Int? = null,
+    @SerialName("episode_number") override val episodeNumber: Int? = null,
+    // One file that holds several episodes ([FileMember]): chino-api's names.
+    @SerialName("coveredBy") override val coveredBy: String? = null,
+    override val covers: List<String> = emptyList(),
+    @SerialName("episodeEnd") override val episodeEnd: Int? = null,
     // Optional short marketing line under the title. chino-api emits as
     // `tagline,omitempty`; rendered by DetailScreen below the title in
     // italic #8B949E (web: DetailPage.tsx L132-134).
@@ -70,7 +74,7 @@ data class Item(
      *  roles on this title, in the catalog's credit order (["actor",
      *  "director"]). Named by [formatRoles]. */
     val roles: List<String> = emptyList(),
-)
+) : FileMember
 
 @Serializable
 data class Subtitle(

@@ -288,6 +288,7 @@ private fun ContinueWatchingShelf(
                             season = cw.seasonNumber,
                             episode = cw.episodeNumber,
                             episodeTitle = cw.title.takeIf { it.isNotBlank() },
+                            episodeEnd = cw.episodeEnd,
                         )
                     } else null
                     val progress = if (showProgress && cw.durationSec > 0) {

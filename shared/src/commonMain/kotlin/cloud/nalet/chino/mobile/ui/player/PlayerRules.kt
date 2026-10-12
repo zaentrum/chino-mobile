@@ -2,6 +2,7 @@ package cloud.nalet.chino.mobile.ui.player
 
 import cloud.nalet.chino.mobile.data.api.Segment
 import cloud.nalet.chino.mobile.data.model.Item
+import cloud.nalet.chino.mobile.data.model.episodeCode
 
 /**
  * The player's rules about segments, the up-next countdown and the heading —
@@ -122,10 +123,8 @@ fun composePlayerTitle(item: Item?, seriesTitle: String?): String {
     val isEpisode = item?.kind.equals("episode", ignoreCase = true) ||
         item?.seasonNumber != null || item?.episodeNumber != null
     if (item == null || !isEpisode) return episodeTitle
-    val se = buildString {
-        item.seasonNumber?.let { append("S").append(it.toString().padStart(2, '0')) }
-        item.episodeNumber?.let { append("E").append(it.toString().padStart(2, '0')) }
-    }
+    // S03E18–21 for a file that holds several episodes: the file plays.
+    val se = episodeCode(item.seasonNumber, item.episodeNumber, item.episodeEnd)
     val tail = if (se.isNotEmpty()) "$se · $episodeTitle" else episodeTitle
     return if (!seriesTitle.isNullOrBlank()) "$seriesTitle — $tail" else tail
 }

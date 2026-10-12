@@ -1,12 +1,12 @@
 package cloud.nalet.chino.mobile.data.api
 
+import cloud.nalet.chino.mobile.data.model.FileMember
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.model.ItemsPage
 import cloud.nalet.chino.mobile.data.model.Me
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.timeout
-import io.ktor.client.statement.bodyAsText
 import io.ktor.client.request.delete
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
@@ -17,6 +17,7 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
@@ -421,10 +422,10 @@ private val NOTICE_ID = Regex("^[A-Za-z0-9-]{1,64}$")
 
 @Serializable
 data class Episode(
-    val id: String,
+    override val id: String,
     val title: String,
     @SerialName("season_number") val seasonNumber: Int? = null,
-    @SerialName("episode_number") val episodeNumber: Int? = null,
+    @SerialName("episode_number") override val episodeNumber: Int? = null,
     @SerialName("parent_id") val parentId: String? = null,
     // RFC3339; non-null when the current user has watched this episode
     // end-to-end. Drives the green watched-pip in EpisodesList.
@@ -435,7 +436,14 @@ data class Episode(
     @SerialName("description") val overview: String? = null,
     @SerialName("duration_ms") val durationMs: Long? = null,
     val year: Int? = null,
-)
+    // One file that holds several episodes ([FileMember]): chino-api's names.
+    @SerialName("coveredBy") override val coveredBy: String? = null,
+    override val covers: List<String> = emptyList(),
+    @SerialName("episodeEnd") override val episodeEnd: Int? = null,
+    /** On a holder: how long its file is, as measured — the length of the
+     *  one thing that plays, not of any one episode it holds. */
+    @SerialName("file_duration_ms") val fileDurationMs: Long? = null,
+) : FileMember
 
 @Serializable
 data class Season(
@@ -727,6 +735,9 @@ data class ContinueWatchingItem(
     @SerialName("series_title") val seriesTitle: String? = null,
     @SerialName("season_number") val seasonNumber: Int? = null,
     @SerialName("episode_number") val episodeNumber: Int? = null,
+    /** The last episode number of a file that holds several: the card is
+     *  the file's, under its first episode (S03E18–21). */
+    @SerialName("episodeEnd") val episodeEnd: Int? = null,
     val type: String? = null,
     /** The series an episode belongs to: what Play on a series finds its
      *  episode by (episodeToPlay). */

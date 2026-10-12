@@ -1,5 +1,7 @@
 package cloud.nalet.chino.mobile.ui.profile
 
+import cloud.nalet.chino.mobile.data.model.episodeCode
+import cloud.nalet.chino.mobile.data.model.oneRowPerFile
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
@@ -133,7 +135,9 @@ class ProfileScreen : Screen {
             token = runCatching { container.streamTokenManager.valid() }.getOrDefault("")
             val items = runCatching { container.chinoApi.watched(limit = 60).items }
                 .getOrElse { emptyList() }
-            history = items
+            // One row for a file that holds several episodes: chino-api
+            // marks each of them watched together.
+            history = items?.let { oneRowPerFile(it) }
             // Resolve the parent series titles for episode rows (deduped, in
             // parallel, each fetch individually fallible). The list is already
             // on screen at this point; rows upgrade in place as titles land.
@@ -423,10 +427,7 @@ private fun HistoryRow(
                 overflow = TextOverflow.Ellipsis,
             )
             if (isEpisode) {
-                val epNum = listOfNotNull(
-                    item.seasonNumber?.let { "S${it.toString().padStart(2, '0')}" },
-                    item.episodeNumber?.let { "E${it.toString().padStart(2, '0')}" },
-                ).joinToString("")
+                val epNum = episodeCode(item.seasonNumber, item.episodeNumber, item.episodeEnd)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
