@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds only: this file replaces the release's of the same name
+    (the manifest's networkSecurityConfig). It adds plain http to this device
+    itself, for local development - a stand-in server on the developer's
+    machine, reached as localhost through `adb reverse`. Everything else stays
+    https with the system's trust, as in the release build.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
