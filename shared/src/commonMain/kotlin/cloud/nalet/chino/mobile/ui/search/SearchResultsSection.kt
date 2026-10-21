@@ -76,15 +76,17 @@ import kotlinx.coroutines.flow.asStateFlow
  *   - Big header: `${N} results for "${query}"`
  *   - Responsive grid of poster cards (same look as Movies / Shows)
  *
- * Both movies and series are queried in parallel via /v1/items?q=… and
- * merged into a single grid. The server already returns each list in
- * relevance order (exact > prefix > FTS rank > alpha), so the client renders
- * the server order as-is — no client-side re-ranking. Queries are debounced
+ * One call searches the catalogue ([searchCatalogue]): GET /v1/search?q=…
+ * for films and series ([SEARCH_TYPES]), which the server ranks together,
+ * best first. The grid renders that order as-is — no client-side re-ranking,
+ * no grouping by type. A server older than the search (404) is searched as
+ * before: the films, then the series, of /v1/items?q=…. Queries are debounced
  * 250 ms so typing doesn't fire a request per keystroke.
  *
- * A "Cast & crew" people section (GET /v1/people?q=…, same debounce) renders
- * above the title grid: name + "· N titles" + their portrait (initials without
- * one). Tapping a person opens the Person / Filmography surface.
+ * A "Cast & crew" people section — the people of the same answer, ranked
+ * apart (GET /v1/people?q=… on an older server) — renders above the title
+ * grid: name + "· N titles" + their portrait (initials without one). Tapping
+ * a person opens the Person / Filmography surface.
  *
  * A search that finds no titles and no people shows what addons contribute
  * to the `search.empty` slot, the query carried as {q} ([ExtensionSlot]).
@@ -109,18 +111,16 @@ fun SearchResultsSection(
             return@LaunchedEffect
         }
         delay(250)
-        // People is a best-effort sidebar — a failure there must never blank
-        // the title results, so it's fetched + caught independently.
-        peopleState.value = runCatching {
-            container.chinoApi.searchPeople(q = query, limit = 12).people
-        }.getOrDefault(emptyList())
         state.value = SearchState.Loading
-        state.value = runCatching {
-            val movies = container.chinoApi.listItems(q = query, type = "movie", limit = 40).items
-            val series = container.chinoApi.listItems(q = query, type = "series", limit = 40).items
-            // Server already ranks each list; render in arrival order, no re-sort.
-            SearchState.Ready(movies + series)
-        }.getOrElse { SearchState.Error(it.catalogueMessage()) }
+        // Titles and people in one answer, the titles in the server's order.
+        // People stay a best-effort sidebar: none when they could not be had,
+        // and never a reason to blank the titles.
+        val found = searchCatalogue(container.chinoApi, query)
+        peopleState.value = found.people
+        state.value = found.titles.fold(
+            onSuccess = { SearchState.Ready(it) },
+            onFailure = { SearchState.Error(it.catalogueMessage()) },
+        )
     }
 
     val baseUrl = container.config.apiBaseUrl.trimEnd('/')
@@ -185,6 +185,7 @@ fun SearchResultsSection(
                 )
             }
             is SearchState.Ready -> {
+                // As the server ranked them, best first: films and series together.
                 items(s.items, key = { it.id }) { item ->
                     SearchCard(
                         item = item,

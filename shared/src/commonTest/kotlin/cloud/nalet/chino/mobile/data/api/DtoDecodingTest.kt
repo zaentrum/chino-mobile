@@ -4,6 +4,7 @@ import cloud.nalet.chino.mobile.data.model.CastMember
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.model.ItemsPage
 import cloud.nalet.chino.mobile.data.model.Me
+import cloud.nalet.chino.mobile.data.model.SearchSeries
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,8 +14,9 @@ import kotlin.test.assertTrue
 
 /**
  * The DTOs against the JSON chino-api sends, shapes copied from its handlers
- * and its own tests (router.go, people.go, series.go, katalog/client.go,
- * katalog/people_test.go), decoded with the app's [ChinoJson].
+ * and its own tests (router.go, people.go, search.go, series.go,
+ * katalog/client.go, katalog/people_test.go), decoded with the app's
+ * [ChinoJson].
  */
 class DtoDecodingTest {
     @Test
@@ -148,6 +150,58 @@ class DtoDecodingTest {
         // credits is omitted when 0.
         assertEquals(0, people[1].credits)
         assertNull(people[1].profileUrl)
+    }
+
+    @Test
+    fun aSearchKeepsItsOrderHowEachMatchedAndAnEpisodesSeries() {
+        // search.go's answer, as its search_test.go pins it: the titles in
+        // the order to show them, films, series and episodes together, and
+        // the people apart.
+        val found = ChinoJson.decodeFromString<SearchResponse>(
+            """
+            {"items":[
+              {"id":"s1","type":"series","title":"Night Shift","poster_url":"/api/v1/items/s1/poster",
+               "backdrop_url":"/api/v1/items/s1/backdrop","match":"prefix"},
+              {"id":"m1","type":"movie","title":"A Night Out","year":2021,"poster_url":"/api/v1/items/m1/poster",
+               "backdrop_url":"/api/v1/items/m1/backdrop","match":"words"},
+              {"id":"e1","type":"episode","title":"The Night Before","poster_url":"/api/v1/items/e1/poster",
+               "backdrop_url":"/api/v1/items/e1/backdrop","season_number":1,"episode_number":3,"parent_id":"s1","match":"words",
+               "series":{"id":"s1","title":"Night Shift","matched":true,"poster_url":"/api/v1/items/s1/poster"}}],
+             "people":[{"id":"p1","name":"Ada Night","credits":2,"has_profile":true,"profile_url":"/api/v1/people/p1/profile","match":"words"}],
+             "product":"chino","source":"katalog"}
+            """,
+        )
+
+        assertEquals(listOf("s1", "m1", "e1"), found.items.map { it.id })
+        assertEquals(listOf("prefix", "words", "words"), found.items.map { it.match })
+        assertEquals(listOf(null, null), found.items.take(2).map { it.series })
+        val episode = found.items[2]
+        assertEquals(
+            SearchSeries(id = "s1", title = "Night Shift", matched = true, posterUrl = "/api/v1/items/s1/poster"),
+            episode.series,
+        )
+        assertEquals(1 to 3, episode.seasonNumber to episode.episodeNumber)
+        val person = found.people.single()
+        assertEquals("words", person.match)
+        assertEquals(2, person.credits)
+        assertEquals("/api/v1/people/p1/profile", person.profileUrl)
+    }
+
+    @Test
+    fun aTitleOrPersonWithoutHowItMatchedStillDecodes() {
+        // The lists and /people send neither field.
+        val listed = ChinoJson.decodeFromString<Item>("""{"id":"m1","type":"movie","title":"A Film","rating":7.5}""")
+        assertNull(listed.match)
+        assertNull(listed.series)
+        assertNull(ChinoJson.decodeFromString<Person>("""{"id":"p1","name":"Ada Example"}""").match)
+
+        // A series short of a field fails neither its episode nor the search;
+        // an answer without people has none.
+        val short = ChinoJson.decodeFromString<SearchResponse>(
+            """{"items":[{"id":"e1","type":"episode","title":"One","series":{"id":"s1"}}]}""",
+        )
+        assertEquals(SearchSeries(id = "s1"), short.items.single().series)
+        assertTrue(short.people.isEmpty())
     }
 
     @Test

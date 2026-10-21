@@ -77,9 +77,26 @@ class ChinoApi(private val http: HttpClient) {
 
     suspend fun getItem(id: String): Item = http.get("v1/items/$id").body()
 
+    /** GET /v1/search?q=&types=&limit=&people=: one search of the catalogue,
+     *  in the order to show it. The titles of [types] (sent comma separated)
+     *  come ranked together by how they match [q], best first, at most
+     *  [limit] (the server takes up to 100), each with [Item.match]; the
+     *  people whose names match [q] come ranked apart, at most [people] (up
+     *  to 50). A server older than the search answers 404, an
+     *  [ApiStatusException] like any other refusal; the search then asks as
+     *  before ([cloud.nalet.chino.mobile.ui.search.searchCatalogue]). */
+    suspend fun search(q: String, types: List<String>, limit: Int, people: Int): SearchResponse =
+        http.get("v1/search") {
+            parameter("q", q)
+            parameter("types", types.joinToString(","))
+            parameter("limit", limit)
+            parameter("people", people)
+        }.body()
+
     /** People (cast & crew) name search. Accent/case-insensitive on the
      *  server; the client renders the server order as-is (no re-ranking).
-     *  Mirrors chino-web's usePeople — GET /v1/people?q=&limit=. */
+     *  Mirrors chino-web's usePeople — GET /v1/people?q=&limit=. The search
+     *  asks it only of a server without [search]. */
     suspend fun searchPeople(q: String, limit: Int? = null): PeopleResponse =
         http.get("v1/people") {
             parameter("q", q)
@@ -594,10 +611,10 @@ data class PlayInfo(
     @SerialName("subtitle_tracks") val subtitleTracks: List<TrackInfo> = emptyList(),
 )
 
-/** One row of the People (cast & crew) search results. `credits` is the
- *  number of titles this person is credited on — rendered as "· N titles"
- *  (chino-api leaves it out when 0). Mirrors chino-web's PersonSummary
- *  field-for-field. */
+/** One row of the People (cast & crew) search results, from /v1/people and
+ *  /v1/search alike. `credits` is the number of titles this person is
+ *  credited on — rendered as "· N titles" (chino-api leaves it out when 0).
+ *  Mirrors chino-web's PersonSummary field-for-field. */
 @Serializable
 data class Person(
     val id: String,
@@ -608,12 +625,25 @@ data class Person(
     /** chino-api's portrait proxy, "/api/v1/people/{id}/profile" — set only
      *  with [hasProfile]; loads like a poster ([artworkUrl]). */
     @SerialName("profile_url") val profileUrl: String? = null,
+    /** On /v1/search only: how the name matched the query — exact, prefix,
+     *  words, alternative (another name they are known by) or similar.
+     *  Nothing shows it. */
+    val match: String? = null,
 )
 
 @Serializable
 data class PeopleResponse(
     val people: List<Person> = emptyList(),
     val total: Int = 0,
+)
+
+/** GET /v1/search: [items] in the order to show them, best first — films and
+ *  series ranked together, each as the lists send it, with [Item.match] — and
+ *  [people] ranked apart, as /v1/people sends them, with [Person.match]. */
+@Serializable
+data class SearchResponse(
+    val items: List<Item> = emptyList(),
+    val people: List<Person> = emptyList(),
 )
 
 /**

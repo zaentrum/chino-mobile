@@ -74,7 +74,29 @@ data class Item(
      *  roles on this title, in the catalog's credit order (["actor",
      *  "director"]). Named by [formatRoles]. */
     val roles: List<String> = emptyList(),
+    /** On a search's titles (GET /v1/search) only: how the title matched the
+     *  query — exact, prefix, words, alternative, similar or plot. Nothing
+     *  shows it: the search shows the server's order as it is. */
+    val match: String? = null,
+    /** On an episode a search found only: its series. No search asks for
+     *  episodes yet ([cloud.nalet.chino.mobile.ui.search.SEARCH_TYPES]). */
+    val series: SearchSeries? = null,
 ) : FileMember
+
+/**
+ * The series of an episode a search found (GET /v1/search), as chino-api
+ * sends it: its id and title, its poster (server-relative, as [Item.posterUrl]
+ * is) and [matched]. Every field has a default, so a series short of one never
+ * fails the search it came with.
+ */
+@Serializable
+data class SearchSeries(
+    val id: String = "",
+    val title: String = "",
+    /** The series matched the query by its own title in the same search. */
+    val matched: Boolean = false,
+    @SerialName("poster_url") val posterUrl: String? = null,
+)
 
 @Serializable
 data class Subtitle(
