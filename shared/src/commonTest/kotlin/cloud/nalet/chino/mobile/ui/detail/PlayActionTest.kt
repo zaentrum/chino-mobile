@@ -17,10 +17,13 @@ class PlayActionTest {
     }
 
     @Test
-    fun aTitleSavedInItsLastMinuteIsStartedOverNotResumed() {
-        // 3:59 of a 4:30 clip (the bug): the player starts it over.
-        assertEquals(PlayAction.StartOver, playAction(savedSec = 239, durationSec = 270.0))
-        assertEquals(PlayAction.StartOver, playAction(savedSec = 5340, durationSec = 5400.0))
+    fun aFinishedTitleIsPlayedFromTheStartNeitherResumedNorStartedOver() {
+        // chino-api gives a title the viewer finished no resume point: 0.
+        assertEquals(PlayAction.Play, playAction(savedSec = 0, durationSec = 5400.0))
+        // A position in the last minute (an older chino-api's): the player
+        // starts it from the top, and the button says Play.
+        assertEquals(PlayAction.Play, playAction(savedSec = 239, durationSec = 270.0))
+        assertEquals(PlayAction.Play, playAction(savedSec = 5340, durationSec = 5400.0))
         assertEquals(PlayAction.Resume(5339), playAction(savedSec = 5339, durationSec = 5400.0))
     }
 

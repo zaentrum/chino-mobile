@@ -677,9 +677,6 @@ private fun ActionRow(
                 )
                 PillButton(label = "Start over", icon = null, primary = false, onClick = onStartOver)
             }
-            playAction == PlayAction.StartOver -> {
-                PillButton(label = "Start over", icon = Lucide.Play, primary = true, onClick = onStartOver)
-            }
             else -> {
                 PillButton(label = "Play", icon = Lucide.Play, primary = true, onClick = onPlay)
             }

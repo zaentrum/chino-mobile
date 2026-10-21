@@ -68,12 +68,14 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
             )
         }
         screenModelScope.launch {
-            // Stamp progress at the end (web's "dismiss" path) so the CW query
-            // drops the row WITHOUT marking a part-watched item fully WATCHED
-            // (postWatched would add a green badge + drop it from Zap). Fall
-            // back to postWatched only when the duration is unknown.
+            // Stamp progress at the end, as a dismiss (web's "dismiss" path),
+            // so the CW query drops the row - a finished one - WITHOUT marking
+            // a part-watched item fully WATCHED: chino-api marks a title saved
+            // at its end watched but for a dismiss, and postWatched would add
+            // a green badge + drop it from Zap. Fall back to postWatched only
+            // when the duration is unknown.
             runCatching {
-                if (dur > 0) container.chinoApi.postProgress(id, ProgressBody(positionSec = dur, durationSec = dur))
+                if (dur > 0) container.chinoApi.postProgress(id, ProgressBody(positionSec = dur, durationSec = dur, dismiss = true))
                 else container.chinoApi.postWatched(id)
             }
             // Refetch the CW feed so Next Up substitutions land and the

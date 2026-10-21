@@ -738,6 +738,10 @@ data class ProgressResponse(
 data class ProgressBody(
     @SerialName("position_sec") val positionSec: Int,
     @SerialName("duration_sec") val durationSec: Int,
+    /** Taking the title off Continue Watching: saved at its end, but not
+     *  marked watched - chino-api marks a title saved there watched
+     *  otherwise. Sent only when true (ChinoJson leaves defaults out). */
+    val dismiss: Boolean = false,
 )
 
 @Serializable
