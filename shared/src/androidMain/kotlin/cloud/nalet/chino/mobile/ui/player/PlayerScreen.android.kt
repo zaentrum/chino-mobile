@@ -234,7 +234,11 @@ actual class PlayerScreen actual constructor(
         BackHandler(enabled = true, onBack = close)
 
         var ready: PlayState? by remember { mutableStateOf(null) }
-        var error: String? by remember { mutableStateOf(null) }
+        // Stopped for good, and why (PlaybackFailure.kt); "try again" starts
+        // the title once more where it stopped ([retryAtSec]).
+        var stop: PlaybackStop? by remember { mutableStateOf(null) }
+        var attempt by remember { mutableStateOf(0) }
+        var retryAtSec by remember { mutableStateOf(-1) }
         // A download that may not play: the server took it off the phone, or
         // it waits for the server's check (downloads/DownloadedPlayback.kt).
         var downloadNote: String? by remember { mutableStateOf(null) }
@@ -252,9 +256,13 @@ actual class PlayerScreen actual constructor(
         // answers 404 (at the load, or once playing).
         var notAvailable: ExtraPlayback.NotAvailable? by remember { mutableStateOf(null) }
         val appContext = LocalContext.current.applicationContext
-        LaunchedEffect(itemId, fromStart, resumeSec, extraId) {
+        LaunchedEffect(itemId, fromStart, resumeSec, extraId, attempt) {
             ready = null
-            error = null
+            stop = null
+            // Tried again after it stopped: where it stopped, as a hand-off
+            // says where to start.
+            val resumeSec = if (retryAtSec > 1) retryAtSec else this@PlayerScreen.resumeSec
+            val fromStart = this@PlayerScreen.fromStart && retryAtSec <= 1
             downloadNote = null
             notAvailable = null
             castStart = null
@@ -499,7 +507,8 @@ actual class PlayerScreen actual constructor(
                     ready = downloadedPlayState(here.session, itemId, container.config.apiBaseUrl.trimEnd('/'), CodecCaps.queryParam(appContext), container.settings.flow.first(), container.subtitleLanguages.current)
                     container.toasts.tryEmit(Toast(playingHereToast(device), ToastKind.Information))
                 } else {
-                    error = "Playback failed: ${e.message ?: e::class.simpleName.orEmpty()}"
+                    // The reason in words; the status under details.
+                    stop = PlaybackStop(e.playbackFailure(), e.playbackDetails())
                 }
             }
         }
@@ -521,7 +530,18 @@ actual class PlayerScreen actual constructor(
         when {
             note != null -> DownloadNotPlaying(message = note, onBack = close)
             missing != null -> ExtraNotAvailable(title = missing.title, link = missing.link, onBack = close)
-            error != null -> ErrorState(message = error!!, itemId = itemId, extraId = extraId, onBack = close)
+            stop != null -> ErrorState(
+                stop = stop!!,
+                itemId = itemId,
+                extraId = extraId,
+                onBack = close,
+                onTryAgain = {
+                    stop?.atMs?.takeIf { it >= 0 }?.let { retryAtSec = (it / 1000L).toInt() }
+                    ready = null
+                    stop = null
+                    attempt += 1
+                },
+            )
             ready == null -> LoadingState()
             // The title starts on the TV. Once it plays there, this player
             // closes; if it can't, or casting stops first, it stands here
@@ -571,7 +591,7 @@ actual class PlayerScreen actual constructor(
                     // doesn't pile up sibling episodes in the stack.
                     nav.replace(PlayerScreen(itemId = newId, fromStart = true))
                 },
-                onPlaybackError = { error = it },
+                onPlaybackError = { stop = it },
                 onExtraMissing = {
                     val extra = ready?.extra
                     notAvailable = ExtraPlayback.NotAvailable(title = extra?.item?.title, link = extra?.link)
@@ -797,6 +817,24 @@ private fun subtitleMenuOf(tracks: List<SubtitleTrack>, subtitlePref: String, se
         picture = { it.image },
     )
 
+/** Why playback stopped for good, in the design system's cases: the answer's
+ *  status where the server gave one; no answer for a connection that dropped
+ *  or ran out of time; this device for what its decoders or its audio can't
+ *  play; the server for a stream that can't be read. */
+private fun playbackFailureOf(e: androidx.media3.common.PlaybackException): PlaybackFailure {
+    (e.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.let { return playbackFailureOf(it.responseCode) }
+    return when (e.errorCode) {
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        androidx.media3.common.PlaybackException.ERROR_CODE_TIMEOUT,
+        -> PlaybackFailure.NoAnswer
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> PlaybackFailure.ServerProblem
+        in 3000..3999 -> PlaybackFailure.ServerProblem
+        in 4000..6999 -> PlaybackFailure.NotOnThisDevice
+        else -> PlaybackFailure.Stopped
+    }
+}
+
 /** Why a failure made the player step down, as its notice says it: a load
  *  that ran out of time or a connection that dropped is a connection that
  *  can't keep up; anything else - an error answer, what came not playable -
@@ -872,50 +910,67 @@ private fun DownloadNotPlaying(message: String, onBack: () -> Unit) {
 
 /** Terminal playback failure — both the prepare-time catch and Media3's
  *  onPlayerError land here (the auto bug report has already fired by then).
- *  Web parity (PlayerPage.tsx terminal-error overlay): a secondary "Report
- *  a bug" opens the manual dialog pre-filled with the technical error
- *  string so the user can add what they were doing. Tap anywhere else
- *  still backs out, exactly as before. [extraId] is the extra that failed,
- *  in extra mode. */
+ *  The design system's couldn't-load screen: what couldn't happen ("couldn't
+ *  play this title"), why in words by cause ([PlaybackFailure.sentence]),
+ *  "try again" where it can help - else "back" - and the engine's code or
+ *  the answer's status under "details", never as the message. A quiet
+ *  "back", and "Report a bug" where the server takes reports, pre-filled
+ *  with the details. [extraId] is the extra that failed, in extra mode. */
 @Composable
-private fun ErrorState(message: String, itemId: String, extraId: String?, onBack: () -> Unit) {
+private fun ErrorState(stop: PlaybackStop, itemId: String, extraId: String?, onBack: () -> Unit, onTryAgain: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val device = cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind.current
+    val sentence = stop.failure.sentence(device)
     // Same choreography as Settings: capture the screenshot BEFORE the
     // dialog mounts (a dialog over the screen would only photograph
     // itself); non-null draft = dialog open. Plain holder class, not
     // data — ByteArray equality is identity anyway.
     var bugDraft by remember { mutableStateOf<PlayerBugDraft?>(null) }
-    Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onBack),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-            modifier = Modifier.padding(horizontal = 24.dp),
-        ) {
-            Text(text = message, color = MaterialTheme.colorScheme.error)
-            // Secondary action styled like web's bg-white/10 pill - where the
-            // server takes reports (features.feedback), as in Settings.
-            val features by LocalAppContainer.current.serverReach.features.collectAsState()
-            if (features?.feedback == true) Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0x1AFFFFFF))
-                    .clickable {
-                        scope.launch {
-                            bugDraft = PlayerBugDraft(
-                                screenshot = runCatching {
-                                    cloud.nalet.chino.mobile.feedback.captureScreenshot()
-                                }.getOrNull(),
-                            )
+    val retries = stop.failure.canTryAgain
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        cloud.nalet.chino.mobile.ui.components.CouldntLoad(
+            title = COULDNT_PLAY_TITLE,
+            sentence = sentence,
+            action = if (retries) "try again" else "back",
+            onAction = if (retries) onTryAgain else onBack,
+            details = stop.details,
+            extra = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (retries) {
+                        Box(
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .clickable(onClick = onBack)
+                                .semantics { role = androidx.compose.ui.semantics.Role.Button }
+                                .padding(horizontal = 16.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(text = "back", color = Color.White, style = cloud.nalet.chino.mobile.ui.theme.ChinoMono)
                         }
                     }
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
-            ) {
-                Text(text = "Report a bug", color = Color.White, fontSize = 14.sp)
-            }
-        }
+                    // Where the server takes reports (features.feedback), as in Settings.
+                    val features by LocalAppContainer.current.serverReach.features.collectAsState()
+                    if (features?.feedback == true) Box(
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .clickable {
+                                scope.launch {
+                                    bugDraft = PlayerBugDraft(
+                                        screenshot = runCatching {
+                                            cloud.nalet.chino.mobile.feedback.captureScreenshot()
+                                        }.getOrNull(),
+                                    )
+                                }
+                            }
+                            .semantics { role = androidx.compose.ui.semantics.Role.Button }
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = "Report a bug", color = Color.White, fontSize = 14.sp)
+                    }
+                }
+            },
+        )
         bugDraft?.let { draft ->
             BugReportDialog(
                 screenshot = draft.screenshot,
@@ -923,7 +978,7 @@ private fun ErrorState(message: String, itemId: String, extraId: String?, onBack
                 // Same pre-fill template as web's player → BugReportDialog
                 // hand-off (PlayerPage.tsx L3494).
                 initialDescription = "Playback failed while watching this item." +
-                    "\n\n--- technical details ---\n$message",
+                    "\n\n--- technical details ---\n$sentence\n${stop.details}",
                 onDismiss = { bugDraft = null },
             )
         }
@@ -974,7 +1029,7 @@ private fun PlaybackSurface(
     onBack: () -> Unit,
     onHome: () -> Unit,
     onSwitchItem: (String) -> Unit,
-    onPlaybackError: (String) -> Unit,
+    onPlaybackError: (PlaybackStop) -> Unit,
     /** The extra's master answered 404 once playing (extra mode). */
     onExtraMissing: () -> Unit,
     /** Playback reached the end of what closes there ([PlayerMode.closesAtEnd]). */
@@ -1419,11 +1474,14 @@ private fun PlaybackSurface(
                         screenshot = shot,
                     )
                 }
-                // The missing manifest in plain language; anything else keeps
-                // the engine error code for diagnostics.
+                // What happened in words, by cause; the engine's error code
+                // and the answer's status under details.
                 onPlaybackError(
-                    if (manifestMissing) "This title isn't available to stream yet."
-                    else "Playback failed: ${e.errorCodeName}${e.message?.let { " — $it" } ?: ""}",
+                    PlaybackStop(
+                        failure = if (manifestMissing) PlaybackFailure.NotYetAvailable else playbackFailureOf(e),
+                        details = listOfNotNull(e.errorCodeName, http?.let { "HTTP ${it.responseCode}" }).joinToString(" · "),
+                        atMs = player.currentPosition.coerceAtLeast(0L),
+                    ),
                 )
             }
         }
