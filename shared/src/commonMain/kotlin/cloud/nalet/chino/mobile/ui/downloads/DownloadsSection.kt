@@ -47,6 +47,9 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -284,25 +287,37 @@ private fun DownloadRow(entry: DownloadEntry, downloads: Downloads, onPlay: () -
                 title.item.title
             }
             Text(text = name, color = Color.White, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = statusLabel(status),
-                    color = when (status) {
-                        is DownloadStatus.Failed -> ChinoRed
-                        is DownloadStatus.Downloaded -> ChinoGreen
-                        is DownloadStatus.Downloading -> ChinoCloudBlue
-                        else -> ChinoMuted
-                    },
-                    fontSize = 12.sp,
-                    style = ChinoMono,
-                )
-                // On its way: what it will take, as the server said. Not for
-                // one that stopped: the reason says it, and a size beside it
-                // would read as if that much were kept.
-                if (status !is DownloadStatus.Downloaded && status !is DownloadStatus.CheckNeeded && status !is DownloadStatus.Failed) {
-                    entry.size?.let { Text(text = formatSize(it), color = ChinoMuted, fontSize = 12.sp) }
-                }
-            }
+            // The status in the label face, and - on its way - what it will
+            // take, as the server said; one text, so that a long status
+            // ("waiting for a connection") wraps the size under it rather
+            // than squeeze it. Not for one that stopped: the reason says it,
+            // and a size beside it would read as if that much were kept.
+            val mono = ChinoMono
+            val size = entry.size
+                ?.takeIf { status !is DownloadStatus.Downloaded && status !is DownloadStatus.CheckNeeded && status !is DownloadStatus.Failed }
+                ?.let(::formatSize)
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(
+                        SpanStyle(
+                            color = when (status) {
+                                is DownloadStatus.Failed -> ChinoRed
+                                is DownloadStatus.Downloaded -> ChinoGreen
+                                is DownloadStatus.Downloading -> ChinoCloudBlue
+                                else -> ChinoMuted
+                            },
+                            fontFamily = mono.fontFamily,
+                            letterSpacing = mono.letterSpacing,
+                        ),
+                    ) { append(statusLabel(status)) }
+                    if (size != null) {
+                        append("  ")
+                        withStyle(SpanStyle(color = ChinoMuted)) { append(size) }
+                    }
+                },
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+            )
             (status as? DownloadStatus.Downloading)?.let { d ->
                 Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(ChinoBorder)) {
                     Box(modifier = Modifier.fillMaxWidth(d.percent / 100f).height(2.dp).background(ChinoCloudBlue))
