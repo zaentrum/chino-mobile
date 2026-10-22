@@ -193,7 +193,7 @@ fun SettingsSection() {
             // preview row + a text-only report.
             ActionRow(
                 label = "Report a bug",
-                subtitle = "Send a description + screenshot to the dev backlog",
+                subtitle = "Send a description and a screenshot to the people who run this server",
                 onClick = {
                     scope.launch {
                         bugReportDraft = BugReportDraft(screenshot = captureScreenshot())

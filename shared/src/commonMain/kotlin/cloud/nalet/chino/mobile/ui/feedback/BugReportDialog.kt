@@ -178,7 +178,7 @@ fun BugReportDialog(
                     )
                 }
                 Text(
-                    text = "Thanks — the report landed on the dev backlog.",
+                    text = "Thanks — the report reached the people who run this server.",
                     color = ChinoMuted,
                     fontSize = 13.sp,
                 )
