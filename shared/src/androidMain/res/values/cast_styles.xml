@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app's activity theme (androidApp's Theme.ChinoMobile is one):
+         AppCompat, which Google's Cast widgets and the device chooser are
+         built on; the bar's style; the MediaRouter's theme for the Cast
+         button and its dialogs. The Compose screens draw everything else. -->
+    <style name="Theme.Chino.Cast" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/chino_cast_bg</item>
+        <item name="colorPrimary">@color/chino_cast_surface</item>
+        <item name="colorPrimaryDark">@color/chino_cast_bg</item>
+        <item name="colorAccent">@color/chino_cast_cloud_blue</item>
+        <item name="castMiniControllerStyle">@style/Widget.Chino.CastMiniController</item>
+        <item name="mediaRouteTheme">@style/Theme.Chino.MediaRouter</item>
+    </style>
+
+    <!-- The full controls' activity. -->
+    <style name="Theme.Chino.CastExpandedControls" parent="Theme.Chino.Cast">
+        <item name="castExpandedControllerStyle">@style/Widget.Chino.CastExpandedController</item>
+        <item name="castExpandedControllerToolbarStyle">@style/ThemeOverlay.Chino.CastToolbar</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <!-- The bar: Google's mini controller on surface, the title in fg, the
+         device line in fg-muted, the position and play or pause in our
+         colours; a poster's shape for the thumbnail (cast_dimens). -->
+    <style name="Widget.Chino.CastMiniController" parent="CastMiniController">
+        <item name="castShowImageThumbnail">true</item>
+        <item name="castTitleTextAppearance">@style/TextAppearance.Chino.CastBar.Title</item>
+        <item name="castSubtitleTextAppearance">@style/TextAppearance.Chino.CastBar.Device</item>
+        <item name="castBackground">@color/chino_cast_surface</item>
+        <item name="castProgressBarColor">@color/chino_cast_cloud_blue</item>
+        <item name="castMiniControllerLoadingIndicatorColor">@color/chino_cast_cloud_blue</item>
+        <item name="castButtonColor">@color/chino_cast_button</item>
+    </style>
+
+    <style name="TextAppearance.Chino.CastBar.Title" parent="TextAppearance.CastMiniController.Title">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/chino_cast_fg</item>
+    </style>
+
+    <style name="TextAppearance.Chino.CastBar.Device" parent="TextAppearance.CastMiniController.Subtitle">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/chino_cast_fg_muted</item>
+    </style>
+
+    <!-- The full controls: Google's expanded controller on bg, its buttons
+         in fg, the seek bar in cloud-blue; subtitles and audio, back and
+         forward 10 s and stop casting in its four slots. A label on a blue
+         fill (an ad's, which this app never shows) is dark. -->
+    <style name="Widget.Chino.CastExpandedController" parent="CastExpandedController">
+        <item name="castControlButtons">@array/chino_cast_expanded_controller_buttons</item>
+        <item name="castButtonColor">@color/chino_cast_button</item>
+        <item name="castSeekBarProgressAndThumbColor">@color/chino_cast_cloud_blue</item>
+        <item name="castSeekBarSecondaryProgressColor">@color/chino_cast_buffered</item>
+        <item name="castSeekBarUnseekableProgressColor">@color/chino_cast_border_2</item>
+        <item name="castSeekBarTooltipBackgroundColor">@color/chino_cast_surface_2</item>
+        <item name="castExpandedControllerLoadingIndicatorColor">@color/chino_cast_cloud_blue</item>
+        <item name="castLiveIndicatorColor">@color/chino_cast_cloud_blue</item>
+        <item name="castAdBreakMarkerColor">@color/chino_cast_cloud_blue</item>
+        <item name="castAdLabelColor">@color/chino_cast_cloud_blue</item>
+        <item name="castAdLabelTextColor">@color/chino_cast_bg</item>
+        <item name="castAdInProgressTextColor">@color/chino_cast_fg</item>
+    </style>
+
+    <!-- The full controls' toolbar: the title in fg, the subtitle in
+         fg-muted, Up and the Cast button in fg. -->
+    <style name="ThemeOverlay.Chino.CastToolbar" parent="ThemeOverlay.AppCompat.Dark.ActionBar">
+        <item name="android:textColorPrimary">@color/chino_cast_fg</item>
+        <item name="android:textColorSecondary">@color/chino_cast_fg_muted</item>
+        <item name="colorControlNormal">@color/chino_cast_fg</item>
+        <item name="mediaRouteTheme">@style/Theme.Chino.MediaRouter</item>
+    </style>
+
+    <!-- Google's Cast button - its icon and states - in fg. -->
+    <style name="Widget.Chino.MediaRouteButton" parent="Widget.MediaRouter.MediaRouteButton">
+        <item name="mediaRouteButtonTint">@color/chino_cast_fg</item>
+    </style>
+
+    <!-- Google's device chooser and its dialog while casting: on surface,
+         text in fg and fg-muted, its actions and sliders in cloud-blue, square. -->
+    <style name="Theme.Chino.MediaRouter" parent="Theme.MediaRouter">
+        <item name="mediaRouteButtonStyle">@style/Widget.Chino.MediaRouteButton</item>
+        <item name="colorPrimary">@color/chino_cast_surface</item>
+        <item name="colorPrimaryDark">@color/chino_cast_bg</item>
+        <item name="colorAccent">@color/chino_cast_cloud_blue</item>
+        <item name="android:colorBackground">@color/chino_cast_surface</item>
+        <item name="android:textColorPrimary">@color/chino_cast_fg</item>
+        <item name="android:textColorSecondary">@color/chino_cast_fg_muted</item>
+        <item name="dialogCornerRadius">0dp</item>
+    </style>
+</resources>

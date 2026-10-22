@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The full controls' scrim behind the toolbar (the Cast framework's
+     drawable of this name, black there): bg, fading down into the artwork. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="90"
+        android:endColor="@color/chino_cast_bg"
+        android:startColor="#000B0F19"
+        android:type="linear" />
+</shape>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Our words while casting (the design system's casting pattern):
+         "playing on {device}" and "stop casting". The Cast framework's own
+         strings of these names - the full controls' line and the
+         notification's - say them too. -->
+    <string name="cast_casting_to_device">playing on %1$s</string>
+    <string name="cast_disconnect">stop casting</string>
+    <string name="chino_cast_stop_casting" translatable="false">stop casting</string>
+</resources>

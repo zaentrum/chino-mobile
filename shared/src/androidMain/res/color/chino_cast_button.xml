@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A Cast widget's buttons: fg; cloud-blue while active (pressed, on);
+     fg-dim while they can't be used. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:color="@color/chino_cast_fg_dim" />
+    <item android:state_pressed="true" android:color="@color/chino_cast_cloud_blue" />
+    <item android:state_activated="true" android:color="@color/chino_cast_cloud_blue" />
+    <item android:state_selected="true" android:color="@color/chino_cast_cloud_blue" />
+    <item android:state_checked="true" android:color="@color/chino_cast_cloud_blue" />
+    <item android:color="@color/chino_cast_fg" />
+</selector>

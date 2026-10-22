@@ -1,2 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Google Cast: the framework's options - the Default Media
+             Receiver, the full controls, the notification (cast/). -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="cloud.nalet.chino.mobile.cast.ChinoCastOptionsProvider" />
+
+        <!-- The full controls while casting, opened from the bar and the
+             notification. -->
+        <activity
+            android:name="cloud.nalet.chino.mobile.cast.CastExpandedControlsActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Chino.CastExpandedControls" />
+    </application>
+</manifest>

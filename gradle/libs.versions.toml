@@ -16,6 +16,19 @@ androidDatastore = "1.1.1"
 androidBrowser = "1.8.0"
 appauth = "0.11.1"
 media3 = "1.5.1"
+# Google Cast sender: the Cast framework (session, Cast button, mini and
+# expanded controllers, notification), the MediaRouter it discovers devices
+# with (a stable release above the pre-release the framework names),
+# AppCompat for the themes its widgets and dialogs require, and
+# fragment-compose to host the mini controller fragment in Compose.
+playServicesCast = "22.3.1"
+mediarouter = "1.8.1"
+appcompat = "1.7.1"
+fragmentCompose = "1.8.9"
+# The real org.json on the JVM unit tests' classpath: the Cast SDK's
+# MediaInfo carries its custom data as a JSONObject, which android.jar only
+# stubs.
+orgJson = "20250517"
 
 coilNetwork = "3.0.4"
 
@@ -96,6 +109,13 @@ media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp"
 media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3" }
 media3-database = { module = "androidx.media3:media3-database", version.ref = "media3" }
 media3-extractor = { module = "androidx.media3:media3-extractor", version.ref = "media3" }
+
+# Google Cast sender (see the versions above).
+play-services-cast-framework = { module = "com.google.android.gms:play-services-cast-framework", version.ref = "playServicesCast" }
+androidx-mediarouter = { module = "androidx.mediarouter:mediarouter", version.ref = "mediarouter" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
+androidx-fragment-compose = { module = "androidx.fragment:fragment-compose", version.ref = "fragmentCompose" }
+org-json = { module = "org.json:json", version.ref = "orgJson" }
 
 # androidTest stack — added to androidUnitTest sourceSet of androidApp.
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }

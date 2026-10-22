@@ -19,3 +19,8 @@ internal val ChinoDim = Color(0xFF6E7787)        // nalet.fg-dim — hint text
 internal val ChinoCloudBlue = Color(0xFF58A6FF)  // nalet.accent — chevron + accent
 internal val ChinoGreen = Color(0xFF2EA043)      // signal green — watched / success
 internal val ChinoRed = Color(0xFFF85149)        // signal red — destructive / error
+// The design system's warning state (--state-warning, -bg, -border): a strip's
+// glyph and left edge, its fill and its frame.
+internal val ChinoWarning = Color(0xFFF2B233)
+internal val ChinoWarningBg = Color(0xFF24211A)
+internal val ChinoWarningBorder = Color(0xFF846B3B)
