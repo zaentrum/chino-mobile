@@ -14,6 +14,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.widget.ImageViewCompat
 import cloud.nalet.chino.mobile.shared.R
 import com.google.android.gms.cast.framework.CastButtonFactory
+import com.google.android.gms.cast.framework.media.TracksChooserDialogFragment
 import com.google.android.gms.cast.framework.media.widget.ExpandedControllerActivity
 import com.google.android.gms.cast.framework.R as CastR
 
@@ -39,15 +40,29 @@ class CastExpandedControlsActivity : ExpandedControllerActivity() {
             }
         }
         bindSlots()
+        // The chooser the system brings back after a rotation is Google's,
+        // with the TV's own names: ours again in its place.
+        supportFragmentManager.findFragmentByTag(TRACKS_TAG)?.let { restored ->
+            supportFragmentManager.beginTransaction().remove(restored).commitNow()
+            showTracks()
+        }
     }
 
-    /** The custom slots of Widget.Chino.CastExpandedController's buttons:
-     *  1 back 10 s, 2 forward 10 s, 3 stop casting. */
+    /** Widget.Chino.CastExpandedController's buttons: 0 subtitles and audio
+     *  (Google's chooser, our names), 1 back 10 s, 2 forward 10 s, 3 stop
+     *  casting. */
     private fun bindSlots() {
         val controller = uiMediaController
         for (slot in 0 until buttonSlotCount) {
-            if (getButtonTypeAt(slot) != CastR.id.cast_button_type_custom) continue
             val view = getButtonImageViewAt(slot)
+            if (getButtonTypeAt(slot) == CastR.id.cast_button_type_closed_caption) {
+                // Google's button, there when the TV offers a choice; it
+                // opens the chooser with the subtitles named as the app
+                // names them.
+                view.setOnClickListener { showTracks() }
+                continue
+            }
+            if (getButtonTypeAt(slot) != CastR.id.cast_button_type_custom) continue
             when (slot) {
                 1 -> {
                     slotIcon(view, R.drawable.chino_cast_replay_10, getString(R.string.chino_cast_back_10))
@@ -63,6 +78,25 @@ class CastExpandedControlsActivity : ExpandedControllerActivity() {
                 }
             }
         }
+    }
+
+    /** Google's chooser of the TV's subtitles and audio, its subtitles named
+     *  as the phone's menus name them ([withSubtitleNames]): the TV's own
+     *  names are the master's ("English SDH"). The chooser turns on what is
+     *  picked by the tracks' ids, which the names leave as they are. */
+    private fun showTracks() {
+        val client = uiMediaController.remoteMediaClient ?: return
+        val info = client.mediaInfo ?: return
+        if (!client.hasMediaSession() || supportFragmentManager.isStateSaved) return
+        supportFragmentManager.findFragmentByTag(TRACKS_TAG)?.let {
+            supportFragmentManager.beginTransaction().remove(it).commitNow()
+        }
+        val active = client.mediaStatus?.activeTrackIds ?: LongArray(0)
+        // The one way to hand it names of our own; it reads the TV's tracks
+        // itself otherwise.
+        @Suppress("DEPRECATION")
+        val chooser = TracksChooserDialogFragment.newInstance(info.withSubtitleNames(), active)
+        chooser.show(supportFragmentManager, TRACKS_TAG)
     }
 
     private fun slotIcon(view: ImageView, icon: Int, name: String) {
@@ -82,5 +116,8 @@ class CastExpandedControlsActivity : ExpandedControllerActivity() {
     private companion object {
         /** Back and forward: 10 seconds. */
         const val SKIP_MS = 10_000L
+
+        /** The chooser of the TV's tracks, as Google's button tags it. */
+        const val TRACKS_TAG = "TRACKS_CHOOSER_DIALOG_TAG"
     }
 }

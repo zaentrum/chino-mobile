@@ -3,12 +3,14 @@ package cloud.nalet.chino.mobile.cast
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.ui.player.HlsMaster
 import cloud.nalet.chino.mobile.ui.player.MasterSubtitle
+import cloud.nalet.chino.mobile.ui.player.SubtitleLabelInput
 import cloud.nalet.chino.mobile.ui.player.autoSubtitleTrack
 import cloud.nalet.chino.mobile.ui.player.isSdhSubtitle
 import cloud.nalet.chino.mobile.ui.player.languageTag
 import cloud.nalet.chino.mobile.ui.player.normalizeLang
 import cloud.nalet.chino.mobile.ui.player.sameSubtitleKey
 import cloud.nalet.chino.mobile.ui.player.sidecarForced
+import cloud.nalet.chino.mobile.ui.player.subtitleLabels
 
 /*
  * Which audio and which subtitle the TV plays. The Default Media Receiver
@@ -122,6 +124,20 @@ fun castActiveTracks(tracks: List<TvTrack>, active: List<Long>, wish: CastTrackW
     val kept = tracks.filter { it.id in now && it.type != TvTrackType.Audio && it.type != TvTrackType.Text }.map { it.id }
     val want = kept + listOfNotNull(picks.audio?.id, picks.text?.id)
     return want.takeIf { it.toSet() != now }
+}
+
+/**
+ * What the phone's chooser of the TV's tracks calls each of the TV's
+ * subtitles, by id: what the phone's own menus call a subtitle
+ * ([subtitleLabels]) - the language, then the kind in words - whatever the
+ * master's NAME says ("English SDH" is "English · for deaf and hard of
+ * hearing", "German (forced)" "German · foreign-language parts only"). Audio
+ * and video keep their names.
+ */
+fun tvSubtitleNames(tracks: List<TvTrack>): Map<Long, String> {
+    val text = tracks.filter { it.type == TvTrackType.Text }
+    val labels = subtitleLabels(text.map { SubtitleLabelInput(it.language, it.name, it.forced, it.sdh) })
+    return text.mapIndexed { i, t -> t.id to labels[i] }.toMap()
 }
 
 /**

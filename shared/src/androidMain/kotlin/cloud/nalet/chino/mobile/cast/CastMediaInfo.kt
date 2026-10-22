@@ -169,6 +169,29 @@ internal fun MediaTrack.toTvTrack(): TvTrack = TvTrack(
     sdh = isSdhSubtitle(name),
 )
 
+/** The TV's tracks of [this] media, its subtitles named as the phone names a
+ *  subtitle ([tvSubtitleNames]): what the chooser of the TV's tracks lists.
+ *  Nothing else of the media is in it. */
+internal fun MediaInfo.withSubtitleNames(): MediaInfo {
+    val tracks = mediaTracks.orEmpty()
+    val names = tvSubtitleNames(tracks.map { it.toTvTrack() })
+    return MediaInfo.Builder(contentId.orEmpty())
+        .setStreamType(streamType)
+        .setMediaTracks(tracks.map { t -> names[t.id]?.let { t.named(it) } ?: t })
+        .build()
+}
+
+private fun MediaTrack.named(name: String): MediaTrack =
+    MediaTrack.Builder(id, type)
+        .setSubtype(subtype)
+        .setName(name)
+        .setLanguage(language)
+        .setContentId(contentId)
+        .setContentType(contentType)
+        .setRoles(roles)
+        .setCustomData(customData)
+        .build()
+
 /** [tag] as the media's custom data:
  *  `{"chino": {item, extra, owner, progress, load, exp}}`. */
 internal fun castTagJson(tag: CastTag): JSONObject =

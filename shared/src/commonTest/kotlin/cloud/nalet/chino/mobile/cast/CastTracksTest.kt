@@ -180,6 +180,30 @@ class CastTracksTest {
     }
 
     @Test
+    fun theTvsSubtitlesAreNamedAsThePhonesMenusNameThem() {
+        val tv = listOf(
+            video,
+            en51,
+            masterEn,
+            masterEnForced,
+            TvTrack(7, TvTrackType.Text, "en", "English · SDH", sdh = true),
+            TvTrack(8, TvTrackType.Text, "zh-Hans", null),
+            // One the phone side-loaded: named by the phone already.
+            TvTrack(1001, TvTrackType.Text, "de", "German · foreign-language parts only", forced = true, sidecarId = "s4"),
+        )
+        assertEquals(
+            mapOf(
+                5L to "English",
+                6L to "English · foreign-language parts only",
+                7L to "English · for deaf and hard of hearing",
+                8L to "Chinese (Simplified)",
+                1001L to "German · foreign-language parts only",
+            ),
+            tvSubtitleNames(tv),
+        )
+    }
+
+    @Test
     fun aSidecarTheMasterCarriesIsLeftToTheMaster() {
         fun sub(id: String, lang: String, label: String? = null, forced: Boolean = false) =
             SidecarSubtitle(id = id, lang = lang, label = label, url = "https://media.example.com/api/v1/play/subs/$id.vtt", forced = forced)

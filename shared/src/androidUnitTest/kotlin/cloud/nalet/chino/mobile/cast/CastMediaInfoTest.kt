@@ -196,6 +196,27 @@ class CastMediaInfoTest {
     }
 
     @Test
+    fun theChooserOfTheTvsTracksListsItsSubtitlesNamedAsThePhoneNamesThem() {
+        val tracks = listOf(
+            MediaTrack.Builder(2, MediaTrack.TYPE_AUDIO).setLanguage("en").setName("English 5.1").build(),
+            MediaTrack.Builder(5, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English SDH").build(),
+            MediaTrack.Builder(6, MediaTrack.TYPE_TEXT).setLanguage("de").setName("German").setRoles(listOf(MediaTrack.ROLE_FORCED_SUBTITLE)).build(),
+            MediaTrack.Builder(7, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English").build(),
+        )
+        val info = MediaInfo.Builder("m1").setStreamType(MediaInfo.STREAM_TYPE_BUFFERED).setMediaTracks(tracks).build()
+        val named = info.withSubtitleNames().mediaTracks.orEmpty()
+        assertEquals(listOf(2L, 5L, 6L, 7L), named.map { it.id })
+        assertEquals(
+            listOf("English 5.1", "English · for deaf and hard of hearing", "German · foreign-language parts only", "English"),
+            named.map { it.name },
+        )
+        assertEquals(listOf("en", "en", "de", "en"), named.map { it.language })
+        assertEquals(listOf(null, null, listOf(MediaTrack.ROLE_FORCED_SUBTITLE), null), named.map { it.roles })
+        // The TV's own media stays as the TV reported it.
+        assertEquals("English SDH", info.mediaTracks.orEmpty()[1].name)
+    }
+
+    @Test
     fun aFilmsMetadataIsItsTitleAndArtwork() {
         val sink = Sink()
         media().metadata.writeTo(sink)
