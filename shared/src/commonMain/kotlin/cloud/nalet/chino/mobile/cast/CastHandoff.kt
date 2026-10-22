@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.cast
 import cloud.nalet.chino.mobile.data.api.ProgressResponse
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.ui.player.SESSION_MARGIN_MS
+import cloud.nalet.chino.mobile.ui.player.isSdhSubtitle
 import cloud.nalet.chino.mobile.ui.player.sidecarForced
 
 /*
@@ -68,7 +69,7 @@ fun handoffSubtitle(phoneKey: String?, sidecars: List<SidecarSubtitle>, auto: Ca
         else -> null
     }
     val sidecar = id?.takeIf { it.isNotEmpty() }?.let { sid -> sidecars.firstOrNull { it.id == sid } } ?: return auto
-    return CastSubtitleStart.Sidecar(sidecar.id, sidecar.lang, sidecarForced(sidecar))
+    return CastSubtitleStart.Sidecar(sidecar.id, sidecar.lang, sidecarForced(sidecar), isSdhSubtitle(sidecar.label))
 }
 
 /**

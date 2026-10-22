@@ -175,8 +175,8 @@ class CastWidgetsInstrumentedTest {
             )
         }
         // Nothing plays on a TV: in the foreground for a moment, as a started
-        // foreground service must be, then gone by itself, its notification
-        // with it.
+        // foreground service must be, then - its grace over, nothing needing
+        // it - gone by itself, its notification with it.
         val services = context.getSystemService(ActivityManager::class.java)
         fun running(): Boolean =
             @Suppress("DEPRECATION")
@@ -185,7 +185,7 @@ class CastWidgetsInstrumentedTest {
             ContextCompat.startForegroundService(context, Intent(context, CastPlaybackService::class.java))
             assertTrue("started", running())
             val start = SystemClock.uptimeMillis()
-            while (running() && SystemClock.uptimeMillis() - start < 5_000) {
+            while (running() && SystemClock.uptimeMillis() - start < 25_000) {
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                 SystemClock.sleep(100)
             }

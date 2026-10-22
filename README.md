@@ -264,28 +264,41 @@ AirPlay instead.
   as its own player does: every 10 seconds while playing, at a pause, and as
   the title ends or casting stops — the last position the TV confirmed, the
   one the phone keeps, so Resume continues from there. chino-api decides
-  from it whether the title is finished. While the TV plays such a title a
-  foreground service of the media playback kind keeps the app running
-  (`CastPlaybackService`), so the writes go on with the phone locked or in
-  another app. Only the phone that cast a title writes it, and only for the
-  account it was cast for: the media carries a marker with this phone's
-  owner id of the account (`CastTag`), made at random and kept on the
-  phone, which names neither the account nor the server; a second phone
-  signed in to the same account writes nothing, nor does an extra.
+  from it whether the title is finished. While casting needs it - a load, a
+  recovery or a signing of the links anew under way, the TV's media the
+  phone's, a position on its way - a foreground service of the media
+  playback kind keeps the app running (`CastPlaybackService`), so the writes
+  go on with the phone locked or in another app. Android lets the app start
+  it only from the front: as a title is loaded, as a session is found with
+  the app open, as the app comes back with a title on the TV. A session the
+  app resumes in the background has it once the app is opened again; till
+  then the writes go on only while Android lets the app run. Only the phone
+  that cast a title writes it, and only for the account it was cast for: the
+  media carries a marker with this phone's owner id of the account
+  (`CastTag`), made at random and kept on the phone - never in a backup or a
+  transfer to a new phone - which names neither the account nor the server;
+  a second phone signed in to the same account writes nothing, nor does an
+  extra.
 - **Links that run out** — where the TV plays on after a long pause, or in a
   resumed session, with less life left in its links than it still has to
-  play, the phone loads the title again where it is, its links signed anew,
-  its tracks and play or pause kept.
+  play - and a new token makes them last meaningfully longer - the phone
+  loads the title again where it is, its links signed anew, its tracks kept,
+  playing or paused as it is meant to. Should that fail, it is a title that
+  failed (below).
 - **When the TV can't play a title** — the phone first loads it once more,
-  its links signed anew, unless the TV cannot decode it or has no screen.
-  Then "Living Room TV can't play this title." in the design system's
-  warning strip, with the reason under details: the status the server gave
-  the phone for the TV's master, read as the design system reads a status
-  (the server's problem, busy, no stream of the title, no access, the TV's
-  link turned down, no answer), else the receiver's code (media it does not
-  play, a stream it could not load from the server or not read, a device
-  that plays sound only). Casting stops, and the title stays where it was on
-  the phone, paused, ready to play there.
+  its links signed anew, where it stood - the last position the TV
+  confirmed, never an earlier one written over it - unless the TV cannot
+  decode it or has no screen. Then "Living Room TV can't play this title."
+  in the design system's warning strip, with the reason under details: the
+  status the server gave the phone for the TV's master, read as the design
+  system reads a status (the server's problem, busy, no stream of the title,
+  no access, the device's link turned down, no answer), else the receiver's
+  code (media it does not play, a stream it could not load from the server
+  or not read, a device that plays sound only). Casting stops, and the title
+  stays where it was on the phone, paused, ready to play there. Where the
+  phone finds out before it asks the TV anything - the server refuses the
+  title, or gives the phone no token for the TV's links (its own sign-in
+  refused, say) - the strip says so and the TV plays on as it did.
 
 Google's Cast screens are in English, as the app is: the app ships the
 English resources only (`localeFilters`), until it has translations of its

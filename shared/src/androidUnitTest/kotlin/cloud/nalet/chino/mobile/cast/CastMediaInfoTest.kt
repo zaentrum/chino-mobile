@@ -151,11 +151,45 @@ class CastMediaInfoTest {
     }
 
     @Test
+    fun theViewersSdhStaysOnWhenTheTvListsItsSideLoadedTracksWithoutTheirSidecars() {
+        // The TV after the load, as RemoteMediaClient lists it: the master's
+        // audio, the two side-loaded English sidecars. The load turned the
+        // SDH one (1001) on.
+        val reported = listOf(
+            MediaTrack.Builder(2, MediaTrack.TYPE_AUDIO).setLanguage("en").setName("English").build(),
+            MediaTrack.Builder(1000, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English").setRoles(listOf(MediaTrack.ROLE_SUBTITLE)).build(),
+            MediaTrack.Builder(1001, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English · SDH").setRoles(listOf(MediaTrack.ROLE_SUBTITLE)).build(),
+        ).map { it.toTvTrack() }
+        val sdh = CastSubtitleStart.Sidecar("s3", "eng", forced = false, sdh = true)
+        val media = castMediaFor(
+            CastMediaInput(
+                apiBase = base, itemId = "m1", phoneMasterUrl = "$base/v1/items/m1/play/master.m3u8?stream=$token",
+                item = sintel, seriesTitle = null, durationMs = 888_000, startMs = 0, autoplay = true,
+                sidecars = listOf(
+                    SidecarSubtitle(id = "s1", label = "English", lang = "eng", url = "$base/v1/play/subs/s1.vtt?stream=$token"),
+                    SidecarSubtitle(id = "s3", label = "English SDH", lang = "eng", url = "$base/v1/play/subs/s3.vtt?stream=$token"),
+                ),
+                subtitleStart = sdh,
+                writesProgress = true,
+            ),
+            tv,
+            null,
+            "L1",
+        )
+        val known = withWhatThePhoneKnows(reported, media, master = null)
+        assertEquals(listOf(null, "s1", "s3"), known.map { it.sidecarId })
+        // Plain English does not replace the SDH the viewer had: nothing to send.
+        assertNull(castActiveTracks(known, active = listOf(2, 1001), wish = CastTrackWish("eng", "orig", sdh)))
+    }
+
+    @Test
     fun theTvsTracksInCastingsTerms() {
         val forced = MediaTrack.Builder(6, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English").setRoles(listOf(MediaTrack.ROLE_FORCED_SUBTITLE)).build()
         assertEquals(TvTrack(6, TvTrackType.Text, "en", "English", forced = true), forced.toTvTrack())
         val named = MediaTrack.Builder(7, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English (Forced)").build()
         assertEquals(true, named.toTvTrack().forced)
+        val sdh = MediaTrack.Builder(8, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English SDH").build()
+        assertEquals(true, sdh.toTvTrack().sdh)
         val audio = MediaTrack.Builder(2, MediaTrack.TYPE_AUDIO).setLanguage("ja").setName("Japanese").build()
         assertEquals(TvTrack(2, TvTrackType.Audio, "ja", "Japanese"), audio.toTvTrack())
         assertEquals(TvTrackType.Video, MediaTrack.Builder(1, MediaTrack.TYPE_VIDEO).build().toTvTrack().type)

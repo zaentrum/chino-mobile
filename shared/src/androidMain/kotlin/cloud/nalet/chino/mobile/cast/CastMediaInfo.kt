@@ -2,6 +2,7 @@ package cloud.nalet.chino.mobile.cast
 
 import android.net.Uri
 import cloud.nalet.chino.mobile.data.auth.withStreamToken
+import cloud.nalet.chino.mobile.ui.player.isSdhSubtitle
 import com.google.android.gms.cast.HlsSegmentFormat
 import com.google.android.gms.cast.HlsVideoSegmentFormat
 import com.google.android.gms.cast.MediaInfo
@@ -165,6 +166,7 @@ internal fun MediaTrack.toTvTrack(): TvTrack = TvTrack(
     language = language,
     name = name,
     forced = roles.orEmpty().contains(MediaTrack.ROLE_FORCED_SUBTITLE) || name.orEmpty().contains("forced", ignoreCase = true),
+    sdh = isSdhSubtitle(name),
 )
 
 /** [tag] as the media's custom data:

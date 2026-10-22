@@ -4,6 +4,8 @@ import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.ui.player.HlsMaster
 import cloud.nalet.chino.mobile.ui.player.MasterSubtitle
 import cloud.nalet.chino.mobile.ui.player.autoSubtitleTrack
+import cloud.nalet.chino.mobile.ui.player.isSdhSubtitle
+import cloud.nalet.chino.mobile.ui.player.languageTag
 import cloud.nalet.chino.mobile.ui.player.normalizeLang
 import cloud.nalet.chino.mobile.ui.player.sameSubtitleKey
 import cloud.nalet.chino.mobile.ui.player.sidecarForced
@@ -34,6 +36,8 @@ data class TvTrack(
     /** The sidecar it is, for one the phone side-loaded; null for the
      *  master's own. */
     val sidecarId: String? = null,
+    /** For the deaf and hard of hearing ([isSdhSubtitle]). */
+    val sdh: Boolean = false,
 )
 
 /** What the phone asks the TV to play with. */
@@ -55,9 +59,11 @@ data class CastTrackPicks(val audio: TvTrack?, val text: TvTrack?)
  * on now. The audio: the one in the phone's language - the one playing where
  * that is it, so a stereo track is not swapped for a 5.1 one of the same
  * language - else the one in the Settings language, else the one playing.
- * The subtitle: none for Off; the phone's sidecar, or where the TV has it as
- * a rendition of the master instead, that rendition; and for the default
- * rule, its pick for the audio the TV plays.
+ * The subtitle: none for Off; a side-loaded one the load turned on stays on;
+ * else the phone's sidecar, or where the TV has it as a rendition of the
+ * master instead, the rendition of that very subtitle (its language, script
+ * and region, forced or SDH - sameSubtitleKey); and for the default rule,
+ * its pick for the audio the TV plays.
  */
 fun castTrackPicks(tracks: List<TvTrack>, active: List<Long>, wish: CastTrackWish): CastTrackPicks {
     val audio = tracks.filter { it.type == TvTrackType.Audio }
@@ -65,10 +71,22 @@ fun castTrackPicks(tracks: List<TvTrack>, active: List<Long>, wish: CastTrackWis
     val playing = audio.firstOrNull { it.id in active }
     val pickedAudio = pickAudio(audio, playing, wish)
     val audioLang = pickedAudio?.language ?: wish.audioLang
+    val sideLoadedOn = text.firstOrNull { it.id in active && it.sidecarId != null }
     val pickedText = when (val start = wish.subtitle) {
         CastSubtitleStart.Off -> null
+        else -> if (sideLoadedOn != null) sideLoadedOn else pickText(text, start, audioLang)
+    }
+    return CastTrackPicks(pickedAudio, pickedText)
+}
+
+private fun pickText(text: List<TvTrack>, start: CastSubtitleStart, audioLang: String?): TvTrack? =
+    when (start) {
+        CastSubtitleStart.Off -> null
         is CastSubtitleStart.Sidecar -> text.firstOrNull { it.sidecarId == start.sidecarId }
-            ?: text.firstOrNull { it.sidecarId == null && sameSubtitleKey(it.language, it.forced) == sameSubtitleKey(start.lang, start.forced) }
+            ?: text.firstOrNull {
+                it.sidecarId == null &&
+                    sameSubtitleKey(it.language, it.forced, it.sdh) == sameSubtitleKey(start.lang, start.forced, start.sdh)
+            }
         is CastSubtitleStart.Auto -> autoSubtitleTrack(
             tracks = text,
             lang = { it.language },
@@ -79,8 +97,6 @@ fun castTrackPicks(tracks: List<TvTrack>, active: List<Long>, wish: CastTrackWis
             audioPref = start.audioPref,
         )
     }
-    return CastTrackPicks(pickedAudio, pickedText)
-}
 
 private fun pickAudio(audio: List<TvTrack>, playing: TvTrack?, wish: CastTrackWish): TvTrack? {
     if (audio.isEmpty()) return null
@@ -118,8 +134,35 @@ fun castActiveTracks(tracks: List<TvTrack>, active: List<Long>, wish: CastTrackW
  */
 internal fun sidecarsBesideTheMaster(sidecars: List<SidecarSubtitle>, master: List<MasterSubtitle>): List<SidecarSubtitle> {
     if (master.isEmpty()) return sidecars
-    val carried = master.mapTo(HashSet()) { sameSubtitleKey(it.language, it.forced) }
-    return sidecars.filter { sameSubtitleKey(it.lang, sidecarForced(it)) !in carried }
+    val carried = master.mapTo(HashSet()) { sameSubtitleKey(it.language, it.forced, isSdhSubtitle(it.name, it.characteristics)) }
+    return sidecars.filter { sameSubtitleKey(it.lang, sidecarForced(it), isSdhSubtitle(it.label)) !in carried }
+}
+
+/**
+ * [tracks] as the TV lists them after a load of [media], told what the
+ * phone knows of them: a side-loaded one (an id of [media]'s text tracks,
+ * from [CAST_TEXT_TRACK_FIRST_ID] on) is its sidecar - forced, SDH, its own
+ * language - and one of the master's is forced or SDH as [master] says.
+ */
+internal fun withWhatThePhoneKnows(tracks: List<TvTrack>, media: CastMedia, master: HlsMaster?): List<TvTrack> {
+    val ours = media.textTracks.associateBy { it.id }
+    return tracks.map { t ->
+        val mine = ours[t.id]
+        when {
+            mine != null -> t.copy(
+                type = TvTrackType.Text,
+                language = mine.language,
+                forced = mine.forced,
+                sidecarId = mine.sidecarId,
+                sdh = mine.sdh,
+            )
+            t.type == TvTrackType.Text -> master?.subtitles.orEmpty()
+                .firstOrNull { languageTag(it.language) == languageTag(t.language) && (it.name == null || it.name == t.name) }
+                ?.let { m -> t.copy(forced = t.forced || m.forced, sdh = t.sdh || isSdhSubtitle(m.name, m.characteristics)) }
+                ?: t
+            else -> t
+        }
+    }
 }
 
 /**
@@ -131,10 +174,10 @@ internal fun sidecarsBesideTheMaster(sidecars: List<SidecarSubtitle>, master: Li
  * the title and numbered its tracks.
  */
 internal fun firstTextTrack(tracks: List<CastTextTrack>, master: HlsMaster?, wish: CastTrackWish): Long? {
-    val ours = tracks.map { TvTrack(it.id, TvTrackType.Text, it.language, it.name, it.forced, it.sidecarId) }
+    val ours = tracks.map { TvTrack(it.id, TvTrackType.Text, it.language, it.name, it.forced, it.sidecarId, it.sdh) }
     // The master's tracks, under ids of their own until the TV numbers them.
     val theirs = master?.subtitles.orEmpty().mapIndexed { i, s ->
-        TvTrack(MASTER_TRACK_ID - i, TvTrackType.Text, s.language, s.name, s.forced)
+        TvTrack(MASTER_TRACK_ID - i, TvTrackType.Text, s.language, s.name, s.forced, sdh = isSdhSubtitle(s.name, s.characteristics))
     }
     val audio = master?.audio.orEmpty().mapIndexed { i, a ->
         TvTrack(MASTER_AUDIO_ID - i, TvTrackType.Audio, a.language, a.name)

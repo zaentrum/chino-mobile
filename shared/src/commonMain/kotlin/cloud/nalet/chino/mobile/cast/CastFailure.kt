@@ -66,6 +66,9 @@ data class CastErrorReport(
     val senderStatus: Int? = null,
     /** The phone's fetch of the TV's master; null where it made none. */
     val probe: CastProbe? = null,
+    /** The phone's request for the TV's links - a stream token - where that
+     *  failed: before the TV was asked anything. */
+    val mint: CastProbe? = null,
 )
 
 /** The receiver's reason when a device without a screen was asked to play
@@ -104,18 +107,31 @@ fun castMayRetry(report: CastErrorReport): Boolean {
 
 /**
  * The reason under details, in the design system's words for each cause.
- * Where the phone's own fetch of the TV's master failed, its status: 5xx the
- * server's problem, 429 busy, 404 and 410 no stream, 403 no access, 401 the
- * TV's link turned down - the viewer is still signed in, the link the TV was
- * given is what the server refused - 408 or no answer at all, the
- * connection, any other 4xx not accepted. Else what the receiver said: media
- * it does not play, a device without a screen, a stream it could not load
- * from [serverHost] or not read, subtitles it could not load; and where the
- * phone saw its request fail, the connection or the time it took. The status
- * or code itself ends the line, for whoever maintains the app.
+ * Where the phone could not get the TV its links (a stream token): the
+ * phone's own sign-in, refused (401, 403), the server's problem, or no
+ * answer. Where the phone's own fetch of the TV's master failed, its status:
+ * 5xx the server's problem, 429 busy, 404 and 410 no stream, 403 no access,
+ * 401 the device's link turned down - the viewer is still signed in, the
+ * link the device was given is what the server refused - 408 or no answer at
+ * all, the connection, any other 4xx not accepted. Else what the receiver
+ * said: media it does not play, a device without a screen, a stream it could
+ * not load from [serverHost] or not read, subtitles it could not load; and
+ * where the phone saw its request fail, the connection or the time it took.
+ * The device goes by its name ([device]), else "the device"; the status or
+ * code itself ends the line, for whoever maintains the app.
  */
-fun castFailureDetails(report: CastErrorReport, serverHost: String): String {
+fun castFailureDetails(report: CastErrorReport, serverHost: String, device: String? = null): String {
     val host = serverHost.ifBlank { "the server" }
+    val tv = castDeviceInLine(device)
+    when (val mint = report.mint) {
+        is CastProbe.Answered -> return if (mint.status == 401 || mint.status == 403) {
+            "the server no longer accepts this phone's sign-in (HTTP ${mint.status})"
+        } else {
+            "${statusCause(mint.status, host)} (HTTP ${mint.status})"
+        }
+        CastProbe.NoAnswer -> return "no answer from $host"
+        null -> Unit
+    }
     if (report.reason == CAST_REASON_VIDEO_DEVICE_REQUIRED) return "the device plays sound only, not video"
     when (val probe = report.probe) {
         is CastProbe.Answered -> if (probe.status >= 400) return "${statusCause(probe.status, host)} (HTTP ${probe.status})"
@@ -131,13 +147,13 @@ fun castFailureDetails(report: CastErrorReport, serverHost: String): String {
             TEXT_UNKNOWN -> "couldn't load the subtitles"
             else -> "playback error"
         }
-        return "the TV reported: $cause (error $c)"
+        return "$tv reported: $cause (error $c)"
     }
     return when (report.senderStatus) {
-        SENDER_TIMEOUT -> "no answer from the TV in time"
-        SENDER_NETWORK_ERROR, SENDER_CONNECTION_SUSPENDED -> "the connection to the TV dropped"
-        null -> "the TV reported an error"
-        else -> "the TV reported an error (status ${report.senderStatus})"
+        SENDER_TIMEOUT -> "no answer from $tv in time"
+        SENDER_NETWORK_ERROR, SENDER_CONNECTION_SUSPENDED -> "the connection to $tv dropped"
+        null -> "$tv reported an error"
+        else -> "$tv reported an error (status ${report.senderStatus})"
     }
 }
 
@@ -146,7 +162,7 @@ private fun statusCause(status: Int, host: String): String = when {
     status == 429 -> "the server is busy"
     status == 404 || status == 410 -> "the server has no stream of this title"
     status == 403 -> "no access to this title"
-    status == 401 -> "the server turned down the TV's link to the stream"
+    status == 401 -> "the server turned down the device's link to the stream"
     status == 408 -> "no answer from $host"
     else -> "the server didn't accept the request"
 }

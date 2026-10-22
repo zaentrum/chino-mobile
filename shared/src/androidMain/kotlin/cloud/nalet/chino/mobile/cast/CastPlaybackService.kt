@@ -15,24 +15,27 @@ import androidx.core.app.TaskStackBuilder
 import cloud.nalet.chino.mobile.shared.R
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import com.google.android.gms.cast.framework.R as CastR
 
 /**
- * Keeps the app running while the TV plays a title whose position this phone
- * writes ([ChinoCast.nowPlaying]) - a foreground service of the media
- * playback kind. Without it Android stops or freezes an app in the
- * background: locked, or in another app, the phone would no longer hear the
- * TV, and the position it keeps when casting stops would be an old one. It
- * stops once the TV no longer plays such a title and the last position is
- * written.
+ * Keeps the app running while casting needs it ([ChinoCast.keepAlive]): a
+ * load, a recovery or a signing of the links anew under way, the TV's media
+ * this phone's, a position on its way to the server - a foreground service
+ * of the media playback kind. Without it Android stops or freezes an app in
+ * the background: locked, or in another app, the phone would no longer hear
+ * the TV, and the position it keeps when casting stops would be an old one.
+ * Once nothing needs it, it waits a moment, looks again, and ends.
  *
  * Google's media notification - the title, the device, play or pause, stop -
  * stays what the viewer sees and uses; a foreground service needs one of its
- * own, which is this one: quiet, at the bottom of the shade, not on the lock
- * screen. From Android 13 on, an app that asks for no notifications shows
- * none of its own there; the system lists the app as active instead.
+ * own, which is this one: quiet (no sound, no light), at the bottom of the
+ * shade, not on the lock screen, one line under the app's name. From Android
+ * 13 on, an app that asks for no notifications shows none of its own there;
+ * the system lists the app as active instead.
  */
 class CastPlaybackService : Service() {
     private val scope = MainScope()
@@ -40,20 +43,29 @@ class CastPlaybackService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        ChinoCast.serviceRunning = true
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Started as a foreground service: in the foreground at once, even
-        // should the title have ended meanwhile.
-        if (!foreground(ChinoCast.nowPlaying.value)) {
+        // should nothing need it any more.
+        if (!foreground()) {
             stopSelf()
             return START_NOT_STICKY
         }
         if (!watching) {
             watching = true
             scope.launch {
-                combine(ChinoCast.nowPlaying, ChinoCast.writing) { now, writing -> now to writing }.collect { (now, writing) ->
-                    when {
-                        now != null -> notificationManager().notify(NOTIFICATION_ID, notification(now))
-                        writing == 0 -> stop()
+                combine(ChinoCast.keepAlive, ChinoCast.state) { keep, cast -> keep to cast.device }.collectLatest { (keep, device) ->
+                    if (keep) {
+                        notificationManager().notify(NOTIFICATION_ID, notification(device))
+                    } else {
+                        // A moment, and a look at how things stand then: a
+                        // reload's statuses, a write, come and go.
+                        delay(STOP_GRACE_MS)
+                        if (!ChinoCast.keepAliveNow()) stop()
                     }
                 }
             }
@@ -63,11 +75,14 @@ class CastPlaybackService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
+        ChinoCast.serviceRunning = false
+        // No notification of ours outlives the service.
+        notificationManager().cancel(NOTIFICATION_ID)
         super.onDestroy()
     }
 
-    private fun foreground(now: CastNowPlaying?): Boolean = try {
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(now), MEDIA_PLAYBACK)
+    private fun foreground(): Boolean = try {
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(ChinoCast.state.value.device), MEDIA_PLAYBACK)
         true
     } catch (e: RuntimeException) {
         // Not allowed now (Android 12 on: from the background; 14 on:
@@ -80,7 +95,7 @@ class CastPlaybackService : Service() {
         stopSelf()
     }
 
-    private fun notification(now: CastNowPlaying?): Notification {
+    private fun notification(device: String?): Notification {
         channel()
         val controls = Intent(this, CastExpandedControlsActivity::class.java)
         val open = TaskStackBuilder.create(this)
@@ -88,15 +103,15 @@ class CastPlaybackService : Service() {
             .getPendingIntent(0, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(CastR.drawable.cast_ic_notification_small_icon)
-            .setContentTitle(now?.title?.takeIf { it.isNotBlank() } ?: getString(R.string.chino_cast_keeping_place_title))
-            .setContentText(getString(R.string.chino_cast_keeping_place, castDeviceInLine(now?.device)))
+            // One line, under the app's name: no title of our own.
+            .setContentText(getString(R.string.chino_cast_keeping_place, castDeviceInLine(device)))
             .setContentIntent(open)
             .setOngoing(true)
             .setSilent(true)
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .build()
     }
@@ -104,9 +119,14 @@ class CastPlaybackService : Service() {
     private fun channel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = notificationManager()
+        // The first builds' channel, of the minimum importance.
+        manager.getNotificationChannel(OLD_CHANNEL_ID)?.let { manager.deleteNotificationChannel(OLD_CHANNEL_ID) }
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(CHANNEL_ID, getString(R.string.chino_cast_channel), NotificationManager.IMPORTANCE_MIN).apply {
+        val channel = NotificationChannel(CHANNEL_ID, getString(R.string.chino_cast_channel), NotificationManager.IMPORTANCE_LOW).apply {
             setShowBadge(false)
+            setSound(null, null)
+            enableLights(false)
+            enableVibration(false)
             lockscreenVisibility = Notification.VISIBILITY_SECRET
         }
         manager.createNotificationChannel(channel)
@@ -115,8 +135,13 @@ class CastPlaybackService : Service() {
     private fun notificationManager(): NotificationManager = getSystemService(NotificationManager::class.java)
 
     private companion object {
-        const val CHANNEL_ID = "chino_cast_place"
+        const val CHANNEL_ID = "chino_cast_keeping_place"
+        const val OLD_CHANNEL_ID = "chino_cast_place"
         const val NOTIFICATION_ID = 0x0ca57
+
+        /** How long the service waits, once nothing needs it, before it
+         *  looks again and ends. */
+        const val STOP_GRACE_MS = 10_000L
 
         /** ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK (API 29); 0 before. */
         val MEDIA_PLAYBACK: Int =

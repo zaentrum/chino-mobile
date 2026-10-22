@@ -112,6 +112,7 @@ kotlin {
             implementation(libs.androidx.mediarouter)
             implementation(libs.androidx.appcompat)
             implementation(libs.androidx.fragment.compose)
+            implementation(libs.androidx.lifecycle.process)
         }
 
         // androidUnitTest builds the Cast SDK's MediaInfo, whose custom data

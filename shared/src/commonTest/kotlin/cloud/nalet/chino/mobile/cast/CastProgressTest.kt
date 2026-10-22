@@ -229,6 +229,48 @@ class CastProgressTest {
         assertEquals(listOf(write("m1", 1005, final = true)), tv.writes)
     }
 
+    @Test
+    fun whereATitleStoodAsItFailedIsTheLastPositionTheTvConfirmed() {
+        // 52 minutes without a pause: the TV sends no status meanwhile, only
+        // the ticks; then a segment it can't read, straight to idle.
+        val tv = Tv()
+        tv.play(fromMs = 0, seconds = 3_130)
+        tv.status(RemotePlayerState.Idle, 0, RemoteIdleReason.Error)
+        assertEquals(write("m1", 3130, final = true), tv.writes.last())
+        assertEquals(3_130_000L, tv.reporter.lastConfirmedMs("L1"))
+        // Not the last status's 0:00: the later of the two.
+        assertEquals(3_130_000L, castRecoveryAtMs(tv.reporter.lastConfirmedMs("L1"), lastStatusMs = 0L))
+        assertEquals(3_200_000L, castRecoveryAtMs(3_130_000L, lastStatusMs = 3_200_000L))
+        assertNull(castRecoveryAtMs(null, null))
+        assertNull(tv.reporter.lastConfirmedMs("L9"))
+    }
+
+    @Test
+    fun aRecoveryWritesNothingShortOfWhereTheTitleStood() {
+        val tv = Tv()
+        tv.play(fromMs = 0, seconds = 3_130)
+        tv.status(RemotePlayerState.Idle, 0, RemoteIdleReason.Error)
+        tv.writes.clear()
+        // Loaded once more at 52:10; the TV lands a few seconds short of it,
+        // on a key frame, and the viewer pauses at once.
+        tv.reporter.loading("L2", "m1", startMs = 3_130_000, floorMs = 3_130_000)
+        tv.tag = tagOf("m1", load = "L2")
+        tv.status(RemotePlayerState.Playing, 3_125_000)
+        tv.tick(3_126_000)
+        tv.status(RemotePlayerState.Paused, 3_126_000)
+        tv.reporter.onSessionEnding()
+        assertTrue(tv.writes.isEmpty(), "an earlier position over 52:10: ${tv.writes}")
+    }
+
+    @Test
+    fun aRecoveryWritesOnOncePastWhereTheTitleStood() {
+        val tv = Tv()
+        tv.reporter.loading("L2", "m1", startMs = 3_130_000, floorMs = 3_130_000)
+        tv.tag = tagOf("m1", load = "L2")
+        tv.play(fromMs = 3_125_000, seconds = 15)
+        assertEquals(listOf(write("m1", 3135, final = false)), tv.writes)
+    }
+
     private companion object {
         val ME = CastWriter("account-a", "owner-a")
         val YOU = CastWriter("account-b", "owner-b")

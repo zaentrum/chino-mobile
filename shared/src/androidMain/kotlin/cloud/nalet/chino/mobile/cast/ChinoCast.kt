@@ -6,15 +6,17 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import cloud.nalet.chino.mobile.currentTimeMillis
 import cloud.nalet.chino.mobile.data.AppContainer
-import cloud.nalet.chino.mobile.data.api.ApiStatusException
 import cloud.nalet.chino.mobile.data.api.ProgressBody
 import cloud.nalet.chino.mobile.data.auth.StreamTokenManager
 import com.google.android.gms.cast.CastStatusCodes
 import com.google.android.gms.cast.MediaError
 import com.google.android.gms.cast.MediaInfo
-import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.CastState
@@ -60,11 +62,6 @@ internal data class CastSessionState(
     val hasMedia: Boolean = false,
 )
 
-/** A title of this phone's that the TV plays, whose position the phone
- *  writes: casting's foreground service runs while there is one
- *  ([CastPlaybackService]). */
-internal data class CastNowPlaying(val itemId: String, val title: String, val device: String?)
-
 /**
  * Casting's sender, one per process, started with the app
  * ([attachCasting]): the Cast framework's context, the session (started from
@@ -89,16 +86,31 @@ internal object ChinoCast {
      *  away or casts again. */
     val failure: StateFlow<CastFailure?> = _failure.asStateFlow()
 
-    private val _nowPlaying = MutableStateFlow<CastNowPlaying?>(null)
-
-    /** The title of this phone's the TV plays and the phone writes; null for
-     *  none. */
-    val nowPlaying: StateFlow<CastNowPlaying?> = _nowPlaying.asStateFlow()
-
     private val _writing = MutableStateFlow(0)
 
-    /** Position writes on their way to the server. */
-    val writing: StateFlow<Int> = _writing.asStateFlow()
+    private val _keepAlive = MutableStateFlow(false)
+
+    /**
+     * Whether casting's foreground service is wanted ([CastPlaybackService]):
+     * while a load, a recovery or a signing of the links anew is under way,
+     * while the TV's media is this phone's, while a title is tracked, and
+     * while a position is on its way to the server ([keepAliveNow]).
+     */
+    val keepAlive: StateFlow<Boolean> = _keepAlive.asStateFlow()
+
+    /** Loads, recoveries and renewals under way. */
+    @Volatile
+    private var busy = 0
+
+    /** The TV's media is this phone's, for the account signed in. */
+    @Volatile
+    private var oursOnTv = false
+
+    /** The service runs (it says so as it starts and as it ends). */
+    @Volatile
+    var serviceRunning = false
+        internal set
+    private var appWatched = false
 
     private var appContext: Context? = null
     private var castContext: CastContext? = null
@@ -127,8 +139,13 @@ internal object ChinoCast {
      *  again should it fail. */
     private var lastOurs: OursOnTv? = null
 
-    /** The load and state of the TV's last status, for "playing again". */
-    private var lastSeen: Pair<String, RemotePlayerState>? = null
+    /** The load of the TV's last status, and whether it was meant to play
+     *  then, for "playing again". */
+    private var lastSeen: Pair<String, Boolean?>? = null
+
+    /** Whether the load is meant to play or wait paused: its last Playing or
+     *  Paused; a Buffering is neither (a seek while paused buffers too). */
+    private var intent: Pair<String, Boolean>? = null
 
     /** The load a recovery made: should it fail too, the TV can't. */
     private var recoveryLoad: String? = null
@@ -148,7 +165,7 @@ internal object ChinoCast {
         now = ::currentTimeMillis,
         newLoad = ::newLoadId,
         serverHost = ::serverHost,
-        loading = ::loading,
+        loading = { load, itemId, startMs, floorMs -> loading(load, itemId, startMs, floorMs) },
         superseded = { pending?.result?.complete(CastAnswer.Ended) },
     )
 
@@ -186,7 +203,55 @@ internal object ChinoCast {
                 }
             }
         }
+        watchTheAppInFront()
         start()
+    }
+
+    /** The app comes to the front with a title of this phone's on the TV and
+     *  no service running - it could not start from the background: now. */
+    private fun watchTheAppInFront() {
+        if (appWatched) return
+        appWatched = true
+        runCatching {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    if (keepAliveNow()) ensureService()
+                }
+            })
+        }
+    }
+
+    private fun inFront(): Boolean =
+        runCatching { ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }.getOrDefault(false)
+
+    /** Whether the service is wanted now, as things are ([keepAlive]). */
+    fun keepAliveNow(): Boolean = busy > 0 || oursOnTv || reporter.trackedItemId != null || _writing.value > 0
+
+    /** The service is wanted or not now; wanted, with the app in front and
+     *  the service not running - a title found on the TV after the app
+     *  opened - it starts. */
+    private fun keepAliveChanged() {
+        val keep = keepAliveNow()
+        _keepAlive.value = keep
+        if (keep && !serviceRunning && Looper.myLooper() == Looper.getMainLooper() && inFront()) startService()
+    }
+
+    /** Casting's foreground service, unless it runs already. Started from
+     *  the front: a load the viewer asked for, a session found as the app
+     *  opens, the app coming back with a title on the TV. */
+    private fun ensureService() {
+        if (!serviceRunning) startService()
+    }
+
+    private suspend fun <T> busyWith(block: suspend () -> T): T {
+        busy++
+        keepAliveChanged()
+        try {
+            return block()
+        } finally {
+            busy--
+            keepAliveChanged()
+        }
     }
 
     /** The Cast button or the bar is drawn: the framework starts, should it
@@ -236,7 +301,7 @@ internal object ChinoCast {
         reporter.writerChanged()
         lastSeen = null
         bridge.onStatus()
-        nowPlayingChanged()
+        keepAliveChanged()
     }
 
     private val castStates = CastStateListener { s ->
@@ -275,6 +340,9 @@ internal object ChinoCast {
         } else {
             bridge.detach()
         }
+        // With the app in front, the service may start now; it ends by
+        // itself, a little later, when the TV plays nothing of this phone's.
+        if (inFront()) ensureService()
     }
 
     private fun detachSession() {
@@ -285,9 +353,11 @@ internal object ChinoCast {
         session = null
         lastOurs = null
         lastSeen = null
+        intent = null
+        oursOnTv = false
         _state.update { it.copy(connected = false, connecting = false, device = null, hasMedia = false) }
         pending?.result?.complete(CastAnswer.Ended)
-        nowPlayingChanged()
+        keepAliveChanged()
     }
 
     /** The session to load into or set the volume of, while one is connected. */
@@ -305,33 +375,42 @@ internal object ChinoCast {
     /**
      * Plays [input] on the TV of the session that is connected ([CastLoader]).
      * Waits for the TV to answer: [CastLoadResult.Playing], or
-     * [CastLoadResult.Failed] - casting then stops and [failure] says why -
+     * [CastLoadResult.Failed] - [failure] says why, and where the TV failed
+     * at it casting stops; found before the TV was asked, the TV plays on -
      * or [CastLoadResult.Ended]. The load goes on when the caller is gone
      * (the viewer left the player while the TV loaded): a failure is then
-     * shown in the bar's place.
+     * shown in the bar's place. Asked from a screen, it starts casting's
+     * service first: the TV may take long, and the phone be locked meanwhile.
      */
     suspend fun load(input: CastMediaInput): CastLoadResult = scope.async {
         if (connectedSession() == null) return@async CastLoadResult.Ended
         _failure.value = null
         failing = false
         recoveryLoad = null
-        val result = try {
-            loader.load(Tv, input)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // The token for the TV's links could not be had.
-            val probe = (e as? ApiStatusException)?.let { CastProbe.Answered(it.status) } ?: CastProbe.NoAnswer
-            CastLoadResult.Failed(CastFailure(Tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(CastErrorReport(probe = probe), serverHost()), input.itemId))
+        val result = busyWith {
+            ensureService()
+            try {
+                loader.load(Tv, input)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                CastLoadResult.Failed(
+                    CastFailure(Tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(CastErrorReport(), serverHost(), Tv.device), input.itemId),
+                    endsCasting = false,
+                )
+            }
         }
-        if (result is CastLoadResult.Failed) fail(result.failure)
+        if (result is CastLoadResult.Failed) {
+            if (result.endsCasting) fail(result.failure) else _failure.value = result.failure
+        }
         result
     }.await()
 
     /** The loader is about to tell the TV to play: the position writes'
-     *  start guard; a recovery's load noted as such. */
-    private fun loading(load: String, itemId: String, startMs: Long) {
-        reporter.loading(load, itemId, startMs)
+     *  start guard, and the floor of a takeover; a recovery's load noted as
+     *  such. */
+    private fun loading(load: String, itemId: String, startMs: Long, floorMs: Long?) {
+        reporter.loading(load, itemId, startMs, floorMs)
         if (recovering) recoveryLoad = load
     }
 
@@ -351,26 +430,36 @@ internal object ChinoCast {
                 else -> Unit
             }
         }
-        val playing = status.state == RemotePlayerState.Playing || status.state == RemotePlayerState.Buffering
-        if (ours && tag != null && (playing || status.state == RemotePlayerState.Paused)) {
+        // What the TV is meant to do: play or wait. Buffering says neither.
+        if (ours && tag != null) {
+            when (status.state) {
+                RemotePlayerState.Playing -> intent = tag.load to true
+                RemotePlayerState.Paused -> intent = tag.load to false
+                else -> Unit
+            }
+        }
+        val meant = intent?.takeIf { it.first == tag?.load }?.second
+        val on = status.state == RemotePlayerState.Playing || status.state == RemotePlayerState.Paused ||
+            status.state == RemotePlayerState.Buffering
+        oursOnTv = ours && (on || status.state == RemotePlayerState.Loading)
+        if (ours && tag != null && on) {
             lastOurs = OursOnTv(
                 load = tag.load,
                 itemId = tag.itemId,
                 positionMs = status.positionMs,
-                playing = playing,
+                playing = meant ?: (status.state == RemotePlayerState.Playing),
                 activeTrackIds = Tv.activeTrackIds(),
                 media = client?.mediaInfo,
             )
-            // The title's first status in this session, or it plays again
-            // after a pause: its links are signed anew where they run out
-            // before it ends.
+            // The title's first status in this session, or it is meant to
+            // play again after a pause: its links are signed anew where they
+            // run out before it ends.
             val seen = lastSeen
-            if (load == null && (seen == null || seen.first != tag.load || (seen.second == RemotePlayerState.Paused && playing))) {
-                scope.launch { runCatching { loader.renewLinks(Tv) } }
-            }
+            val playsAgain = seen != null && seen.first == tag.load && seen.second == false && meant == true
+            if (load == null && (seen == null || seen.first != tag.load || playsAgain)) renew()
         }
-        lastSeen = tag?.let { it.load to status.state }
-        nowPlayingChanged()
+        lastSeen = tag?.let { it.load to meant }
+        keepAliveChanged()
         // A title of this phone's stopped on the TV with an error, no load
         // waiting for it: loaded once more, else casting stops. The error
         // itself comes in a message of its own, often just after the status.
@@ -379,28 +468,51 @@ internal object ChinoCast {
         }
     }
 
+    /** Its links signed anew where they run out ([CastLoader.renewLinks]);
+     *  a reload that fails ends as a recovery that does. */
+    private fun renew() {
+        scope.launch {
+            val renewal = busyWith { runCatching { loader.renewLinks(Tv) }.getOrNull() }
+            if (renewal is CastRenewal.Failed) fail(renewal.failure)
+        }
+    }
+
     private fun recoverFrom(tag: CastTag) {
         if (failing || recovering || pending != null) return
         val report = reportOf(lastError, null)
-        val at = lastOurs?.takeIf { it.load == tag.load }
-        if (at == null || tag.load == recoveryLoad) {
-            fail(CastFailure(Tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(report, serverHost()), tag.itemId))
+        val base = lastOurs?.takeIf { it.load == tag.load }
+        // Where it stood: the later of the last position the TV confirmed
+        // (its ticks) and its last status - never an older one.
+        val atMs = castRecoveryAtMs(reporter.lastConfirmedMs(tag.load), base?.positionMs)
+        if (atMs == null || tag.load == recoveryLoad) {
+            fail(failureOf(report, tag.itemId))
             return
         }
+        val at = CastStoppedAt(
+            itemId = tag.itemId,
+            atMs = atMs,
+            playing = base?.playing ?: true,
+            activeTrackIds = base?.activeTrackIds.orEmpty(),
+        )
         recovering = true
         scope.launch {
-            val failure = try {
-                loader.recover(Tv, CastStoppedAt(at.itemId, at.positionMs, at.playing, at.activeTrackIds), report)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                CastFailure(Tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(report, serverHost()), at.itemId)
-            } finally {
-                recovering = false
+            val failure = busyWith {
+                try {
+                    loader.recover(Tv, at, report)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failureOf(report, at.itemId)
+                } finally {
+                    recovering = false
+                }
             }
             failure?.let(::fail)
         }
     }
+
+    private fun failureOf(report: CastErrorReport, itemId: String): CastFailure =
+        CastFailure(Tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(report, serverHost(), Tv.device), itemId)
 
     private fun reportOf(error: MediaError?, senderStatus: Int?): CastErrorReport =
         CastErrorReport(detailedCode = error?.detailedErrorCode, reason = error?.reason, senderStatus = senderStatus)
@@ -424,21 +536,9 @@ internal object ChinoCast {
         sharedContext()?.sessionManager?.endCurrentSession(true)
     }
 
-    private fun nowPlayingChanged() {
-        val itemId = reporter.trackedItemId
-        val next = itemId?.let {
-            val title = client()?.mediaInfo?.metadata?.getString(MediaMetadata.KEY_TITLE).orEmpty()
-            CastNowPlaying(it, title, _state.value.device)
-        }
-        val was = _nowPlaying.value
-        if (next == was) return
-        _nowPlaying.value = next
-        if (was == null && next != null) startService()
-    }
-
-    /** The foreground service, while the TV plays a title this phone writes:
-     *  started as the title starts, with the app in front. Where the system
-     *  does not allow it now, the writes go on while the app is open. */
+    /** The foreground service ([keepAlive]), started from the front. Where
+     *  the system does not allow it now, the writes go on while the app is
+     *  open, and the service starts once it is in front again. */
     private fun startService() {
         val app = appContext ?: return
         try {
@@ -459,12 +559,18 @@ internal object ChinoCast {
         val c = container ?: return
         if (w.accountId != activeAccountId) return
         _writing.update { it + 1 }
+        keepAliveChanged()
         c.appScope.launch {
             try {
-                runCatching { c.chinoApi.postProgress(w.itemId, ProgressBody(positionSec = w.positionSec, durationSec = w.durationSec)) }
-                    .onSuccess { if (w.final) CastEvents.keptPositionOf(w.itemId) }
+                // Once more as it goes out: the request carries the bearer of
+                // whoever is signed in then.
+                if (w.accountId == activeAccountId) {
+                    runCatching { c.chinoApi.postProgress(w.itemId, ProgressBody(positionSec = w.positionSec, durationSec = w.durationSec)) }
+                        .onSuccess { if (w.final) CastEvents.keptPositionOf(w.itemId) }
+                }
             } finally {
                 _writing.update { it - 1 }
+                keepAliveChanged()
             }
         }
     }
@@ -517,6 +623,11 @@ internal object ChinoCast {
         override val device: String? get() = _state.value.device
 
         override fun status(): RemoteMediaStatus? = bridge.playback?.status()
+
+        override fun playIntent(): Boolean? {
+            val load = status()?.tag?.load ?: return null
+            return intent?.takeIf { it.first == load }?.second
+        }
 
         override fun contentUrl(): String? =
             client()?.mediaInfo?.takeIf { castTagOf(it.customData) != null }?.contentUrl ?: lastOurs?.media?.contentUrl

@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.cast
 
+import cloud.nalet.chino.mobile.data.api.ApiStatusException
 import cloud.nalet.chino.mobile.data.auth.withStreamToken
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -20,6 +21,10 @@ class CastLoaderTest {
     private class FakeTv : CastTv {
         override var device: String? = "Living Room TV"
         var status: RemoteMediaStatus? = null
+
+        /** Meant to play or wait, as the TV's last Playing or Paused said;
+         *  null: as its status says. */
+        var intent: Boolean? = null
         var content: String? = null
         var tvTracks: List<TvTrack> = emptyList()
         var active: List<Long> = emptyList()
@@ -39,6 +44,11 @@ class CastLoaderTest {
         var loaded: (FakeTv) -> Unit = {}
 
         override fun status(): RemoteMediaStatus? = status
+        override fun playIntent(): Boolean? = intent ?: when (status?.state) {
+            RemotePlayerState.Playing -> true
+            RemotePlayerState.Paused -> false
+            else -> null
+        }
         override fun contentUrl(): String? = content
         override fun tracks(): List<TvTrack> = tvTracks
         override fun activeTrackIds(): List<Long> = active
@@ -76,14 +86,19 @@ class CastLoaderTest {
     private val fetched = mutableListOf<String>()
     private var server: (String) -> MasterFetch = { MasterFetch.Answered(200, MASTER) }
     private var minted = 0
+
+    /** What the server answers the phone's request for a token instead of one. */
+    private var mintFails: Exception? = null
     private var writer: CastWriter? = CastWriter("account-a", "owner-a")
     private val clock = 1_800_000_000_000
     private var loadIds = 0
     private val loading = mutableListOf<Triple<String, String, Long>>()
+    private val floors = mutableListOf<Long?>()
 
     private val loader = CastLoader(
         writer = { writer },
         token = { fresh ->
+            mintFails?.let { throw it }
             if (fresh || minted == 0) minted++
             CastToken("t$minted", clock + LIFE_MS)
         },
@@ -94,7 +109,10 @@ class CastLoaderTest {
         now = { clock },
         newLoad = { "L${++loadIds}" },
         serverHost = { "media.example.com" },
-        loading = { load, itemId, startMs -> loading += Triple(load, itemId, startMs) },
+        loading = { load, itemId, startMs, floorMs ->
+            loading += Triple(load, itemId, startMs)
+            floors += floorMs
+        },
         superseded = { tv.hold?.complete(CastAnswer.Ended) },
     )
 
@@ -176,6 +194,22 @@ class CastLoaderTest {
         assertEquals("the server has no stream of this title (HTTP 404)", result.failure.details)
         assertEquals("m1", result.failure.itemId)
         assertTrue(tv.loads.isEmpty())
+        // The TV was not asked: what it plays plays on.
+        assertEquals(false, result.endsCasting)
+    }
+
+    @Test
+    fun noTokenForTheTvsLinksIsAReasonOfItsOwnAndTheTvPlaysOn() = runTest {
+        // POST /me/stream-token refused: the phone's own sign-in, not the TV's link.
+        mintFails = ApiStatusException(401, "/api/v1/me/stream-token")
+        val refused = assertIs<CastLoadResult.Failed>(loader.load(tv, input()))
+        assertEquals("the server no longer accepts this phone's sign-in (HTTP 401)", refused.failure.details)
+        assertEquals(false, refused.endsCasting)
+        mintFails = IllegalStateException("unreachable")
+        val unanswered = assertIs<CastLoadResult.Failed>(loader.load(tv, input()))
+        assertEquals("no answer from media.example.com", unanswered.failure.details)
+        assertTrue(tv.loads.isEmpty())
+        assertTrue(fetched.isEmpty())
     }
 
     @Test
@@ -199,15 +233,17 @@ class CastLoaderTest {
         tv.answers += failedWith(905)
         tv.answers += failedWith(905)
         val result = assertIs<CastLoadResult.Failed>(loader.load(tv, input()))
-        assertEquals("the TV reported: playback error (error 905)", result.failure.details)
+        assertEquals("Living Room TV reported: playback error (error 905)", result.failure.details)
         assertEquals(2, tv.loads.size)
+        // The TV failed at it: casting stops.
+        assertEquals(true, result.endsCasting)
     }
 
     @Test
     fun mediaTheTvCannotDecodeIsNotTriedAgain() = runTest {
         tv.answers += failedWith(104)
         val result = assertIs<CastLoadResult.Failed>(loader.load(tv, input()))
-        assertEquals("the TV reported: unsupported media (error 104)", result.failure.details)
+        assertEquals("Living Room TV reported: unsupported media (error 104)", result.failure.details)
         assertEquals(1, tv.loads.size)
     }
 
@@ -265,6 +301,8 @@ class CastLoaderTest {
         val again = tv.reloads.single()
         assertEquals(CastReload(CastToken("t1", clock + LIFE_MS), "L1", 1_234_000, autoplay = true, activeTrackIds = listOf(1, 2)), again)
         assertEquals(listOf(Triple("L1", "m1", 1_234_000L)), loading)
+        // Its start guard, and its floor: nothing short of where it stood.
+        assertEquals(listOf<Long?>(1_234_000L), floors)
     }
 
     @Test
@@ -291,21 +329,72 @@ class CastLoaderTest {
         // Paused for hours: an hour of the links left, 80 minutes to play.
         tv.status = ours(RemotePlayerState.Playing, 600_000, linksExpireAtMs = clock + 3_600_000)
         tv.active = listOf(1, 2, 1000)
-        assertTrue(loader.renewLinks(tv))
+        assertEquals(CastRenewal.Renewed, loader.renewLinks(tv))
         assertEquals(CastReload(CastToken("t1", clock + LIFE_MS), "L1", 600_000, autoplay = true, activeTrackIds = listOf(1, 2, 1000)), tv.reloads.single())
+        assertEquals(listOf<Long?>(600_000L), floors)
     }
 
     @Test
     fun aPausedTitleIsSignedAnewPausedAndOneWithLinksToSpareIsLeftAlone() = runTest {
         tv.status = ours(RemotePlayerState.Paused, 600_000, linksExpireAtMs = clock + 3_600_000)
-        assertTrue(loader.renewLinks(tv))
+        assertEquals(CastRenewal.Renewed, loader.renewLinks(tv))
         assertEquals(false, tv.reloads.single().autoplay)
         tv.status = ours(RemotePlayerState.Playing, 600_000, linksExpireAtMs = clock + LIFE_MS)
-        assertEquals(false, loader.renewLinks(tv))
+        assertEquals(CastRenewal.NotNeeded, loader.renewLinks(tv))
         // Another phone's title: not this phone's to sign.
         tv.status = ours(RemotePlayerState.Playing, 600_000, linksExpireAtMs = clock + 60_000, owner = "owner-b")
-        assertEquals(false, loader.renewLinks(tv))
+        assertEquals(CastRenewal.NotNeeded, loader.renewLinks(tv))
         assertEquals(1, tv.reloads.size)
+    }
+
+    @Test
+    fun aLongTitleIsNotReloadedForLinksNoTokenMakesLast() = runTest {
+        // A file of several episodes, 5 h 40 min: fresh links "run out" all
+        // the same, as a token lives at most 6 h - 5 min; a new one would end
+        // no later.
+        val duration = (5 * 60 + 40) * 60_000L
+        tv.status = RemoteMediaStatus(CastTag("m1", null, "owner-a", true, "L0", clock + LIFE_MS), RemotePlayerState.Playing, RemoteIdleReason.None, 0, duration)
+        assertTrue(linksRunOut(clock + LIFE_MS, clock, 0, duration))
+        assertEquals(CastRenewal.NotNeeded, loader.renewLinks(tv))
+        assertEquals(CastRenewal.NotNeeded, loader.renewLinks(tv))
+        assertTrue(tv.reloads.isEmpty())
+    }
+
+    @Test
+    fun aPausedTitleThatIsSoughtIsReloadedPaused() = runTest {
+        // Paused for hours; the viewer seeks while paused: the TV reports
+        // Buffering, and is still meant to wait.
+        tv.status = ours(RemotePlayerState.Buffering, 600_000, linksExpireAtMs = clock + 3_600_000)
+        tv.intent = false
+        assertEquals(CastRenewal.Renewed, loader.renewLinks(tv))
+        assertEquals(false, tv.reloads.single().autoplay)
+    }
+
+    @Test
+    fun resumingAPausedTitleWhoseLinksRunOutReloadsItPlayingAndSendsNoPlay() = runTest {
+        // Paused for hours on the TV; the viewer taps Resume on the phone.
+        tv.status = ours(RemotePlayerState.Paused, 600_000, linksExpireAtMs = clock + 3_600_000)
+        assertEquals(CastLoadResult.Playing, loader.load(tv, input(autoplay = true)))
+        assertEquals(true, tv.reloads.single().autoplay)
+        assertEquals(0, tv.plays)
+        assertTrue(tv.loads.isEmpty())
+    }
+
+    @Test
+    fun aRenewalThatFailsIsTriedOnceMoreAsARecoveryIsAndElseSaysWhy() = runTest {
+        tv.content = "https://media.example.com/api/v1/items/m1/play/master.m3u8?stream=t0&caps=avc:1080,aac"
+        tv.status = ours(RemotePlayerState.Playing, 600_000, linksExpireAtMs = clock + 3_600_000)
+        tv.answers += failedWith(905)
+        assertEquals(CastRenewal.Renewed, loader.renewLinks(tv))
+        assertEquals(2, tv.reloads.size)
+
+        tv.reloads.clear()
+        tv.status = ours(RemotePlayerState.Playing, 600_000, linksExpireAtMs = clock + 3_600_000)
+        tv.answers += failedWith(905)
+        tv.answers += failedWith(905)
+        val failed = assertIs<CastRenewal.Failed>(loader.renewLinks(tv))
+        assertEquals("Living Room TV reported: playback error (error 905)", failed.failure.details)
+        assertEquals(2, tv.reloads.size)
     }
 
     private companion object {

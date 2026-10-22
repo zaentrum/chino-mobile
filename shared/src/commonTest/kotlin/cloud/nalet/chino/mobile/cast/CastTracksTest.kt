@@ -99,6 +99,87 @@ class CastTracksTest {
     }
 
     @Test
+    fun aSideLoadedSubtitleTheLoadTurnedOnStaysOn() {
+        // English and English SDH side-loaded; the load turned the SDH one on.
+        val ours = listOf(
+            TvTrack(2, TvTrackType.Audio, "en", "English"),
+            TvTrack(1000, TvTrackType.Text, "en", "English", sidecarId = "s1"),
+            TvTrack(1001, TvTrackType.Text, "en", "English · SDH", sidecarId = "s3", sdh = true),
+        )
+        val sdh = wish(audio = "eng", subtitle = CastSubtitleStart.Sidecar("s3", "eng", forced = false, sdh = true))
+        assertNull(castActiveTracks(ours, active = listOf(2, 1001), wish = sdh))
+        // The default rule would pick plain English for that audio: the side-loaded one on stays.
+        assertNull(castActiveTracks(ours, active = listOf(2, 1001), wish = wish(audio = "jpn")))
+    }
+
+    @Test
+    fun theTvsSideLoadedTracksAreKnownByTheLoadsIds() {
+        // As the TV lists them after the load: no sidecar ids of their own.
+        val reported = listOf(
+            TvTrack(2, TvTrackType.Audio, "en", "English"),
+            TvTrack(1000, TvTrackType.Text, "en", "English"),
+            TvTrack(1001, TvTrackType.Text, "en", "English · SDH"),
+            TvTrack(5, TvTrackType.Text, "de", "German (forced)"),
+        )
+        val media = castMediaFor(
+            CastMediaInput(
+                apiBase = "https://media.example.com/api", itemId = "m1",
+                phoneMasterUrl = "https://media.example.com/api/v1/items/m1/play/master.m3u8?stream=p",
+                item = null, seriesTitle = null, durationMs = 5_400_000, startMs = 0, autoplay = true,
+                sidecars = listOf(
+                    SidecarSubtitle(id = "s1", lang = "eng", label = "English", url = "https://media.example.com/api/v1/play/subs/s1.vtt"),
+                    SidecarSubtitle(id = "s3", lang = "eng", label = "English SDH", url = "https://media.example.com/api/v1/play/subs/s3.vtt"),
+                ),
+                subtitleStart = CastSubtitleStart.Sidecar("s3", "eng", forced = false, sdh = true),
+                writesProgress = true,
+            ),
+            CastToken("tv", 0), master = null, load = "L1",
+        )
+        val master = parseHlsMaster(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="German (forced)",LANGUAGE="de",FORCED=YES,URI="s0/index.m3u8"
+            """.trimIndent(),
+        )
+        val known = withWhatThePhoneKnows(reported, media, master)
+        assertEquals(listOf(null, "s1", "s3", null), known.map { it.sidecarId })
+        assertEquals(listOf(false, false, true, false), known.map { it.sdh })
+        assertEquals(true, known.last().forced)
+        // The load turned SDH (1001) on; after it, nothing is changed.
+        assertEquals(1001L, media.activeTextTrackId)
+        assertNull(castActiveTracks(known, active = listOf(2, 1001), wish = CastTrackWish("eng", "orig", CastSubtitleStart.Sidecar("s3", "eng", false, true))))
+    }
+
+    @Test
+    fun twoSubtitlesOfOneLanguageAreTwoToTheDeDuplication() {
+        fun sub(id: String, lang: String, label: String?) =
+            SidecarSubtitle(id = id, lang = lang, label = label, url = "https://media.example.com/api/v1/play/subs/$id.vtt")
+        val sidecars = listOf(sub("s1", "eng", "English"), sub("s3", "eng", "English SDH"), sub("s5", "pt-BR", null), sub("s7", "zh-Hant", null))
+        // The master carries one plain English, one European Portuguese, one Simplified Chinese.
+        val master = listOf(
+            MasterSubtitle("English", "en", forced = false, default = false, autoselect = false),
+            MasterSubtitle("Português", "pt-PT", forced = false, default = false, autoselect = false),
+            MasterSubtitle("中文", "zh-Hans", forced = false, default = false, autoselect = false),
+        )
+        // Only plain English is the master's again: SDH, Brazilian, Traditional stay.
+        assertEquals(listOf("s3", "s5", "s7"), sidecarsBesideTheMaster(sidecars, master).map { it.id })
+        // An SDH rendition in the master, by its characteristics: the SDH sidecar goes too.
+        val withSdh = master + MasterSubtitle("English", "en", forced = false, default = false, autoselect = false, characteristics = "public.accessibility.transcribes-spoken-dialog,public.accessibility.describes-music-and-sound")
+        assertEquals(listOf("s5", "s7"), sidecarsBesideTheMaster(sidecars, withSdh).map { it.id })
+    }
+
+    @Test
+    fun theMastersRenditionOfTheViewersSdhIsTheSdhOne() {
+        val tracks = listOf(
+            TvTrack(2, TvTrackType.Audio, "en", "English"),
+            TvTrack(5, TvTrackType.Text, "en", "English"),
+            TvTrack(6, TvTrackType.Text, "en", "English SDH", sdh = true),
+        )
+        val sdh = wish(audio = "eng", subtitle = CastSubtitleStart.Sidecar("s3", "eng", forced = false, sdh = true))
+        assertEquals(listOf(2L, 6L), castActiveTracks(tracks, active = listOf(2), wish = sdh))
+    }
+
+    @Test
     fun aSidecarTheMasterCarriesIsLeftToTheMaster() {
         fun sub(id: String, lang: String, label: String? = null, forced: Boolean = false) =
             SidecarSubtitle(id = id, lang = lang, label = label, url = "https://media.example.com/api/v1/play/subs/$id.vtt", forced = forced)

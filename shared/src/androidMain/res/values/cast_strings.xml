@@ -13,10 +13,9 @@
     <string name="chino_cast_back_10" translatable="false">back 10 seconds</string>
     <string name="chino_cast_forward_10" translatable="false">forward 10 seconds</string>
 
-    <!-- The notification the app keeps while the TV plays a title whose
-         position the phone writes (CastPlaybackService), and its channel in
-         the system's settings. -->
+    <!-- The quiet notification the app keeps while casting needs it
+         (CastPlaybackService): one line under the app's name, the device by
+         its own name; and its channel in the system's settings. -->
     <string name="chino_cast_channel" translatable="false">Casting</string>
-    <string name="chino_cast_keeping_place_title" translatable="false">keeping your place</string>
-    <string name="chino_cast_keeping_place" translatable="false">keeping your place as it plays on %1$s</string>
+    <string name="chino_cast_keeping_place" translatable="false">Keeping your place while %1$s plays</string>
 </resources>

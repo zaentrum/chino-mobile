@@ -15,11 +15,11 @@ class CastFailureTest {
     private fun status(status: Int, code: Int? = 905) =
         castFailureDetails(CastErrorReport(detailedCode = code, probe = CastProbe.Answered(status)), host)
 
-    private fun code(code: Int) = castFailureDetails(CastErrorReport(detailedCode = code), host)
+    private fun code(code: Int) = castFailureDetails(CastErrorReport(detailedCode = code), host, device = "Living Room TV")
 
     @Test
     fun theLineNamesTheDevice() {
-        assertEquals("Living Room TV can't play this title.", CastFailure("Living Room TV", "the TV reported: unsupported media").headline)
+        assertEquals("Living Room TV can't play this title.", CastFailure("Living Room TV", "Living Room TV reported: unsupported media").headline)
         assertEquals("The device can't play this title.", CastFailure(UNNAMED_CAST_DEVICE, "").headline)
     }
 
@@ -46,10 +46,30 @@ class CastFailureTest {
     }
 
     @Test
-    fun aRefusedLinkIsTheTvsLinkNotTheViewersSignIn() {
+    fun aRefusedLinkIsTheDevicesLinkNotTheViewersSignIn() {
         val line = status(401)
-        assertEquals("the server turned down the TV's link to the stream (HTTP 401)", line)
+        assertEquals("the server turned down the device's link to the stream (HTTP 401)", line)
         assertFalse(line.contains("sign"), line)
+    }
+
+    @Test
+    fun noTokenForTheTvIsThePhonesSignInOrTheServer() {
+        fun mint(probe: CastProbe) = castFailureDetails(CastErrorReport(mint = probe), host, device = "Living Room TV")
+        // POST /me/stream-token refused: this phone's sign-in, not the TV's link.
+        assertEquals("the server no longer accepts this phone's sign-in (HTTP 401)", mint(CastProbe.Answered(401)))
+        assertEquals("the server no longer accepts this phone's sign-in (HTTP 403)", mint(CastProbe.Answered(403)))
+        assertEquals("the server ran into a problem (HTTP 503)", mint(CastProbe.Answered(503)))
+        assertEquals("no answer from media.example.com", mint(CastProbe.NoAnswer))
+    }
+
+    @Test
+    fun theDeviceGoesByItsNameNeverAsTheTv() {
+        fun sender(status: Int, device: String?) = castFailureDetails(CastErrorReport(senderStatus = status), host, device)
+        assertEquals("no answer from Kitchen speaker in time", sender(15, "Kitchen speaker"))
+        assertEquals("the connection to the device dropped", sender(7, null))
+        assertEquals("the device reported an error (status 2100)", sender(2100, null))
+        assertEquals("Kitchen speaker reported an error", castFailureDetails(CastErrorReport(), host, "Kitchen speaker"))
+        listOf(15, 7, 2016, 2100).forEach { assertFalse(sender(it, null).contains("TV"), sender(it, null)) }
     }
 
     @Test
@@ -60,16 +80,16 @@ class CastFailureTest {
 
     @Test
     fun whereTheServerAnswersTheReceiversCodeSaysWhatFailed() {
-        assertEquals("the TV reported: unsupported media (error 104)", status(200, code = 104))
-        assertEquals("the TV reported: unsupported media (error 104)", code(104))
-        assertEquals("the TV reported: unsupported media (error 102)", code(102))
-        assertEquals("the TV reported: couldn't load the stream from media.example.com (error 311)", code(311))
-        assertEquals("the TV reported: couldn't load the stream from media.example.com (error 103)", code(103))
-        assertEquals("the TV reported: couldn't read the stream (error 315)", code(315))
-        assertEquals("the TV reported: couldn't read the stream (error 316)", code(316))
-        assertEquals("the TV reported: couldn't read the stream (error 411)", code(411))
-        assertEquals("the TV reported: couldn't load the subtitles (error 600)", code(600))
-        assertEquals("the TV reported: playback error (error 905)", code(905))
+        assertEquals("the device reported: unsupported media (error 104)", status(200, code = 104))
+        assertEquals("Living Room TV reported: unsupported media (error 104)", code(104))
+        assertEquals("Living Room TV reported: unsupported media (error 102)", code(102))
+        assertEquals("Living Room TV reported: couldn't load the stream from media.example.com (error 311)", code(311))
+        assertEquals("Living Room TV reported: couldn't load the stream from media.example.com (error 103)", code(103))
+        assertEquals("Living Room TV reported: couldn't read the stream (error 315)", code(315))
+        assertEquals("Living Room TV reported: couldn't read the stream (error 316)", code(316))
+        assertEquals("Living Room TV reported: couldn't read the stream (error 411)", code(411))
+        assertEquals("Living Room TV reported: couldn't load the subtitles (error 600)", code(600))
+        assertEquals("Living Room TV reported: playback error (error 905)", code(905))
     }
 
     @Test
@@ -80,12 +100,13 @@ class CastFailureTest {
 
     @Test
     fun whereThePhoneSawTheRequestFail() {
-        assertEquals("no answer from the TV in time", castFailureDetails(CastErrorReport(senderStatus = 15), host))
-        assertEquals("the connection to the TV dropped", castFailureDetails(CastErrorReport(senderStatus = 7), host))
-        assertEquals("the TV reported an error (status 2100)", castFailureDetails(CastErrorReport(senderStatus = 2100), host))
-        assertEquals("the TV reported an error", castFailureDetails(CastErrorReport(), host))
+        fun line(report: CastErrorReport) = castFailureDetails(report, host, device = "Living Room TV")
+        assertEquals("no answer from Living Room TV in time", line(CastErrorReport(senderStatus = 15)))
+        assertEquals("the connection to Living Room TV dropped", line(CastErrorReport(senderStatus = 7)))
+        assertEquals("Living Room TV reported an error (status 2100)", line(CastErrorReport(senderStatus = 2100)))
+        assertEquals("Living Room TV reported an error", line(CastErrorReport()))
         // A code the receiver named comes before the phone's status.
-        assertEquals("the TV reported: unsupported media (error 104)", castFailureDetails(CastErrorReport(detailedCode = 104, senderStatus = 2104), host))
+        assertEquals("Living Room TV reported: unsupported media (error 104)", line(CastErrorReport(detailedCode = 104, senderStatus = 2104)))
     }
 
     @Test

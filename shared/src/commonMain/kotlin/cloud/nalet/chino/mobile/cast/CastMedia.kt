@@ -8,6 +8,7 @@ import cloud.nalet.chino.mobile.data.model.episodeCode
 import cloud.nalet.chino.mobile.ui.player.HlsMaster
 import cloud.nalet.chino.mobile.ui.player.SubtitleKind
 import cloud.nalet.chino.mobile.ui.player.SubtitleLabelInput
+import cloud.nalet.chino.mobile.ui.player.isSdhSubtitle
 import cloud.nalet.chino.mobile.ui.player.languageTag
 import cloud.nalet.chino.mobile.ui.player.sidecarForced
 import cloud.nalet.chino.mobile.ui.player.subtitleKind
@@ -82,6 +83,9 @@ data class CastTextTrack(
     val forced: Boolean,
     /** The sidecar's id at chino-api. */
     val sidecarId: String,
+    /** For the deaf and hard of hearing ([isSdhSubtitle]): told apart from a
+     *  plain one of its language. */
+    val sdh: Boolean = false,
 )
 
 /**
@@ -157,9 +161,10 @@ sealed interface CastSubtitleStart {
     /** The phone's player showed none. */
     data object Off : CastSubtitleStart
 
-    /** The phone's player showed this sidecar - in [lang], forced or not, by
-     *  which the TV's rendition of it is found where the master carries it. */
-    data class Sidecar(val sidecarId: String, val lang: String?, val forced: Boolean) : CastSubtitleStart
+    /** The phone's player showed this sidecar - in [lang], forced or not,
+     *  for the deaf and hard of hearing or not, by which the TV's rendition
+     *  of it is found where the master carries it. */
+    data class Sidecar(val sidecarId: String, val lang: String?, val forced: Boolean, val sdh: Boolean = false) : CastSubtitleStart
 }
 
 /** What the title's player knows as it casts. */
@@ -335,6 +340,7 @@ fun castTextTracks(sidecars: List<SidecarSubtitle>): List<CastTextTrack> {
             name = names[i],
             forced = sidecarForced(s),
             sidecarId = s.id,
+            sdh = isSdhSubtitle(s.label),
         )
     }
 }

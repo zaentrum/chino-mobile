@@ -77,14 +77,17 @@ class CastProgressReporter(
     /** Asks the TV for its status now. */
     private val askStatus: () -> Unit = {},
 ) {
-    private class Tracked(val load: String, val itemId: String, val writer: CastWriter, since: Long) {
+    private class Tracked(val load: String, val itemId: String, val writer: CastWriter, since: Long, val floorSec: Int?) {
         val guard = ProgressGuard(writable = true)
         var durationMs = 0L
         var state = RemotePlayerState.Unknown
         var lastWriteAt = since
     }
 
-    private class Expected(val load: String, val startMs: Long)
+    private class Expected(val load: String, val startMs: Long, val floorMs: Long?)
+
+    /** The load last let go, and the last position of it the TV confirmed. */
+    private var ended: Pair<String, Int>? = null
 
     private var tracked: Tracked? = null
 
@@ -102,9 +105,18 @@ class CastProgressReporter(
     val trackedItemId: String? get() = tracked?.itemId
 
     /** The phone told the TV to play [itemId] from [startMs], as the load
-     *  [load]: positions of it short of there are not played yet. */
-    fun loading(load: String, itemId: String, startMs: Long) {
-        expected = Expected(load, startMs)
+     *  [load]: positions of it short of there are not played yet. A load
+     *  that takes over from where the TV was - a recovery, links signed anew
+     *  - writes nothing short of [floorMs], the position already kept. */
+    fun loading(load: String, itemId: String, startMs: Long, floorMs: Long? = null) {
+        expected = Expected(load, startMs, floorMs)
+    }
+
+    /** The last position the TV confirmed of the load [load], in ms: of the
+     *  one tracked now, or of the one let go last; null when none was. */
+    fun lastConfirmedMs(load: String): Long? {
+        tracked?.takeIf { it.load == load }?.guard?.position()?.let { return it * 1000L }
+        return ended?.takeIf { it.first == load }?.second?.let { it * 1000L }
     }
 
     /** The TV reported its media status. */
@@ -124,11 +136,12 @@ class CastProgressReporter(
             finish(t, write = t.writer == w)
         }
         if (tag == null || w == null || !mine) return
-        val current = tracked ?: Tracked(tag.load, tag.itemId, w, at).also { started ->
-            tracked = started
-            expected?.takeIf { it.load == tag.load }?.let { e ->
-                started.guard.expectSeek(e.startMs / 1000.0)
-                expected = null
+        val current = tracked ?: run {
+            val e = expected?.takeIf { it.load == tag.load }
+            expected = expected?.takeUnless { it.load == tag.load }
+            Tracked(tag.load, tag.itemId, w, at, floorSec = e?.floorMs?.let { (it / 1000L).toInt() }).also { started ->
+                tracked = started
+                e?.let { started.guard.expectSeek(it.startMs / 1000.0) }
             }
         }
         if (status.durationMs > 0) current.durationMs = status.durationMs
@@ -192,6 +205,7 @@ class CastProgressReporter(
 
     private fun finish(t: Tracked, write: Boolean) {
         if (write) save(t, final = true)
+        t.guard.position()?.let { ended = t.load to it }
         if (tracked === t) tracked = null
     }
 
@@ -199,6 +213,17 @@ class CastProgressReporter(
         t.lastWriteAt = now()
         if (t.writer != writer()) return
         val pos = t.guard.position() ?: return
+        // Never a position short of the one a takeover started from.
+        if (t.floorSec != null && pos < t.floorSec) return
         write(CastProgressWrite(t.writer.accountId, t.itemId, pos, (t.durationMs / 1000L).toInt(), final))
     }
 }
+
+/**
+ * Where a title the TV played stood as it failed, to load it again there:
+ * the later of the last position the TV confirmed of it ([confirmedMs], the
+ * reporter's, its ticks counted) and the position of its last status
+ * ([lastStatusMs]) - the TV sends a status only when its state changes, so
+ * after a long stretch of playing that one is old. Null for neither.
+ */
+fun castRecoveryAtMs(confirmedMs: Long?, lastStatusMs: Long?): Long? = listOfNotNull(confirmedMs, lastStatusMs).maxOrNull()
