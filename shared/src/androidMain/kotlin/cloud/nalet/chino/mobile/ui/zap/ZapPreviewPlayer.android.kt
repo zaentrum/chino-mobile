@@ -70,7 +70,7 @@ actual fun ZapPreviewPlayer(
         // written back, so a re-watch is warm too.
         val httpFactory = ZapMediaCache.playerDataSourceFactory(
             context,
-            userAgent = "chino-mobile/0.1 (Android; zap)",
+            userAgent = "chino-mobile/0.2 (Android; zap)",
         )
         // A 404 on the manifest = chino-stream has no playable asset for the
         // item — permanent, so fail fast (the card treats this as a dead

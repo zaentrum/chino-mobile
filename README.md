@@ -518,9 +518,12 @@ The neutrality check is
 name wherever no letter or digit stands next to it — so a name joined by `_`
 in an environment variable counts, and for product names a camelCase one
 too — tests its own patterns before it scans, and runs the same way locally.
-A signed release job (`bundleRelease` / `assembleRelease`) runs only when a
-signing keystore secret is configured. iOS is not built in CI (the App Store
-path needs a macOS runner + signing).
+A signed release job (`bundleRelease` / `assembleRelease`) runs only when it
+is started by hand (*Run workflow*) with the `version_code` Play takes next -
+above the last one it has - and a signing keystore secret is configured; a
+push never builds one. Any release build needs `VERSION_CODE`: without it the
+build stops rather than carry the debug default. iOS is not built in CI (the
+App Store path needs a macOS runner + signing).
 
 ## Roadmap
 

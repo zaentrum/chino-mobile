@@ -8,7 +8,9 @@ plugins {
 }
 
 // --- CI build inputs (all optional; defaults preserve local/dev behaviour) ---
-// versionCode: CI sets VERSION_CODE=$CI_PIPELINE_IID so every Play upload climbs.
+// versionCode: VERSION_CODE, which a release build must be given - the one
+// Play takes next, above the last it has (the CI release job asks for it);
+// debug builds default to 1.
 val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
 // Release signing: CI decodes a base64 upload keystore to SIGNING_KEYSTORE_FILE.
 val releaseKeystore = System.getenv("SIGNING_KEYSTORE_FILE")?.takeIf { it.isNotBlank() && file(it).exists() }
@@ -96,7 +98,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = ciVersionCode ?: 1
-        versionName = "0.1.1"
+        versionName = "0.2.0"
         // AndroidJUnitRunner — invoked by `am instrument` to enumerate +
         // execute @Test methods inside the androidInstrumentedTest APK.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -189,5 +191,17 @@ android {
             "/META-INF/{AL2.0,LGPL2.1}",
             "/META-INF/INDEX.LIST",
         )
+    }
+}
+
+// A release build takes its versionCode from VERSION_CODE, never the debug
+// default: Play refuses a code at or below the last one it has, and an
+// upload built without it would carry 1. Checked as a release build starts,
+// so a debug build, the tests and a release unit-test run need none.
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst {
+        if (ciVersionCode == null) {
+            throw GradleException("A release build needs VERSION_CODE: the versionCode Play takes next, above the last one it has.")
+        }
     }
 }

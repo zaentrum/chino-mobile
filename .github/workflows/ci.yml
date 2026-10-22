@@ -3,6 +3,14 @@ name: CI
 on:
   push:
   pull_request:
+  # The signed release, by hand only: whoever releases says which versionCode
+  # Play takes next (above the last one it has). A push never builds one.
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: "versionCode of this release: above the last one Play has"
+        required: true
+        type: number
 
 permissions:
   contents: read
@@ -91,13 +99,15 @@ jobs:
             echo "has_keystore=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # Signed release artifacts (AAB + APK). Runs ONLY when a signing keystore is
-  # configured as a repo/org secret; absent secrets simply skip the job and
-  # never fail the build.
+  # Signed release artifacts (AAB + APK). Runs ONLY when started by hand
+  # (workflow_dispatch) with the versionCode Play takes next, and only when a
+  # signing keystore is configured as a repo/org secret; absent secrets simply
+  # skip the job and never fail the build. Its versionCode is never the run's
+  # number, which may lie below Play's.
   android-release:
     runs-on: ubuntu-latest
     needs: [neutrality, android-build, check-secrets]
-    if: ${{ needs.check-secrets.outputs.has_keystore == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && needs.check-secrets.outputs.has_keystore == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -128,7 +138,7 @@ jobs:
       - name: Build signed release (AAB + APK)
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2048m"
-          VERSION_CODE: ${{ github.run_number }}
+          VERSION_CODE: ${{ inputs.version_code }}
           SIGNING_KEYSTORE_FILE: ${{ runner.temp }}/upload.jks
           SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}

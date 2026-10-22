@@ -227,7 +227,7 @@ class ZapPrefetcher(context: Context) {
         /** Seek-window length to cover from seekSec, in seconds (~one to two
          *  CMAF segments past the start so playback doesn't immediately stall). */
         private const val WINDOW_SEC = 12L
-        private const val PREFETCH_UA = "chino-mobile/0.1 (Android; zap-prefetch)"
+        private const val PREFETCH_UA = "chino-mobile/0.2 (Android; zap-prefetch)"
     }
 }
 
