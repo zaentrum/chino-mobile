@@ -3,14 +3,13 @@ package cloud.nalet.chino.mobile.data.downloads
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.ui.player.SubtitleKind
 import cloud.nalet.chino.mobile.ui.player.normalizeLang
-import cloud.nalet.chino.mobile.ui.player.sidecarForced
 import cloud.nalet.chino.mobile.ui.player.subtitleKind
 
 /*
  * What a download keeps of a title: one video rendition, picked by the
  * download quality; the audio in the viewer's language and the original
- * audio; the subtitles in the viewer's languages - and what that comes to on
- * the phone. Pure, so commonTest pins every rule.
+ * audio; every text subtitle - and what that comes to on the phone. Pure, so
+ * commonTest pins every rule.
  */
 
 /** The picture sizes quality names stand for, as the player's quality menu
@@ -75,29 +74,13 @@ fun pickAudios(renditions: List<HlsRendition>, audioPref: String?): List<HlsRend
 }
 
 /**
- * The sidecar subtitles a download keeps: the text ones (WebVTT, SubRip -
- * served as .vtt) in the viewer's languages - the subtitle language set in
- * Settings, and the audio language they prefer - and the forced ones in the
- * language of each audio it keeps, which the player turns on for the lines a
- * film shows in another language. In the server's order, each once.
+ * The sidecar subtitles a download keeps: every text one (WebVTT, SubRip -
+ * served as .vtt), whatever its language - a few kilobytes each, so that the
+ * download has what the title has online; picture ones (PGS, VobSub) are
+ * not files a phone shows. In the server's order, each once.
  */
-fun pickSubtitles(
-    sidecars: List<SidecarSubtitle>,
-    audioLanguages: List<String?>,
-    audioPref: String?,
-    subtitlePref: String?,
-): List<SidecarSubtitle> {
-    val viewer = buildSet {
-        subtitlePref?.takeUnless { it.isBlank() || it.equals("off", ignoreCase = true) }?.let { add(normalizeLang(it)) }
-        audioPref?.takeUnless { it.isBlank() || it.equals("orig", ignoreCase = true) }?.let { add(normalizeLang(it)) }
-    } - ""
-    val audio = audioLanguages.map { normalizeLang(it) }.filter { it.isNotEmpty() }.toSet()
-    return sidecars.filter { s ->
-        if (s.id.isBlank() || subtitleKind(s.format) != SubtitleKind.Text) return@filter false
-        val lang = normalizeLang(s.lang)
-        lang.isNotEmpty() && (lang in viewer || (sidecarForced(s) && lang in audio))
-    }.distinctBy { it.id }
-}
+fun pickSubtitles(sidecars: List<SidecarSubtitle>): List<SidecarSubtitle> =
+    sidecars.filter { s -> s.id.isNotBlank() && subtitleKind(s.format) == SubtitleKind.Text }.distinctBy { it.id }
 
 /** What a stereo audio rendition beyond the first takes: the variant's
  *  AVERAGE-BANDWIDTH holds its video and one audio rendition, a second one
@@ -124,8 +107,8 @@ fun bytesPerHour(bitsPerSecond: Long): Long = bitsPerSecond * 3_600L / 8L
 /**
  * A size as the app writes it: GB with one decimal from 1 GB up, without a
  * trailing zero ("1.4 GB", "18 GB"), MB below it ("820 MB"), decimal units
- * as a phone's storage counts them. Never "0 MB" for something there is:
- * "1 MB".
+ * as a phone's storage counts them, the unit never on a line of its own
+ * ([NBSP]). Never "0 MB" for something there is: "1 MB".
  */
 fun formatSize(bytes: Long): String {
     val b = bytes.coerceAtLeast(0L)
@@ -133,10 +116,14 @@ fun formatSize(bytes: Long): String {
     // 999.6 MB rounds to a GB: "1 GB", not "1000 MB".
     if (b >= GB || mb >= 1_000L) {
         val tenths = (b * 10 + GB / 2) / GB
-        return if (tenths % 10 == 0L) "${tenths / 10} GB" else "${tenths / 10}.${tenths % 10} GB"
+        return if (tenths % 10 == 0L) "${tenths / 10}${NBSP}GB" else "${tenths / 10}.${tenths % 10}${NBSP}GB"
     }
-    return "${mb.coerceAtLeast(if (b > 0) 1 else 0)} MB"
+    return "${mb.coerceAtLeast(if (b > 0) 1 else 0)}${NBSP}MB"
 }
+
+/** A space a line never breaks at: a size and its unit stay together
+ *  ("281 MB"), as does "check needed". */
+const val NBSP = '\u00A0'
 
 /**
  * What an hour takes at each quality, for Settings, from the masters of a

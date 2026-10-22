@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
@@ -43,6 +44,13 @@ internal class TitleFiles(private val root: File) {
 
     /** The folders are read: [titles] holds every title on the phone. */
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
+
+    private val _folderBytes = MutableStateFlow<Map<String, Long>>(emptyMap())
+
+    /** What each title's folder takes on the phone - its metadata, artwork
+     *  and subtitles - by key: measured on the writer as the folders are
+     *  read, after each write of a title and each deletion. */
+    val folderBytes: StateFlow<Map<String, Long>> = _folderBytes.asStateFlow()
 
     /** Keys of the folders whose title.json could not be read. */
     @Volatile
@@ -128,11 +136,21 @@ internal class TitleFiles(private val root: File) {
         writer.execute { deleteFolder(key) }
     }
 
-    /** What the folders take on the phone. */
-    fun bytes(): Long = runCatching { root.walkTopDown().filter { it.isFile }.sumOf { it.length() } }.getOrDefault(0L)
+    /** [key]'s folder measured again, in the writer's turn: files went into
+     *  it beside its metadata (its artwork, its subtitles). */
+    fun remeasure(key: String) {
+        writer.execute { measure(key) }
+    }
 
     /** What [key]'s folder takes. */
-    fun bytesOf(key: String): Long = runCatching { dirOf(key).walkTopDown().filter { it.isFile }.sumOf { it.length() } }.getOrDefault(0L)
+    private fun bytesOf(key: String): Long = runCatching { dirOf(key).walkTopDown().filter { it.isFile }.sumOf { it.length() } }.getOrDefault(0L)
+
+    /** [key]'s folder as [folderBytes] has it: what it takes, or nothing
+     *  once its title is gone. On the writer. */
+    private fun measure(key: String) {
+        val bytes = if (_titles.value[key] != null) bytesOf(key) else null
+        _folderBytes.update { m -> if (bytes == null) m - key else m + (key to bytes) }
+    }
 
     /** The writes that failed, again: there may be room now. */
     fun retryFailed() {
@@ -151,7 +169,7 @@ internal class TitleFiles(private val root: File) {
 
     private fun writeNow(key: String) {
         pending.remove(key)
-        val title = _titles.value[key] ?: return
+        val title = _titles.value[key] ?: return measure(key)
         try {
             val dir = dirOf(key)
             if (!dir.isDirectory && !dir.mkdirs()) throw IOException("cannot make $dir")
@@ -169,6 +187,7 @@ internal class TitleFiles(private val root: File) {
             Log.w(TAG, "a title's file could not be written, kept in memory: ${e.message}")
             if (failed.add(key)) writer.schedule({ if (failed.contains(key)) write(key) }, RETRY_S, TimeUnit.SECONDS)
         }
+        measure(key)
     }
 
     private fun deleteFolder(key: String) {
@@ -177,7 +196,7 @@ internal class TitleFiles(private val root: File) {
         // Put again since it was removed: back on the disk as it is in
         // memory - the write that put asked for may have gone out ahead of
         // this deletion, with one queued from before it.
-        if (_titles.value[key] != null) writeNow(key)
+        if (_titles.value[key] != null) writeNow(key) else measure(key)
     }
 
     private fun load() {
@@ -197,6 +216,7 @@ internal class TitleFiles(private val root: File) {
         unreadable = bad
         // What was put meanwhile wins over what the disk had.
         synchronized(this) { _titles.value = loaded + _titles.value }
+        for (key in _titles.value.keys) measure(key)
         _ready.value = true
     }
 

@@ -70,7 +70,7 @@ class DownloadPlannerTest {
     fun aTitleThatOnlyStreamsCannotComeAlongAndItsMasterIsNotAskedFor() = runTest {
         assertEquals(DownloadOffer.StreamOnly, planner.offer("stream", 720, null))
         assertTrue(requests.none { it.contains("stream/play/master") })
-        assertEquals(PlanResult.NotPossible(DownloadFailure.StreamOnly), planner.plan("stream", 720, "eng", "off"))
+        assertEquals(PlanResult.NotPossible(DownloadFailure.StreamOnly), planner.plan("stream", 720, "eng"))
     }
 
     @Test
@@ -81,10 +81,11 @@ class DownloadPlannerTest {
 
     @Test
     fun aPlanKeepsOneRenditionTheViewersAudioAndTheOriginalAndTheirSubtitles() = runTest {
-        val plan = assertIs<PlanResult.Ready>(planner.plan("film", 720, audioPref = "eng", subtitlePref = "off")).plan
+        val plan = assertIs<PlanResult.Ready>(planner.plan("film", 720, audioPref = "eng")).plan
         assertEquals("v1/playlist.m3u8?stream=TOKEN&v=1", plan.variant.uri)
         assertEquals(listOf("en", "de"), plan.audios.map { it.language })
-        assertEquals(listOf("s-en"), plan.subtitles.map { it.id })
+        // Every text subtitle the title has, whatever its language.
+        assertEquals(listOf("s-en", "s-fr"), plan.subtitles.map { it.id })
         // The master without the token it was read with, at Auto: the whole
         // ladder this device is served.
         assertEquals("https://media.example.com/api/v1/items/film/play/master.m3u8?caps=avc:1080,hvc:2160,aac", plan.masterUrl)
@@ -94,6 +95,12 @@ class DownloadPlannerTest {
         assertEquals("https://media.example.com/api", plan.server)
         // Where the viewer was, kept for a resume without the server.
         assertEquals(1200, plan.savedPositionSec)
+        // The offer before it said the size of exactly this: the variant and
+        // both audios the viewer's language keeps - one number, before and
+        // after.
+        assertEquals(DownloadOffer.Available(plan.estimatedBytes), planner.offer("film", 720, null, audioPref = "eng"))
+        // Where the original audio is the viewer's, one audio, and less.
+        assertEquals(DownloadOffer.Available(2_000_000L * 7_200 / 8), planner.offer("film", 720, null, audioPref = "deu"))
     }
 
     @Test
@@ -105,7 +112,7 @@ class DownloadPlannerTest {
             "#EXT-X-STREAM-INF:BANDWIDTH=3000000,AVERAGE-BANDWIDTH=2000000,CODECS=\"hvc1.1.2.L93.90,mp4a.40.2\",RESOLUTION=1280x720,AUDIO=\"audio\"\nv1/playlist.m3u8?stream=TOKEN&v=1",
             "#EXT-X-STREAM-INF:BANDWIDTH=1500000,AVERAGE-BANDWIDTH=1000000,CODECS=\"hvc1.1.2.L90.90,mp4a.40.2\",RESOLUTION=854x480,AUDIO=\"audio\"\nv2/playlist.m3u8?stream=TOKEN&v=2",
         )
-        val plan = assertIs<PlanResult.Ready>(planner.plan("film", 720, audioPref = "eng", subtitlePref = "off")).plan
+        val plan = assertIs<PlanResult.Ready>(planner.plan("film", 720, audioPref = "eng")).plan
         // Read again, and the rung it has now: never the one of a stale ladder.
         assertEquals("v2/playlist.m3u8?stream=TOKEN&v=2", plan.variant.uri)
         assertEquals(2, requests.count { it.endsWith("/master.m3u8") })
@@ -113,7 +120,7 @@ class DownloadPlannerTest {
 
     @Test
     fun anEpisodesPlanSavesItsSeriesTitle() = runTest {
-        val plan = assertIs<PlanResult.Ready>(planner.plan("ep1", 720, audioPref = "eng", subtitlePref = "off")).plan
+        val plan = assertIs<PlanResult.Ready>(planner.plan("ep1", 720, audioPref = "eng")).plan
         assertEquals("Pioneer One", plan.seriesTitle)
     }
 

@@ -29,6 +29,26 @@ fun statusLabel(status: DownloadStatus): String = when (status) {
     is DownloadStatus.Failed -> "couldn't download"
 }
 
+/**
+ * A row's one text on the downloads screen: the status and the size its
+ * offer said, as the server reports it ([size]) - "queued · 347 MB",
+ * "downloading 15% · 347 MB", "downloaded · 347 MB", the same number before
+ * and after. One that failed keeps nothing, and its row says no size - but
+ * where its media came in whole and the rest of it did not, what it keeps.
+ */
+fun rowLabel(status: DownloadStatus, size: Long?): String {
+    val label = statusLabel(status)
+    val sized = status is DownloadStatus.Queued || status is DownloadStatus.WaitingForWifi ||
+        status is DownloadStatus.WaitingForConnection || status is DownloadStatus.Downloading || status is DownloadStatus.Failed
+    return if (sized && size != null && size > 0) "$label · ${formatSize(size)}" else label
+}
+
+/** Whether "try again" can help a download that stopped for [this]: not
+ *  where the server turned downloads off, the title is not the account's,
+ *  or it only streams. */
+val DownloadFailure.canTryAgain: Boolean
+    get() = this != DownloadFailure.ServerOff && this != DownloadFailure.Gone && this != DownloadFailure.StreamOnly
+
 /** The sentence under the label, where one says why: a failure's reason, or
  *  why a download waits for the server before it plays. */
 fun statusSentence(status: DownloadStatus, device: DeviceKind): String? = when (status) {
@@ -57,26 +77,34 @@ const val CANT_DOWNLOAD_SENTENCE = "This title can only be streamed."
 
 /** A download not checked with the server for [CHECK_EVERY_MS], while the
  *  server cannot be reached: its label, and the reason play waits. */
-const val CHECK_NEEDED_LABEL = "downloaded · check needed"
+const val CHECK_NEEDED_LABEL = "downloaded · check${NBSP}needed"
 const val CHECK_NEEDED_SENTENCE =
     "Downloads are checked with the server every 30 days. This one plays again once the server can be reached."
 
 /**
- * A season's offer, for the episodes not handled yet: "download season 1 ·
- * 8 episodes · 9.6 GB" while none of the season is on the phone or on its
- * way, else "download 2 more episodes · 724 MB" - a six-episode season does
- * not read as one of two. The size once every episode's is known, else
- * without it. [episodes] counts what the action downloads.
+ * A season's offer, for its episodes not handled yet: "download season 1 · 6
+ * episodes · 1.9 GB" only while every episode of the season can be
+ * downloaded and none is on the phone or on its way ([allDownloadable],
+ * [noneHandled]); else "download 4 episodes · 1.3 GB" where some only
+ * stream, and "download 2 more episodes · 724 MB" once some are handled - a
+ * six-episode season does not read as one of four. [episodes] counts the
+ * episodes the action downloads, a file holding two counting both; the size
+ * once every one's is known, else without it.
  */
-fun seasonOfferLabel(season: Int, episodes: Int, bytes: Long?, noneHandled: Boolean): String = buildString {
-    if (noneHandled) {
-        append("download season ").append(season).append(" · ").append(episodes)
-        append(if (episodes == 1) " episode" else " episodes")
-    } else {
-        append("download ").append(episodes).append(if (episodes == 1) " more episode" else " more episodes")
+fun seasonOfferLabel(season: Int, episodes: Int, bytes: Long?, noneHandled: Boolean, allDownloadable: Boolean = true): String = buildString {
+    val word = if (episodes == 1) "episode" else "episodes"
+    when {
+        noneHandled && allDownloadable -> append("download season ").append(season).append(" · ").append(episodes).append(' ').append(word)
+        noneHandled -> append("download ").append(episodes).append(' ').append(word)
+        else -> append("download ").append(episodes).append(" more ").append(word)
     }
     if (bytes != null && bytes > 0) append(" · ").append(formatSize(bytes))
 }
+
+/** The page built from the phone says only what is on the phone: a
+ *  series' or a season's episodes there - "2 episodes on this phone". */
+fun episodesOnThePhoneLabel(count: Int, device: DeviceKind): String =
+    "$count ${if (count == 1) "episode" else "episodes"} on this ${device.word}"
 
 /** How far a series or a season is on the phone: "3 of 8 downloaded". */
 fun partLabel(downloaded: Int, of: Int): String = "$downloaded of $of downloaded"
@@ -99,14 +127,14 @@ fun qualityLine(q: DownloadQuality): String =
 /** "Delete all"'s question: its title, the action and what it acts on. */
 const val DELETE_ALL_TITLE = "delete all downloads"
 
-/** Its sentence, counting what is on the phone: "This removes 6 titles,
- *  474 MB, from this phone." With nothing on it - only downloads that
- *  stopped - the list is cleared. */
-fun deleteAllSentence(titles: Int, bytes: Long, device: DeviceKind): String =
-    if (titles == 0) {
+/** Its sentence, counting what is on the phone: "This removes 23
+ *  downloads, 12.4 GB, from this phone." With nothing on it - only downloads
+ *  that failed - the list is cleared. */
+fun deleteAllSentence(downloads: Int, bytes: Long, device: DeviceKind): String =
+    if (downloads == 0) {
         "This clears the list of downloads."
     } else {
-        "This removes $titles ${if (titles == 1) "title" else "titles"}, ${formatSize(bytes)}, from this ${device.word}."
+        "This removes $downloads ${if (downloads == 1) "download" else "downloads"}, ${formatSize(bytes)}, from this ${device.word}."
     }
 
 /** The banner while the server cannot be reached: the downloads play
@@ -156,3 +184,14 @@ fun accountDownloadsGoSentence(summary: DownloadsSummary, accountName: String, d
  *  series and code - "Pioneer One · S01E01 · Earthfall". */
 fun notificationTitle(title: String, seriesTitle: String?, episodeCode: String?): String =
     listOfNotNull(seriesTitle?.takeIf { it.isNotBlank() }, episodeCode?.takeIf { it.isNotBlank() }, title).joinToString(" · ")
+
+/** The question before a sign-out or an account's removal while casting:
+ *  the sentence after the downloads one. [device]: the session's device. */
+fun castingStopsSentence(device: String): String = "Casting on $device stops."
+
+/** After an account switch while casting, which asks nothing. */
+fun stoppedCastingToast(device: String): String = "Stopped casting on $device."
+
+/** A downloaded title played on the phone, not the TV, while a device is
+ *  connected: the server can't be reached. */
+fun playingHereToast(device: DeviceKind): String = "Playing on this ${device.word}: the server can't be reached."

@@ -40,8 +40,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -164,6 +167,19 @@ internal class DownloadEngine private constructor(context: Context) {
      *  same objects would never read as changed. */
     val downloads: StateFlow<Map<String, DownloadSnapshot>> = _downloads.asStateFlow()
 
+    /**
+     * What each title takes on the phone now, by key: its media as the
+     * manager counts it, and its folder - metadata, artwork, subtitles. The
+     * one figure the downloads screen's line and rows, "delete all" and every
+     * question before a sign-out or a change of server count. Only for a
+     * title whose media is there or on its way, partly fetched while it
+     * waits; one that failed keeps nothing (AndroidDownloads frees its media)
+     * and has none.
+     */
+    val onPhone: StateFlow<Map<String, Long>> = combine(_downloads, titles.folderBytes) { downloads, folders ->
+        onPhoneBytes(downloads, folders)
+    }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
+
     private val _notMet = MutableStateFlow(0)
 
     /** The requirements the manager waits for (Requirements flags). */
@@ -251,9 +267,6 @@ internal class DownloadEngine private constructor(context: Context) {
 
     /** What is free in the app's storage now. */
     fun freeBytes(): Long = runCatching { StatFs(context.filesDir.path).availableBytes }.getOrDefault(0L)
-
-    /** What downloads take: their media and their folders. */
-    fun usedBytes(): Long = cache.cacheSpace + titles.bytes()
 
     /** Downloads that wait or were cut off carry on (the app came to the
      *  front): unpaused - after Android 15's daily limit stopped them - and
@@ -455,7 +468,7 @@ internal fun downloadUpstream(http: OkHttpClient, onRefused: () -> Unit): DataSo
     RefusalAware(UnsignedPlaylists(OkHttpDataSource.Factory(http).setUserAgent(USER_AGENT).createDataSource()), onRefused)
 }
 
-private const val USER_AGENT = "chino-mobile/0.1 (Android; downloads)"
+private const val USER_AGENT = "chino-mobile/0.2 (Android; downloads)"
 
 /** A download as it is at one moment: its state, how far, what it fetched,
  *  its stop reason, and its request. */
@@ -468,6 +481,14 @@ internal data class DownloadSnapshot(
 )
 
 private fun Download.snapshot() = DownloadSnapshot(state, percentDownloaded, bytesDownloaded, request, stopReason)
+
+/** What each title takes on the phone ([DownloadEngine.onPhone]): the media
+ *  of a download there or on its way and its title's folder; none for one
+ *  that failed or goes. */
+internal fun onPhoneBytes(downloads: Map<String, DownloadSnapshot>, folders: Map<String, Long>): Map<String, Long> =
+    downloads
+        .filterValues { it.state != Download.STATE_FAILED && it.state != Download.STATE_REMOVING }
+        .mapValues { (key, d) -> d.bytes.coerceAtLeast(0L) + (folders[key] ?: 0L) }
 
 /** Media3's download index and the cache's, in a database file of their
  *  own: the Zap cache keeps its own in Media3's default one. */

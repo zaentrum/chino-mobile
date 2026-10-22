@@ -109,11 +109,14 @@ const val GONE_CONFIRM_MS = 60L * 60 * 1000
 
 /** What the server's answer to a check came to: the titles as they are now,
  *  those it took off the phone for the account, and those it only marked -
- *  the first answer that they are not the account's any more. */
+ *  the first answer that they are not the account's any more. Not
+ *  [answered]: the answer left out every title asked, which counts as none,
+ *  and nothing changed. */
 data class AvailabilityChange(
     val change: BookChange,
     val deleted: List<DownloadedTitle>,
     val marked: List<DownloadedTitle> = emptyList(),
+    val answered: Boolean = true,
 )
 
 /**
@@ -125,7 +128,9 @@ data class AvailabilityChange(
  * else - it still plays, and its last good check stands; the second, an
  * hour or more after the first, takes the claim, the media with the last
  * one. Only an answer the server gave the owning account decides this; no
- * answer decides nothing.
+ * answer decides nothing - and an answer that leaves out every title asked
+ * is none: a library imported anew or reset answers so for a while, and
+ * that takes nothing off the phone, nor counts as a first answer.
  */
 fun applyAvailability(
     titles: Map<String, DownloadedTitle>,
@@ -135,6 +140,10 @@ fun applyAvailability(
     now: Long,
 ): AvailabilityChange {
     val askedSet = asked.toSet()
+    val ownedAsked = titles.values.filter { it.ownedBy(owner) && it.itemId in askedSet && it.claimOf(owner.subject) != null }
+    if (ownedAsked.isNotEmpty() && ownedAsked.none { it.itemId in available }) {
+        return AvailabilityChange(BookChange(titles), emptyList(), emptyList(), answered = false)
+    }
     var book = BookChange(titles)
     val deleted = ArrayList<DownloadedTitle>()
     val marked = ArrayList<DownloadedTitle>()
@@ -216,7 +225,8 @@ const val MAX_TITLE_BY_TITLE = 100
 
 /** [ids] asked about one by one (GET /items/{id}, the title route a capped
  *  account is held to its cap on): those the server answers 2xx for; null
- *  for any other answer than 404 or 410, or none. */
+ *  for any other answer than 404 or 410, or none - and where it answers 404
+ *  or 410 for every one, which says nothing of any of them. */
 private suspend fun titleByTitle(api: ChinoApi, ids: List<String>, bearer: String?): Set<String>? {
     if (ids.size > MAX_TITLE_BY_TITLE) return null
     val out = HashSet<String>()
@@ -232,5 +242,5 @@ private suspend fun titleByTitle(api: ChinoApi, ids: List<String>, bearer: Strin
             return null
         }
     }
-    return out
+    return out.takeIf { it.isNotEmpty() || ids.isEmpty() }
 }

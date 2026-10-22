@@ -231,9 +231,11 @@ class DetailScreenModel(
             mine == null -> itemId.takeIf { id -> entries.any { it.title.item.parentId == id } }
             else -> null
         }
-        if (seriesId != null) {
-            val episodes = entries.filter { it.title.isEpisode && it.title.item.parentId == seriesId }
-            if (episodes.isEmpty()) return null
+        val episodes = seriesId?.let { id -> entries.filter { it.title.isEpisode && it.title.item.parentId == id } }.orEmpty()
+        // A series by its name as the download kept it; where none was kept,
+        // the episode's own page - never a page without a title.
+        val seriesName = episodes.firstNotNullOfOrNull { e -> e.title.seriesTitle?.takeIf { it.isNotBlank() } }
+        if (seriesId != null && episodes.isNotEmpty() && seriesName != null) {
             val first = episodes.first().title
             val seasons = episodes
                 .groupBy { it.title.item.seasonNumber ?: 0 }
@@ -253,7 +255,7 @@ class DetailScreenModel(
                 }
             }
             return DetailUiState.Ready(
-                item = Item(id = seriesId, title = first.seriesTitle.orEmpty(), kind = "series"),
+                item = Item(id = seriesId, title = seriesName, kind = "series"),
                 resumePositionSec = 0,
                 baseUrl = container.serverBase,
                 streamToken = "",
@@ -267,10 +269,11 @@ class DetailScreenModel(
                 ),
             )
         }
-        val t = mine?.title ?: return null
+        val t = (mine ?: episodes.firstOrNull())?.title ?: return null
+        val claim = (mine ?: episodes.firstOrNull())?.claim ?: return null
         return DetailUiState.Ready(
             item = t.item,
-            resumePositionSec = container.progressSync.lastPlayedSec(t.itemId) ?: mine.claim.savedPositionSec ?: 0,
+            resumePositionSec = container.progressSync.lastPlayedSec(t.itemId) ?: claim.savedPositionSec ?: 0,
             baseUrl = container.serverBase,
             streamToken = "",
             offline = OfflineDetail(
@@ -398,7 +401,9 @@ private fun cloud.nalet.chino.mobile.data.downloads.DownloadedTitle.asEpisode() 
     episodeNumber = item.episodeNumber,
     parentId = item.parentId,
     overview = item.overview,
-    durationMs = info?.durationMs ?: item.durationMs,
+    // The runtime as the server's page says it - the catalog's - and only
+    // without it the length of what was downloaded.
+    durationMs = item.durationMs ?: info?.durationMs,
     year = item.year,
     episodeEnd = item.episodeEnd,
 )

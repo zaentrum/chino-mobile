@@ -65,14 +65,15 @@ class DownloadStatusTest {
 class DownloadWordsTest {
     @Test
     fun theControlSaysEachStatusInTheDesignSystemsWords() {
-        assertEquals("download · 1.4 GB", offerLabel(1_400_000_000))
+        assertEquals("download · 1.4\u00A0GB", offerLabel(1_400_000_000))
         assertEquals("download", offerLabel(null))
         assertEquals("queued", statusLabel(DownloadStatus.Queued))
         assertEquals("waiting for Wi-Fi", statusLabel(DownloadStatus.WaitingForWifi))
         assertEquals("waiting for a connection", statusLabel(DownloadStatus.WaitingForConnection))
         assertEquals("downloading 42%", statusLabel(DownloadStatus.Downloading(42)))
-        assertEquals("downloaded · 1.4 GB", statusLabel(DownloadStatus.Downloaded(1_400_000_000)))
-        assertEquals("downloaded · check needed", statusLabel(DownloadStatus.CheckNeeded(1_400_000_000)))
+        assertEquals("downloaded · 1.4\u00A0GB", statusLabel(DownloadStatus.Downloaded(1_400_000_000)))
+        // "check needed" stays together where the line wraps.
+        assertEquals("downloaded · check\u00A0needed", statusLabel(DownloadStatus.CheckNeeded(1_400_000_000)))
         assertEquals("couldn't download", statusLabel(DownloadStatus.Failed(DownloadFailure.NoSpace)))
         assertEquals("Not enough space on this phone.", statusSentence(DownloadStatus.Failed(DownloadFailure.NoSpace), DeviceKind.Phone))
         assertEquals("Not enough space on this tablet.", statusSentence(DownloadStatus.Failed(DownloadFailure.NoSpace), DeviceKind.Tablet))
@@ -83,6 +84,57 @@ class DownloadWordsTest {
         assertNull(statusSentence(DownloadStatus.Queued, DeviceKind.Phone))
         assertEquals("can't be downloaded", CANT_DOWNLOAD_LABEL)
         assertEquals("This title can only be streamed.", CANT_DOWNLOAD_SENTENCE)
+    }
+
+    @Test
+    fun aRowSaysItsStatusAndSizeInOneText() {
+        // On its way: what it will take.
+        assertEquals("queued · 347\u00A0MB", rowLabel(DownloadStatus.Queued, 347_000_000))
+        assertEquals("waiting for Wi-Fi · 281\u00A0MB", rowLabel(DownloadStatus.WaitingForWifi, 281_000_000))
+        assertEquals("waiting for a connection · 281\u00A0MB", rowLabel(DownloadStatus.WaitingForConnection, 281_000_000))
+        assertEquals("downloading 15% · 281\u00A0MB", rowLabel(DownloadStatus.Downloading(15), 281_000_000))
+        // There: what it takes, once.
+        assertEquals("downloaded · 22\u00A0MB", rowLabel(DownloadStatus.Downloaded(22_000_000), 22_000_000))
+        // Failed: nothing kept, no size - but what it keeps where its media
+        // came in whole and the rest of it did not.
+        assertEquals("couldn't download", rowLabel(DownloadStatus.Failed(DownloadFailure.NoSpace), null))
+        assertEquals("couldn't download · 49\u00A0MB", rowLabel(DownloadStatus.Failed(DownloadFailure.ServerProblem), 49_000_000))
+        assertEquals("queued", rowLabel(DownloadStatus.Queued, null))
+    }
+
+    @Test
+    fun tryAgainIsOfferedOnlyWhereItCanHelp() {
+        assertEquals(
+            setOf(DownloadFailure.NoSpace, DownloadFailure.NoAnswer, DownloadFailure.ServerProblem, DownloadFailure.Refused, DownloadFailure.Stopped),
+            DownloadFailure.entries.filter { it.canTryAgain }.toSet(),
+        )
+    }
+
+    @Test
+    fun aSeasonOffersWhatItsActionDownloads() {
+        // All six can come, none handled: the season.
+        assertEquals("download season 1 · 6 episodes · 1.9\u00A0GB", seasonOfferLabel(1, 6, 1_900_000_000, noneHandled = true, allDownloadable = true))
+        // Two only stream: the four that come, not "season 1 · 4 episodes".
+        assertEquals("download 4 episodes · 1.3\u00A0GB", seasonOfferLabel(1, 4, 1_300_000_000, noneHandled = true, allDownloadable = false))
+        assertEquals("download 1 episode", seasonOfferLabel(1, 1, null, noneHandled = true, allDownloadable = false))
+        // Some handled: the rest.
+        assertEquals("download 2 more episodes · 724\u00A0MB", seasonOfferLabel(1, 2, 724_000_000, noneHandled = false))
+        assertEquals("download 1 more episode", seasonOfferLabel(1, 1, null, noneHandled = false))
+    }
+
+    @Test
+    fun thePageFromThePhoneSaysOnlyWhatIsOnThePhone() {
+        assertEquals("1 episode on this phone", episodesOnThePhoneLabel(1, DeviceKind.Phone))
+        assertEquals("2 episodes on this phone", episodesOnThePhoneLabel(2, DeviceKind.Phone))
+        assertEquals("1 episode on this tablet", episodesOnThePhoneLabel(1, DeviceKind.Tablet))
+    }
+
+    @Test
+    fun castingSaysWhereItStops() {
+        assertEquals("Casting on Living Room TV stops.", castingStopsSentence("Living Room TV"))
+        assertEquals("Stopped casting on Living Room TV.", stoppedCastingToast("Living Room TV"))
+        assertEquals("Playing on this phone: the server can't be reached.", playingHereToast(DeviceKind.Phone))
+        assertEquals("Playing on this tablet: the server can't be reached.", playingHereToast(DeviceKind.Tablet))
     }
 
     @Test
@@ -99,54 +151,55 @@ class DownloadWordsTest {
 
     @Test
     fun seasonsSeriesStorageAndSettings() {
-        assertEquals("download season 1 · 8 episodes · 9.6 GB", seasonOfferLabel(1, 8, 9_600_000_000, noneHandled = true))
+        assertEquals("download season 1 · 8 episodes · 9.6\u00A0GB", seasonOfferLabel(1, 8, 9_600_000_000, noneHandled = true))
         assertEquals("download season 2 · 1 episode", seasonOfferLabel(2, 1, null, noneHandled = true))
         // Part of a six-episode season handled: the rest, not "season 1 · 2 episodes".
-        assertEquals("download 2 more episodes · 724 MB", seasonOfferLabel(1, 2, 724_000_000, noneHandled = false))
+        assertEquals("download 2 more episodes · 724\u00A0MB", seasonOfferLabel(1, 2, 724_000_000, noneHandled = false))
         assertEquals("download 1 more episode", seasonOfferLabel(1, 1, null, noneHandled = false))
         assertEquals("3 of 8 downloaded", partLabel(3, 8))
         assertEquals(
-            "12.4 GB used by downloads · 18 GB free on this phone",
+            "12.4\u00A0GB used by downloads · 18\u00A0GB free on this phone",
             storageLine(StorageUse(usedBytes = 12_400_000_000, freeBytes = 18_000_000_000), DeviceKind.Phone),
         )
         assertEquals(
-            "820 MB used by downloads · 1 GB free on this tablet",
+            "820\u00A0MB used by downloads · 1\u00A0GB free on this tablet",
             storageLine(StorageUse(usedBytes = 820_000_000, freeBytes = 999_600_000), DeviceKind.Tablet),
         )
-        // Nothing on the phone: what is free, alone - not "0 MB used".
-        assertEquals("3.9 GB free on this phone", storageLine(StorageUse(usedBytes = 0, freeBytes = 3_900_000_000), DeviceKind.Phone))
+        // Nothing on the phone: what is free, alone - not "0\u00A0MB used".
+        assertEquals("3.9\u00A0GB free on this phone", storageLine(StorageUse(usedBytes = 0, freeBytes = 3_900_000_000), DeviceKind.Phone))
         assertEquals(
-            "3.9 GB free on this phone",
+            "3.9\u00A0GB free on this phone",
             storageLine(StorageUse(usedBytes = 12_000, freeBytes = 3_900_000_000), DeviceKind.Phone, anythingOnThePhone = false),
         )
-        assertEquals("720p · about 1.1 GB an hour", qualityLine(DownloadQuality(720, 1_100_000_000)))
-        assertEquals("480p · about 450 MB an hour", qualityLine(DownloadQuality(480, 450_000_000)))
-        assertEquals("1080p", qualityLine(DownloadQuality(1080, null)))
+        // Named as the player's quality menu names it: a name and its height.
+        assertEquals("Medium (720p) · about 932\u00A0MB an hour", qualityLine(DownloadQuality(720, 932_000_000)))
+        assertEquals("Low (480p) · about 450\u00A0MB an hour", qualityLine(DownloadQuality(480, 450_000_000)))
+        assertEquals("High (1080p)", qualityLine(DownloadQuality(1080, null)))
     }
 
     @Test
     fun theQuestionsBeforeDeletingNameWhatGoes() {
         assertEquals("delete all downloads", DELETE_ALL_TITLE)
-        assertEquals("This removes 6 titles, 474 MB, from this phone.", deleteAllSentence(6, 474_000_000, DeviceKind.Phone))
-        assertEquals("This removes 1 title, 820 MB, from this tablet.", deleteAllSentence(1, 820_000_000, DeviceKind.Tablet))
+        assertEquals("This removes 23 downloads, 12.4\u00A0GB, from this phone.", deleteAllSentence(23, 12_400_000_000, DeviceKind.Phone))
+        assertEquals("This removes 1 download, 820\u00A0MB, from this tablet.", deleteAllSentence(1, 820_000_000, DeviceKind.Tablet))
         assertEquals("sign out", SIGN_OUT_TITLE)
         assertEquals("remove account", REMOVE_ACCOUNT_TITLE)
         assertEquals("change server", CHANGE_SERVER_TITLE)
         assertEquals(
-            "Your 23 downloads, 12.4 GB, are deleted from this phone.",
+            "Your 23 downloads, 12.4\u00A0GB, are deleted from this phone.",
             yourDownloadsGoSentence(DownloadsSummary(23, 12_400_000_000), DeviceKind.Phone),
         )
         assertEquals(
-            "Your download, 281 MB, is deleted from this phone.",
+            "Your download, 281\u00A0MB, is deleted from this phone.",
             yourDownloadsGoSentence(DownloadsSummary(1, 281_000_000), DeviceKind.Phone),
         )
         assertEquals(
-            "The 23 downloads of Anna, 12.4 GB, are deleted from this tablet.",
+            "The 23 downloads of Anna, 12.4\u00A0GB, are deleted from this tablet.",
             accountDownloadsGoSentence(DownloadsSummary(23, 12_400_000_000), "Anna", DeviceKind.Tablet),
         )
         // One download: no "1".
         assertEquals(
-            "The download of Anna, 281 MB, is deleted from this phone.",
+            "The download of Anna, 281\u00A0MB, is deleted from this phone.",
             accountDownloadsGoSentence(DownloadsSummary(1, 281_000_000), "Anna", DeviceKind.Phone),
         )
     }
@@ -220,7 +273,7 @@ class DownloadGroupsTest {
                 owners = listOf(claim),
             ),
             status = DownloadStatus.Downloaded(1),
-            bytes = 1,
+            onPhoneBytes = 1,
             claim = claim,
         )
     }

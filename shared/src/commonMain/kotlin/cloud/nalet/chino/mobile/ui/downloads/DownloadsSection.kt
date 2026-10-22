@@ -47,9 +47,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.expand
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,8 +68,8 @@ import cloud.nalet.chino.mobile.data.downloads.deleteAllSentence
 import cloud.nalet.chino.mobile.data.downloads.deletedManySentence
 import cloud.nalet.chino.mobile.data.downloads.deletedOneSentence
 import cloud.nalet.chino.mobile.data.downloads.downloadGroups
-import cloud.nalet.chino.mobile.data.downloads.formatSize
-import cloud.nalet.chino.mobile.data.downloads.statusLabel
+import cloud.nalet.chino.mobile.data.downloads.canTryAgain
+import cloud.nalet.chino.mobile.data.downloads.rowLabel
 import cloud.nalet.chino.mobile.data.downloads.statusSentence
 import cloud.nalet.chino.mobile.data.downloads.storageLine
 import cloud.nalet.chino.mobile.data.model.episodeCode
@@ -163,7 +160,10 @@ fun DownloadsSection(onPlay: (itemId: String) -> Unit) {
             )
         }
         if (reach == Reach.Unreachable) {
-            item(key = "banner") { InformationBanner(if (entries.isEmpty()) UNREACHABLE_BANNER_NOTHING else UNREACHABLE_BANNER) }
+            // "Your downloads still play" only where one does: on the phone
+            // whole, and not waiting for its check.
+            val playable = entries.any { it.status is DownloadStatus.Downloaded }
+            item(key = "banner") { InformationBanner(if (playable) UNREACHABLE_BANNER else UNREACHABLE_BANNER_NOTHING) }
         }
         shownNotice?.let { n ->
             item(key = "deleted") {
@@ -175,7 +175,10 @@ fun DownloadsSection(onPlay: (itemId: String) -> Unit) {
         }
         storage?.let { use ->
             item(key = "storage") {
-                Text(text = storageLine(use, device, anythingOnThePhone = entries.any { it.onPhone }), color = ChinoMuted, fontSize = 13.sp)
+                // What the rows take, summed as "delete all" sums it - the
+                // same figure, at the same moment; what is free, the phone's.
+                val used = use.copy(usedBytes = entries.sumOf { it.onPhoneBytes })
+                Text(text = storageLine(used, device, anythingOnThePhone = entries.any { it.onPhone }), color = ChinoMuted, fontSize = 13.sp)
             }
         }
         if (entries.isEmpty()) {
@@ -236,7 +239,7 @@ fun DownloadsSection(onPlay: (itemId: String) -> Unit) {
         val there = entries.filter { it.onPhone }
         DownloadsGoQuestion(
             title = DELETE_ALL_TITLE,
-            sentence = deleteAllSentence(there.size, there.sumOf { it.size ?: it.bytes }, device),
+            sentence = deleteAllSentence(there.size, there.sumOf { it.onPhoneBytes }, device),
             confirm = "delete all",
             onConfirm = {
                 askDeleteAll = false
@@ -287,36 +290,20 @@ private fun DownloadRow(entry: DownloadEntry, downloads: Downloads, onPlay: () -
                 title.item.title
             }
             Text(text = name, color = Color.White, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            // The status in the label face, and - on its way - what it will
-            // take, as the server said; one text, so that a long status
-            // ("waiting for a connection") wraps the size under it rather
-            // than squeeze it. Not for one that stopped: the reason says it,
-            // and a size beside it would read as if that much were kept.
-            val mono = ChinoMono
-            val size = entry.size
-                ?.takeIf { status !is DownloadStatus.Downloaded && status !is DownloadStatus.CheckNeeded && status !is DownloadStatus.Failed }
-                ?.let(::formatSize)
+            // One text: the status in the label face, and what it takes or
+            // will take - "queued · 347 MB", "downloaded · 22 MB" - wrapping
+            // where it must, a size never apart from its unit.
             Text(
-                text = buildAnnotatedString {
-                    withStyle(
-                        SpanStyle(
-                            color = when (status) {
-                                is DownloadStatus.Failed -> ChinoRed
-                                is DownloadStatus.Downloaded -> ChinoGreen
-                                is DownloadStatus.Downloading -> ChinoCloudBlue
-                                else -> ChinoMuted
-                            },
-                            fontFamily = mono.fontFamily,
-                            letterSpacing = mono.letterSpacing,
-                        ),
-                    ) { append(statusLabel(status)) }
-                    if (size != null) {
-                        append("  ")
-                        withStyle(SpanStyle(color = ChinoMuted)) { append(size) }
-                    }
+                text = rowLabel(status, entry.size),
+                color = when (status) {
+                    is DownloadStatus.Failed -> ChinoRed
+                    is DownloadStatus.Downloaded -> ChinoGreen
+                    is DownloadStatus.Downloading -> ChinoCloudBlue
+                    else -> ChinoMuted
                 },
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
+                style = ChinoMono,
             )
             (status as? DownloadStatus.Downloading)?.let { d ->
                 Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(ChinoBorder)) {
@@ -331,14 +318,27 @@ private fun DownloadRow(entry: DownloadEntry, downloads: Downloads, onPlay: () -
                     lineHeight = 16.sp,
                 )
             }
-            // One that stopped goes on where it stopped, as on its page.
+            // One that failed: "try again" where it can help, or it comes
+            // off the list - nothing of it is left on the phone to delete.
+            // In line with the text above them.
             if (status is DownloadStatus.Failed) {
-                TextAction(text = "try again", compact = true, onClick = { downloads.retry(title.itemId) })
+                Row {
+                    if (status.reason.canTryAgain) {
+                        TextAction(text = "try again", compact = true, alignStart = true, onClick = { downloads.retry(title.itemId) })
+                    }
+                    TextAction(
+                        text = "remove",
+                        compact = true,
+                        alignStart = !status.reason.canTryAgain,
+                        onClick = { downloads.delete(title.itemId) },
+                    )
+                }
             }
         }
         when (status) {
-            is DownloadStatus.Downloaded, is DownloadStatus.CheckNeeded, is DownloadStatus.Failed ->
+            is DownloadStatus.Downloaded, is DownloadStatus.CheckNeeded ->
                 IconAction(Lucide.Trash2, "delete download", compact = false, onClick = { downloads.delete(title.itemId) })
+            is DownloadStatus.Failed -> Unit
             else -> IconAction(Lucide.X, "cancel download", compact = false, onClick = { downloads.cancel(title.itemId) })
         }
     }
@@ -378,10 +378,10 @@ private fun EmptyDownloads() {
  * the server answers. Read out politely, as "information: …".
  */
 @Composable
-internal fun InformationBanner(text: String, details: List<String> = emptyList()) {
+internal fun InformationBanner(text: String, details: List<String> = emptyList(), modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             // As tall as its text, so the bar down its edge is too.
             .height(IntrinsicSize.Min)

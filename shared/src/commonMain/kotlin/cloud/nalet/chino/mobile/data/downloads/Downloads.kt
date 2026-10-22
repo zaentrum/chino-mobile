@@ -172,32 +172,39 @@ enum class DownloadFailure {
 }
 
 /** A title on the phone or on its way, as the account it is shown to has
- *  it: where it is, what of it is on the phone ([bytes]), and that
+ *  it: where it is, what of it is on the phone ([onPhoneBytes]), and that
  *  account's claim on it. */
 data class DownloadEntry(
     val title: DownloadedTitle,
     val status: DownloadStatus,
-    val bytes: Long,
+    /** What of it is on the phone now - its media and its folder, the one
+     *  figure the downloads screen's line, "delete all" and every question
+     *  sum from the bytes (the platform's, counted once); 0 for one that
+     *  failed, which keeps nothing of its media. A title's own row and
+     *  control say its size as the server reported it ([size]). */
+    val onPhoneBytes: Long,
     val claim: OwnerClaim,
 ) {
     val itemId: String get() = title.itemId
 
     val addedAtMs: Long get() = claim.addedAtMs
 
-    /** The size the downloads screen shows: what it took once it is on the
-     *  phone, what the server said it would take while it comes; none for
-     *  one that stopped (nothing of it may be there). */
+    /** The size a row shows: the size its offer said, as the server
+     *  reported it - the same number before and after (the status carries
+     *  it once it is on the phone); for one that failed, what it keeps,
+     *  which is nothing but where its media came in whole and the rest of it
+     *  did not. */
     val size: Long?
         get() = when (status) {
             is DownloadStatus.Downloaded -> status.bytes
             is DownloadStatus.CheckNeeded -> status.bytes
-            is DownloadStatus.Failed -> null
-            else -> title.estimatedBytes ?: bytes.takeIf { it > 0 }
+            is DownloadStatus.Failed -> onPhoneBytes.takeIf { it > 0 }
+            else -> title.estimatedBytes ?: onPhoneBytes.takeIf { it > 0 }
         }
 
     /** Whether some of it is on the phone: what "delete all" and the
      *  questions before a sign-out count. */
-    val onPhone: Boolean get() = status is DownloadStatus.Downloaded || status is DownloadStatus.CheckNeeded || bytes > 0
+    val onPhone: Boolean get() = onPhoneBytes > 0 || status is DownloadStatus.Downloaded || status is DownloadStatus.CheckNeeded
 }
 
 /** What downloads take on the phone, and what is left there. */
@@ -223,13 +230,18 @@ data class DownloadPreferences(
 /** One of the qualities Settings offers, with what an hour of video takes at
  *  it as the server's playlists say; null where too few titles say it. */
 data class DownloadQuality(val sizeClass: Int, val bytesPerHour: Long?) {
-    val name: String get() = qualityName(sizeClass)
+    /** As the player's quality menu names it: "Medium (720p)". */
+    val name: String get() = cloud.nalet.chino.mobile.ui.player.qualityTitle(sizeClass)
 }
 
 /** What a check with the server came to, for the account signed in now. */
 sealed interface AvailabilityCheck {
-    /** The server answered: [deleted] titles went from the phone. */
-    data class Done(val deleted: List<DownloadedTitle>) : AvailabilityCheck
+    /** The server answered: [deleted] titles went from the phone - its
+     *  second answer that they are not the account's - and [marked] ones
+     *  have its first such answer only, which counts as no answer for what
+     *  else follows from a check (a subtitle it no longer serves, a download
+     *  it refused). */
+    data class Done(val deleted: List<DownloadedTitle>, val marked: List<DownloadedTitle> = emptyList()) : AvailabilityCheck
 
     /** No answer, or not for this account (it changed meanwhile): nothing
      *  changed. */

@@ -133,7 +133,7 @@ class DownloadChoiceTest {
     }
 
     @Test
-    fun subtitlesInTheViewersLanguagesAndForcedOnesForTheAudioKept() {
+    fun everyTextSubtitleIsKeptPicturesAreNot() {
         fun sub(id: String, lang: String, format: String? = "webvtt", forced: Boolean = false, label: String? = null) =
             SidecarSubtitle(id = id, lang = lang, url = "/api/v1/play/subs/$id.vtt", format = format, forced = forced, label = label)
         val sidecars = listOf(
@@ -146,17 +146,11 @@ class DownloadChoiceTest {
             sub("en-pgs", "eng", format = "pgs"),
             sub("srt", "spa", format = "srt"),
         )
-        // English audio preferred, German original kept, Spanish subtitles
-        // set: English and Spanish ones, the German forced one; no PGS, no
-        // full German, no French.
+        // Every text one, whatever the viewer's languages - what the title
+        // has online, a few kilobytes each; no picture ones, each once.
         assertEquals(
-            listOf("en", "en-sdh", "de-forced", "srt"),
-            pickSubtitles(sidecars, audioLanguages = listOf("en", "de"), audioPref = "eng", subtitlePref = "spa").map { it.id },
-        )
-        // Subtitles off, the title's own audio: only the forced ones in it.
-        assertEquals(
-            listOf("it-forced"),
-            pickSubtitles(sidecars, audioLanguages = listOf("it"), audioPref = "orig", subtitlePref = "off").map { it.id },
+            listOf("en", "en-sdh", "de-forced", "de", "fr", "it-forced", "srt"),
+            pickSubtitles(sidecars + sub("en", "eng")).map { it.id },
         )
     }
 
@@ -174,14 +168,14 @@ class DownloadChoiceTest {
 
     @Test
     fun sizesReadInGigabytesWithOneDecimalAndInMegabytesBelow() {
-        assertEquals("1.4 GB", formatSize(1_440_000_000))
-        assertEquals("820 MB", formatSize(820_000_000))
+        assertEquals("1.4\u00A0GB", formatSize(1_440_000_000))
+        assertEquals("820\u00A0MB", formatSize(820_000_000))
         // One decimal without a trailing zero.
-        assertEquals("1 GB", formatSize(999_600_000))
-        assertEquals("18 GB", formatSize(18_000_000_000))
-        assertEquals("2 GB", formatSize(2_040_000_000))
-        assertEquals("12.4 GB", formatSize(12_400_000_000))
-        assertEquals("1 MB", formatSize(1_000))
-        assertEquals("0 MB", formatSize(0))
+        assertEquals("1\u00A0GB", formatSize(999_600_000))
+        assertEquals("18\u00A0GB", formatSize(18_000_000_000))
+        assertEquals("2\u00A0GB", formatSize(2_040_000_000))
+        assertEquals("12.4\u00A0GB", formatSize(12_400_000_000))
+        assertEquals("1\u00A0MB", formatSize(1_000))
+        assertEquals("0\u00A0MB", formatSize(0))
     }
 }

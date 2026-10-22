@@ -31,7 +31,7 @@ import java.io.File
  * subtitles beside them (files, read through [sidecarSources]) and what was
  * kept of the title.
  */
-class DownloadedSession(
+data class DownloadedSession(
     val title: DownloadedTitle,
     /** The master the download read, without a token: the media item's URI,
      *  so each piece is found under the key it was kept by. */
@@ -48,6 +48,9 @@ class DownloadedSession(
     val heading: String,
     val prevEpisodeId: String?,
     val nextEpisodeId: String?,
+    /** It plays here although a device is connected to cast to: the server
+     *  can't be reached, or the cast failed before the TV was asked. */
+    val castAside: Boolean = false,
 )
 
 /** What playing a title from the phone comes to. */
@@ -70,8 +73,11 @@ sealed interface LocalPlay {
 
 /**
  * Playing [itemId] from the phone, for the account signed in now - or why
- * not. Never while playback goes to another screen (a Cast session: it plays
- * from the server there, and nothing on the phone goes to it). With the
+ * not. Not while playback goes to another screen (a Cast session: it plays
+ * from the server there, and nothing on the phone goes to it) - unless the
+ * server can't be reached, or the cast failed before the TV was asked
+ * ([castFailed]): then here, from the phone, the session saying so
+ * ([DownloadedSession.castAside]). With the
  * server, the server says first whether the account may still watch it, in
  * one quick request; without it, a download checked within 30 days plays.
  * Where it starts: from the head when asked ([fromStart]), at a hand-off's
@@ -87,11 +93,14 @@ suspend fun downloadedSession(
     itemId: String,
     fromStart: Boolean,
     resumeSec: Int,
+    castFailed: Boolean = false,
 ): LocalPlay {
     // Asked on the caller's thread - the player's, the main one - where the
     // Cast framework answers for itself.
-    if (container.playsOnAnotherScreen()) return LocalPlay.None
-    return playFromThePhone(context, container, itemId, fromStart, resumeSec)
+    val casting = container.playsOnAnotherScreen()
+    if (casting && !castFailed && container.serverReach.state.value != Reach.Unreachable) return LocalPlay.None
+    val play = playFromThePhone(context, container, itemId, fromStart, resumeSec)
+    return if (casting && play is LocalPlay.Ready) LocalPlay.Ready(play.session.copy(castAside = true)) else play
 }
 
 private suspend fun playFromThePhone(

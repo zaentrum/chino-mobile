@@ -35,6 +35,32 @@ class TitleFilesTest {
     private fun fileOf(t: DownloadedTitle) = File(File(root, t.key), "title.json")
 
     @Test
+    fun aTitlesFolderIsMeasuredAsItIsWrittenAndForgottenAsItGoes() = runBlocking {
+        val files = TitleFiles(root)
+        files.awaitReady()
+        val t = title("film")
+        files.put(t)
+        files.awaitWrites()
+        val written = files.folderBytes.value.getValue(t.key)
+        assertEquals(fileOf(t).length(), written)
+        // Its poster beside it, as the download fetches it.
+        File(files.dirOf(t.key), "poster.jpg").writeBytes(ByteArray(1_000))
+        files.remeasure(t.key)
+        files.awaitWrites()
+        assertEquals(written + 1_000, files.folderBytes.value[t.key])
+        // Gone: nothing of it counted.
+        files.remove(t.key)
+        files.awaitWrites()
+        assertNull(files.folderBytes.value[t.key])
+        // Read as the process starts: measured then.
+        files.put(t)
+        files.awaitWrites()
+        val reread = TitleFiles(root)
+        reread.awaitReady()
+        assertEquals(fileOf(t).length(), reread.folderBytes.value[t.key])
+    }
+
+    @Test
     fun aWriteThatFailsKeepsTheTitleInMemoryAndIsWrittenOnceItCanBe() = runBlocking {
         val files = TitleFiles(root)
         files.awaitReady()

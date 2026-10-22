@@ -44,6 +44,8 @@ import cloud.nalet.chino.mobile.data.downloads.DownloadEntry
 import cloud.nalet.chino.mobile.data.downloads.DownloadFailure
 import cloud.nalet.chino.mobile.data.downloads.DownloadOffer
 import cloud.nalet.chino.mobile.data.downloads.DownloadStatus
+import cloud.nalet.chino.mobile.data.downloads.canTryAgain
+import cloud.nalet.chino.mobile.data.downloads.episodesOnThePhoneLabel
 import cloud.nalet.chino.mobile.data.downloads.offerLabel
 import cloud.nalet.chino.mobile.data.downloads.sentence
 import cloud.nalet.chino.mobile.data.downloads.partLabel
@@ -51,7 +53,10 @@ import cloud.nalet.chino.mobile.data.downloads.seasonOfferLabel
 import cloud.nalet.chino.mobile.data.downloads.statusLabel
 import cloud.nalet.chino.mobile.data.downloads.statusSentence
 import cloud.nalet.chino.mobile.data.model.FileEntry
+import cloud.nalet.chino.mobile.ui.components.TITLE_ACTION_HEIGHT
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
@@ -111,11 +116,15 @@ private fun rememberControl(itemId: String, durationMs: Long?): Control? {
     val working by starts.working.collectAsState()
     val failed by starts.failed.collectAsState()
     val entry = entries.firstOrNull { it.itemId == itemId }
+    val audioPref = rememberAudioPref()
     // The server's word: no new downloads where it offers none. What is on
     // the phone stays, with its control.
     if (entry == null && features?.downloads == false) return null
-    val offer by produceState<DownloadOffer?>(null, itemId, prefs.quality) {
-        value = container.downloadPlanner.offer(itemId, prefs.quality, durationMs)
+    // The size of exactly what the download keeps: the quality's variant and
+    // the audio the viewer's language picks, as the download picks them.
+    val offer by produceState<DownloadOffer?>(null, itemId, prefs.quality, audioPref) {
+        val pref = audioPref ?: return@produceState
+        value = container.downloadPlanner.offer(itemId, prefs.quality, durationMs, pref)
     }
     val startFailure = failed[itemId]
     val state = when {
@@ -141,22 +150,35 @@ private fun rememberControl(itemId: String, durationMs: Long?): Control? {
     )
 }
 
-/** The control on a film's or an episode's page, next to "play". */
+/** The audio language the viewer prefers (Settings), once read: what a
+ *  download keeps besides the original audio. */
+@Composable
+private fun rememberAudioPref(): String? {
+    val container = LocalAppContainer.current
+    val pref by produceState<String?>(null) {
+        container.settings.flow.collect { value = it.preferredAudioLang }
+    }
+    return pref
+}
+
+/** The control on a film's or an episode's page, the last of its title
+ *  actions: one action tall. */
 @Composable
 fun TitleDownloadControl(itemId: String, durationMs: Long?, modifier: Modifier = Modifier) {
     val control = rememberControl(itemId, durationMs) ?: return
     ControlView(control, compact = false, modifier = modifier)
 }
 
-/** The control in an episode's row: the same states, smaller. */
+/** The control in an episode's actions line: the same states, its text
+ *  smaller, one action tall as the row's other actions. */
 @Composable
 fun EpisodeDownloadControl(itemId: String, durationMs: Long?, modifier: Modifier = Modifier) {
     val control = rememberControl(itemId, durationMs) ?: return
-    ControlView(control, compact = true, modifier = modifier)
+    ControlView(control, compact = true, modifier = modifier, height = TITLE_ACTION_HEIGHT)
 }
 
 @Composable
-private fun ControlView(control: Control, compact: Boolean, modifier: Modifier) {
+private fun ControlView(control: Control, compact: Boolean, modifier: Modifier, height: Dp = if (compact) 32.dp else TITLE_ACTION_HEIGHT) {
     val device = LocalDeviceKind.current
     val state = control.state
     val status = (state as? ControlState.OnPhone)?.entry?.status
@@ -174,6 +196,10 @@ private fun ControlView(control: Control, compact: Boolean, modifier: Modifier) 
         else -> null
     }
     val failed = state is ControlState.StartFailed || status is DownloadStatus.Failed
+    // "try again" only where it can help: not where the server turned
+    // downloads off, the title is not the account's, or it only streams.
+    val reason = (state as? ControlState.StartFailed)?.reason ?: (status as? DownloadStatus.Failed)?.reason
+    val canTryAgain = failed && reason?.canTryAgain != false
     val onPhone = status is DownloadStatus.Downloaded || status is DownloadStatus.CheckNeeded
     val icon = when {
         failed -> Lucide.TriangleAlert
@@ -207,19 +233,24 @@ private fun ControlView(control: Control, compact: Boolean, modifier: Modifier) 
                 dim = state is ControlState.CantDownload,
                 onClick = onLabel,
                 modifier = Modifier.align(Alignment.CenterVertically),
+                height = height,
             )
-            if (failed) {
+            if (canTryAgain) {
                 TextAction(
                     text = "try again",
                     compact = compact,
                     onClick = control.retry,
                     modifier = Modifier.align(Alignment.CenterVertically),
+                    height = height,
                 )
             }
             when {
-                cancellable -> IconAction(Lucide.X, "cancel download", compact, control.cancel, Modifier.align(Alignment.CenterVertically))
-                onPhone || status is DownloadStatus.Failed ->
-                    IconAction(Lucide.Trash2, "delete download", compact, control.cancel, Modifier.align(Alignment.CenterVertically))
+                cancellable -> IconAction(Lucide.X, "cancel download", compact, control.cancel, Modifier.align(Alignment.CenterVertically), size = height)
+                onPhone -> IconAction(Lucide.Trash2, "delete download", compact, control.cancel, Modifier.align(Alignment.CenterVertically), size = height)
+                // Failed: nothing of it is on the phone - it comes off the
+                // downloads list.
+                status is DownloadStatus.Failed ->
+                    TextAction(text = "remove", compact = compact, onClick = control.cancel, modifier = Modifier.align(Alignment.CenterVertically), height = height)
                 else -> Unit
             }
         }
@@ -247,15 +278,17 @@ internal fun StatusPill(
     dim: Boolean = false,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    /** One title action tall beside the others; a season's pills smaller. */
+    height: Dp = if (compact) 32.dp else TITLE_ACTION_HEIGHT,
 ) {
-    val height: Dp = if (compact) 32.dp else 44.dp
     val textSize: TextUnit = if (compact) 12.sp else 15.sp
     Column(
         modifier = modifier
             // As wide as its label: the bar under it no wider.
             .width(IntrinsicSize.Max)
             .clip(RectangleShape)
-            .background(Color.White.copy(alpha = if (dim) 0.05f else 0.1f))
+            // The title actions' surface-2, as they are when off.
+            .background(if (dim) ChinoSurfaceHi.copy(alpha = 0.5f) else ChinoSurfaceHi)
             .then(
                 if (onClick != null) {
                     Modifier.clickable(onClick = onClick).semantics { role = Role.Button }
@@ -296,7 +329,8 @@ internal fun StatusPill(
     }
 }
 
-/** A text action beside the status, in the label face: "try again". */
+/** A text action beside the status, in the label face: "try again".
+ *  [alignStart]: under lines of text, its text starts where theirs does. */
 @Composable
 internal fun TextAction(
     text: String,
@@ -305,14 +339,17 @@ internal fun TextAction(
     modifier: Modifier = Modifier,
     /** The link blue; the destructive red for one that deletes. */
     color: Color = ChinoCloudBlue,
+    alignStart: Boolean = false,
+    height: Dp = if (compact) 32.dp else TITLE_ACTION_HEIGHT,
 ) {
+    val side = if (compact) 8.dp else 12.dp
     Box(
         modifier = modifier
-            .height(if (compact) 32.dp else 44.dp)
+            .height(height)
             .clip(RectangleShape)
             .clickable(onClick = onClick)
             .semantics { role = Role.Button }
-            .padding(horizontal = if (compact) 8.dp else 12.dp),
+            .padding(start = if (alignStart) 0.dp else side, end = side),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -325,14 +362,22 @@ internal fun TextAction(
     }
 }
 
-/** A square icon action, named for screen readers: cancel, delete. */
+/** A square icon action, named for screen readers: cancel, delete - as the
+ *  title actions' icon buttons are when off. */
 @Composable
-internal fun IconAction(icon: ImageVector, name: String, compact: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun IconAction(
+    icon: ImageVector,
+    name: String,
+    compact: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = if (compact) 32.dp else TITLE_ACTION_HEIGHT,
+) {
     Box(
         modifier = modifier
-            .size(if (compact) 32.dp else 44.dp)
+            .size(size)
             .clip(RectangleShape)
-            .background(Color.White.copy(alpha = 0.1f))
+            .background(ChinoSurfaceHi)
             .clickable(onClick = onClick)
             .semantics {
                 contentDescription = name
@@ -340,7 +385,7 @@ internal fun IconAction(icon: ImageVector, name: String, compact: Boolean, onCli
             },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(if (compact) 14.dp else 18.dp))
+        Icon(imageVector = icon, contentDescription = null, tint = ChinoFg2, modifier = Modifier.size(if (compact) 14.dp else 18.dp))
     }
 }
 
@@ -362,15 +407,20 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
     val starts = container.downloadStarts
     val onPhone by downloads.entries.collectAsState()
     val prefs by downloads.preferences.collectAsState()
+    val audioPref = rememberAudioPref()
     val features by container.serverReach.features.collectAsState()
     val working by starts.working.collectAsState()
+    // One download per file; the counts are episodes - a file holding two
+    // counts both.
     val ids = remember(entries) { entries.map { it.episode.id } }
+    val episodesIn = remember(entries) { entries.associate { it.episode.id to it.held.size } }
+    val episodes = remember(entries) { entries.sumOf { it.held.size } }
     val durations = remember(entries) { entries.associate { it.episode.id to fileDurationMs(it) } }
     val byId = onPhone.associateBy { it.itemId }
-    val downloaded = ids.count { byId[it]?.status.isOnThePhone() }
+    val downloaded = ids.filter { byId[it]?.status.isOnThePhone() }.sumOf { episodesIn[it] ?: 1 }
     // On the phone, on its way, being worked out or stopped: handled.
     val handled = ids.count { byId[it] != null || it in working }
-    val onTheWay = handled - downloaded
+    val onTheWay = ids.count { (byId[it] != null || it in working) && !byId[it]?.status.isOnThePhone() }
     // The server's word: none of it where it offers no downloads - not even
     // the questions - unless part of the season is on the phone already.
     val offering = features?.downloads != false
@@ -378,10 +428,11 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
     // The open season's episodes' offers at once: the planner asks the
     // server three at a time and keeps the answers, which the rows below
     // share. A closed season asks nothing.
-    val offers by produceState<Map<String, DownloadOffer>?>(null, ids, prefs.quality, offering, expanded) {
+    val offers by produceState<Map<String, DownloadOffer>?>(null, ids, prefs.quality, audioPref, offering, expanded) {
+        val pref = audioPref ?: return@produceState
         if (!offering || !expanded) return@produceState
         value = coroutineScope {
-            ids.map { id -> async { id to container.downloadPlanner.offer(id, prefs.quality, durations[id]) } }.awaitAll().toMap()
+            ids.map { id -> async { id to container.downloadPlanner.offer(id, prefs.quality, durations[id], pref) } }.awaitAll().toMap()
         }
     }
     val known = offers
@@ -400,18 +451,26 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
         // How far, once part of it is on the phone.
         if (downloaded > 0) {
             StatusPill(
-                label = partLabel(downloaded, ids.size),
-                icon = if (downloaded == ids.size) Lucide.Check else Lucide.Download,
-                tint = if (downloaded == ids.size) ChinoGreen else ChinoMuted,
+                label = partLabel(downloaded, episodes),
+                icon = if (downloaded == episodes) Lucide.Check else Lucide.Download,
+                tint = if (downloaded == episodes) ChinoGreen else ChinoMuted,
                 percent = null,
                 compact = true,
                 onClick = null,
                 modifier = Modifier.align(Alignment.CenterVertically),
             )
         }
-        if (expanded && remaining.isNotEmpty() && offering) {
+        // Once the server has said which of them can come: "download season
+        // 1 · 6 episodes" only where all of them can and none is handled.
+        if (expanded && known != null && remaining.isNotEmpty() && offering) {
             StatusPill(
-                label = seasonOfferLabel(season, remaining.size, remainingBytes, noneHandled = handled == 0),
+                label = seasonOfferLabel(
+                    season = season,
+                    episodes = remaining.sumOf { episodesIn[it] ?: 1 },
+                    bytes = remainingBytes,
+                    noneHandled = handled == 0,
+                    allDownloadable = canCome?.size == ids.size,
+                ),
                 icon = Lucide.Download,
                 tint = Color.White,
                 percent = null,
@@ -431,19 +490,39 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
 
 
 /** How far a series is on the phone, where it is partly there: "3 of 8
- *  downloaded". [entries] are all its files, every season's. */
+ *  downloaded", in episodes. [entries] are all its files, every season's. */
 @Composable
 fun SeriesDownloadSummary(entries: List<FileEntry<Episode>>, modifier: Modifier = Modifier) {
     val container = LocalAppContainer.current
     val downloads = container.downloads ?: return
     val onPhone by downloads.entries.collectAsState()
-    val ids = entries.map { it.episode.id }.toSet()
-    val downloaded = onPhone.count { it.itemId in ids && it.status.isOnThePhone() }
+    val there = onPhone.filter { it.status.isOnThePhone() }.mapTo(HashSet()) { it.itemId }
+    val episodes = entries.sumOf { it.held.size }
+    val downloaded = entries.filter { it.episode.id in there }.sumOf { it.held.size }
     if (downloaded == 0) return
     StatusPill(
-        label = partLabel(downloaded, ids.size),
-        icon = if (downloaded == ids.size) Lucide.Check else Lucide.Download,
-        tint = if (downloaded == ids.size) ChinoGreen else ChinoMuted,
+        label = partLabel(downloaded, episodes),
+        icon = if (downloaded == episodes) Lucide.Check else Lucide.Download,
+        tint = if (downloaded == episodes) ChinoGreen else ChinoMuted,
+        percent = null,
+        compact = false,
+        onClick = null,
+        modifier = modifier,
+    )
+}
+
+/**
+ * The page from the phone says only what is on it: "2 episodes on this
+ * phone" - no word of "downloaded" for what may wait for its check, and no
+ * check mark while any of them does.
+ */
+@Composable
+fun OfflineSeriesSummary(episodes: Int, anyWaitsForCheck: Boolean, modifier: Modifier = Modifier) {
+    val device = LocalDeviceKind.current
+    StatusPill(
+        label = episodesOnThePhoneLabel(episodes, device),
+        icon = if (anyWaitsForCheck) Lucide.Info else Lucide.Check,
+        tint = if (anyWaitsForCheck) ChinoMuted else ChinoGreen,
         percent = null,
         compact = false,
         onClick = null,

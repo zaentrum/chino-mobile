@@ -42,8 +42,9 @@ sealed interface PlanResult {
 /**
  * Works out a download before it starts, from the server: whether the title
  * can come along ([downloadability]), the variant the download quality
- * picks, the audio and subtitles the viewer's languages pick, and what it
- * comes to on the phone, from the server's master playlist. What it read of
+ * picks, the audio the viewer's language picks, every text subtitle, and
+ * what it comes to on the phone, from the server's master playlist - the
+ * size its offer says before ([offer]), the same as the plan's. What it read of
  * a title - its play info and master - is kept for [CACHE_MS], so the
  * control's size and the download that follows ask once.
  *
@@ -71,16 +72,19 @@ class DownloadPlanner(
      *  theirs at once. */
     private val gate = Semaphore(3)
 
-    /** What [itemId]'s control offers at [quality]: its size, or why it
-     *  cannot come along. */
-    suspend fun offer(itemId: String, quality: Int, durationMs: Long?): DownloadOffer = try {
+    /** What [itemId]'s control offers at [quality] for the viewer's
+     *  [audioPref]: the size of exactly what the download would keep - the
+     *  variant and the audio renditions it picks, as [plan] picks them - or
+     *  why it cannot come along. */
+    suspend fun offer(itemId: String, quality: Int, durationMs: Long?, audioPref: String? = null): DownloadOffer = try {
         val probe = probe(itemId)
         when (downloadability(probe.info)) {
             is Downloadability.Yes -> {
                 val master = probe.masterText?.let(::parseHlsMaster)
                 val variant = master?.let { pickVariant(it.variants, quality) }
                 val bytes = variant?.let {
-                    estimateBytes(it, audioCount = 1, durationMs = probe.info.durationMs ?: durationMs)
+                    val audios = pickAudios(master.audiosOf(it), audioPref)
+                    estimateBytes(it, audioCount = audios.size.coerceAtLeast(1), durationMs = probe.info.durationMs ?: durationMs)
                 }
                 DownloadOffer.Available(bytes)
             }
@@ -94,8 +98,8 @@ class DownloadPlanner(
     }
 
     /** Everything a download of [itemId] at [quality] keeps, for the
-     *  viewer's [audioPref] and [subtitlePref]. */
-    suspend fun plan(itemId: String, quality: Int, audioPref: String?, subtitlePref: String?): PlanResult = try {
+     *  viewer's [audioPref]: the variant, the audio, every text subtitle. */
+    suspend fun plan(itemId: String, quality: Int, audioPref: String?): PlanResult = try {
         // Whether it can come along first: a title that only streams asks
         // for nothing more. Then its master as the server serves it now -
         // not the one the control's size was read from, up to half an hour
@@ -126,7 +130,7 @@ class DownloadPlanner(
                 // An episode's series by its title: the downloads screen's
                 // heading for it, read now - the phone has no other source.
                 val seriesTitle = item.parentId?.let { api.getItem(it).title }
-                val subtitles = pickSubtitles(subsAsk.await(), audios.map { it.language }, audioPref, subtitlePref)
+                val subtitles = pickSubtitles(subsAsk.await())
                 PlanResult.Ready(
                     DownloadPlan(
                         item = item,

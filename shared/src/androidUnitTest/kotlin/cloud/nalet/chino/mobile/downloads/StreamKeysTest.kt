@@ -1,6 +1,9 @@
 package cloud.nalet.chino.mobile.downloads
 
+import android.net.Uri
 import androidx.media3.common.StreamKey
+import androidx.media3.exoplayer.offline.Download
+import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.hls.playlist.HlsMultivariantPlaylist
 import cloud.nalet.chino.mobile.data.api.PlayInfo
 import cloud.nalet.chino.mobile.data.downloads.DownloadPlan
@@ -62,6 +65,49 @@ class StreamKeysTest {
             ),
             keys,
         )
+    }
+
+    @Test
+    fun everySubtitleRenditionComesAlongTheTextTracksOfThePackage() {
+        val withSubtitles = master.replace(
+            "#EXT-X-STREAM-INF:BANDWIDTH=6000000",
+            "#EXT-X-MEDIA:TYPE=SUBTITLES,URI=\"s0/playlist.m3u8?stream=NOW&v=2\",GROUP-ID=\"subs\",LANGUAGE=\"en\",NAME=\"English\"\n" +
+                "#EXT-X-MEDIA:TYPE=SUBTITLES,URI=\"s1/playlist.m3u8?stream=NOW&v=2\",GROUP-ID=\"subs\",LANGUAGE=\"de\",NAME=\"Deutsch (forced)\",FORCED=YES\n" +
+                "#EXT-X-STREAM-INF:BANDWIDTH=6000000",
+        )
+        val keys = streamKeysFor(plan(withSubtitles, "v1/playlist.m3u8?stream=EARLIER&v=2", listOf("a0/playlist.m3u8?v=2")))
+        assertEquals(
+            listOf(
+                StreamKey(HlsMultivariantPlaylist.GROUP_INDEX_VARIANT, 1),
+                StreamKey(HlsMultivariantPlaylist.GROUP_INDEX_AUDIO, 0),
+                StreamKey(HlsMultivariantPlaylist.GROUP_INDEX_SUBTITLE, 0),
+                StreamKey(HlsMultivariantPlaylist.GROUP_INDEX_SUBTITLE, 1),
+            ),
+            keys,
+        )
+    }
+
+    @Test
+    fun whatATitleTakesOnThePhoneIsItsMediaAndItsFolderOnce() {
+        fun snapshot(state: Int, bytes: Long) = DownloadSnapshot(
+            state = state,
+            percent = 0f,
+            bytes = bytes,
+            request = DownloadRequest.Builder("k", Uri.parse(masterUrl)).build(),
+        )
+        val figures = onPhoneBytes(
+            downloads = mapOf(
+                "there" to snapshot(Download.STATE_COMPLETED, 48_880_000),
+                "coming" to snapshot(Download.STATE_DOWNLOADING, 10_000_000),
+                "waiting" to snapshot(Download.STATE_QUEUED, 3_000_000),
+                "failed" to snapshot(Download.STATE_FAILED, 7_000_000),
+                "going" to snapshot(Download.STATE_REMOVING, 7_000_000),
+            ),
+            folders = mapOf("there" to 400_000, "coming" to 250_000, "failed" to 300_000, "artwork-only" to 300_000),
+        )
+        // Media and folder: what the row says, what the line and the
+        // questions sum - partly fetched ones too, while they wait.
+        assertEquals(mapOf("there" to 49_280_000L, "coming" to 10_250_000L, "waiting" to 3_000_000L), figures)
     }
 
     @Test

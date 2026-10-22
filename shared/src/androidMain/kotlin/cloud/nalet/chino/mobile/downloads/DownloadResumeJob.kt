@@ -85,6 +85,12 @@ class DownloadResumeJob : JobService() {
         return current.any { it.runs() }
     }
 
+    /** The network changed while the job runs: nothing to do - the
+     *  download manager follows the connection itself (its requirements),
+     *  and the job looks at it every second. Here so that Android does not
+     *  warn of a job that would not hear of it. */
+    override fun onNetworkChanged(params: JobParameters) = Unit
+
     override fun onDestroy() {
         scope.coroutineContext[Job]?.cancel()
         super.onDestroy()
