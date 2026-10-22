@@ -200,6 +200,32 @@ class SubtitleChoicesTest {
     }
 
     @Test
+    fun aRenditionOfAnotherKindOrRegionIsNoCopy() {
+        data class Labelled(val id: String, val lang: String, val title: String?, val sidecar: Boolean = false)
+        val tracks = listOf(
+            Labelled("hls-en-sdh", "en", "English SDH"),
+            Labelled("hls-pt-pt", "pt-PT", "Português"),
+            Labelled("hls-en", "en", "English"),
+            Labelled("side-en", "eng", "English", sidecar = true),
+            Labelled("side-pt-br", "pt-BR", null, sidecar = true),
+        )
+        val menu = sidecarsThenOtherRenditions(tracks, { it.sidecar }, { it.lang }, { false }, sdh = { isSdhSubtitle(it.title) })
+        // Plain English is the sidecar again; SDH and European Portuguese are not.
+        assertEquals(listOf("side-en", "side-pt-br", "hls-en-sdh", "hls-pt-pt"), menu.map { it.id })
+    }
+
+    @Test
+    fun aSubtitleForTheDeafSaysSo() {
+        assertTrue(isSdhSubtitle("English SDH"))
+        assertTrue(isSdhSubtitle("English (CC)"))
+        assertTrue(isSdhSubtitle("Hard of hearing"))
+        assertTrue(isSdhSubtitle(null, "public.accessibility.describes-music-and-sound"))
+        assertFalse(isSdhSubtitle("English"))
+        assertFalse(isSdhSubtitle("Ascii"))
+        assertFalse(isSdhSubtitle(null))
+    }
+
+    @Test
     fun theDefaultRuleReadsTheMenuNotTheCopies() {
         val tracks = sidecarsThenOtherRenditions(
             listOf(Track("hls-de", "de"), Track("side-de", "deu", sidecar = true)),

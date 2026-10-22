@@ -1065,6 +1065,7 @@ private fun PlaybackSurface(
                         isSidecar = { isSidecarKey(it.key) },
                         lang = { it.language },
                         forced = { it.forced },
+                        sdh = { isSdhSubtitle(it.title) },
                     ),
                 )
                 subtitlesEnabled = subtitleTracks.any { it.selected }

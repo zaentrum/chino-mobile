@@ -233,6 +233,9 @@ internal data class MasterSubtitle(
     val forced: Boolean,
     val default: Boolean,
     val autoselect: Boolean,
+    /** Its CHARACTERISTICS ("public.accessibility.describes-music-and-sound"
+     *  for one for the deaf and hard of hearing); null for none. */
+    val characteristics: String? = null,
 )
 
 /** A master's variants, audio and subtitle renditions, in its order. */
@@ -291,6 +294,7 @@ internal fun parseHlsMaster(body: String): HlsMaster {
                         forced = a["FORCED"] == "YES",
                         default = a["DEFAULT"] == "YES",
                         autoselect = a["AUTOSELECT"] == "YES",
+                        characteristics = a["CHARACTERISTICS"],
                     )
                 }
             }
