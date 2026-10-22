@@ -227,6 +227,7 @@ internal class AndroidDownloads(
                     ),
                     onPhoneBytes = bytes,
                     claim = claim,
+                    mediaBytes = mediaBytesOf(d),
                 )
             }
             .sortedByDescending { it.addedAtMs }
@@ -457,10 +458,9 @@ internal class AndroidDownloads(
 
     override suspend fun storage(): StorageUse = withContext(Dispatchers.IO) {
         engine.titles.awaitReady()
-        // The account's titles as the engine counts them: the sum the rows
-        // and "delete all" make.
-        val onPhone = engine.onPhone.value
-        val used = visibleTo(engine.titles.titles.value, container.activeOwner.value).sumOf { onPhone[it.key] ?: 0L }
+        // The account's titles as the engine counts them: the sum "delete
+        // all" makes, of the same titles.
+        val used = summaryOfTitles(visibleTo(engine.titles.titles.value, container.activeOwner.value)).bytes
         StorageUse(usedBytes = used, freeBytes = engine.freeBytes())
     }
 
@@ -471,12 +471,15 @@ internal class AndroidDownloads(
     override fun summaryOfServer(server: String): DownloadsSummary =
         summaryOfTitles(engine.titles.titles.value.values.filter { it.server == server })
 
-    /** What of [titles] is on the phone: how many, and what they take - the
-     *  engine's one figure ([DownloadEngine.onPhone]), as the downloads
-     *  screen counts it. */
+    /** What of [titles] is on the phone, as the downloads screen counts it
+     *  ([onThePhone]): the titles with some of their media there - a queued
+     *  one with only its artwork doesn't count - and, of the same titles,
+     *  what they take on the phone now: the engine's one figure
+     *  ([DownloadEngine.onPhone]), never the sizes the server said. */
     private fun summaryOfTitles(titles: List<DownloadedTitle>): DownloadsSummary {
         val onPhone = engine.onPhone.value
-        val there = titles.filter { (onPhone[it.key] ?: 0L) > 0L }
+        val downloads = engine.downloads.value
+        val there = titles.filter { countsAsOnThePhone(downloads[it.key]) }
         return DownloadsSummary(there.size, there.sumOf { onPhone[it.key] ?: 0L })
     }
 

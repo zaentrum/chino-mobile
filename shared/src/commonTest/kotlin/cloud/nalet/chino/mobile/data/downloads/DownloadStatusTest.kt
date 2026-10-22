@@ -4,6 +4,7 @@ import cloud.nalet.chino.mobile.data.model.Item
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** One status per title, from the download manager's state, in the words the
  *  control shows. */
@@ -250,6 +251,62 @@ class DownloadWordsTest {
                 assertEquals(false, Regex("\\b$word\\b", RegexOption.IGNORE_CASE).containsMatchIn(text), "\"$text\" says $word")
             }
         }
+    }
+}
+
+/** "delete all", the storage line and the questions before a sign-out
+ *  count the same titles as their size: those with some of their media on
+ *  the phone. */
+class OnThePhoneTest {
+    private fun entry(id: String, status: DownloadStatus, mediaBytes: Long, folderBytes: Long = 200_000): DownloadEntry {
+        val claim = OwnerClaim("anna", addedAtMs = 1, checkedAtMs = 1)
+        return DownloadEntry(
+            title = DownloadedTitle(
+                itemId = id,
+                item = Item(id = id, title = id, kind = "episode", parentId = "series"),
+                quality = "Medium (720p)",
+                estimatedBytes = 450_000_000,
+                server = "s",
+                owners = listOf(claim),
+            ),
+            status = status,
+            onPhoneBytes = if (status is DownloadStatus.Failed) 0 else mediaBytes + folderBytes,
+            claim = claim,
+            mediaBytes = mediaBytes,
+        )
+    }
+
+    @Test
+    fun aQueuedTitleWithOnlyItsArtworkIsNotCountedAPartlyDownloadedOneIs() {
+        val entries = listOf(
+            entry("e1", DownloadStatus.Downloaded(450_000_000), mediaBytes = 449_800_000),
+            entry("e2", DownloadStatus.Downloading(20), mediaBytes = 68_800_000),
+            // Queued: their posters only.
+            entry("e3", DownloadStatus.Queued, mediaBytes = 0),
+            entry("e6", DownloadStatus.WaitingForWifi, mediaBytes = 0),
+            entry("e7", DownloadStatus.Failed(DownloadFailure.NoSpace), mediaBytes = 0),
+        )
+        val there = onThePhone(entries)
+        assertEquals(DownloadsSummary(2, 519_000_000), there)
+        assertEquals("This removes 2 downloads, 519 MB, from this phone.", deleteAllSentence(there.titles, there.bytes, DeviceKind.Phone))
+        assertEquals("Your 2 downloads, 519 MB, are deleted from this phone.", yourDownloadsGoSentence(there, DeviceKind.Phone))
+        assertEquals(
+            "519 MB used by downloads · 18 GB free on this phone",
+            storageLine(StorageUse(there.bytes, 18_000_000_000), DeviceKind.Phone, anythingOnThePhone = !there.isEmpty),
+        )
+    }
+
+    @Test
+    fun onlyQueuedOrFailedTitlesLeftClearTheList() {
+        val entries = listOf(
+            entry("e3", DownloadStatus.Queued, mediaBytes = 0),
+            entry("e6", DownloadStatus.WaitingForConnection, mediaBytes = 0),
+            entry("e7", DownloadStatus.Failed(DownloadFailure.Stopped), mediaBytes = 0),
+        )
+        val there = onThePhone(entries)
+        assertTrue(there.isEmpty)
+        assertEquals("This clears the list of downloads.", deleteAllSentence(there.titles, there.bytes, DeviceKind.Phone))
+        assertEquals("18 GB free on this phone", storageLine(StorageUse(there.bytes, 18_000_000_000), DeviceKind.Phone, anythingOnThePhone = !there.isEmpty))
     }
 }
 

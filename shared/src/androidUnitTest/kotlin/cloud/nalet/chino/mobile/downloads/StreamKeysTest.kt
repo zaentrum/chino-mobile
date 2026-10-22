@@ -14,7 +14,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** What a plan picks, as Media3 numbers the master: each pick found by its
  *  URL in Media3's own parse, whatever token the master carries - and no
@@ -108,6 +110,29 @@ class StreamKeysTest {
         // Media and folder: what the row says, what the line and the
         // questions sum - partly fetched ones too, while they wait.
         assertEquals(mapOf("there" to 49_280_000L, "coming" to 10_250_000L, "waiting" to 3_000_000L), figures)
+    }
+
+    @Test
+    fun aTitleCountsAsOnThePhoneByItsMediaNotItsArtwork() {
+        fun snapshot(state: Int, bytes: Long) = DownloadSnapshot(
+            state = state,
+            percent = 0f,
+            bytes = bytes,
+            request = DownloadRequest.Builder("k", Uri.parse(masterUrl)).build(),
+        )
+        // Partly fetched, done, or waiting with what it fetched: on the phone.
+        assertTrue(countsAsOnThePhone(snapshot(Download.STATE_DOWNLOADING, 69_000_000)))
+        assertTrue(countsAsOnThePhone(snapshot(Download.STATE_COMPLETED, 450_000_000)))
+        assertTrue(countsAsOnThePhone(snapshot(Download.STATE_QUEUED, 3_000_000)))
+        // Queued with nothing fetched - its poster in its folder only - or
+        // none at all, failed, going: not.
+        assertFalse(countsAsOnThePhone(snapshot(Download.STATE_QUEUED, 0)))
+        assertFalse(countsAsOnThePhone(snapshot(Download.STATE_STOPPED, 0)))
+        assertFalse(countsAsOnThePhone(null))
+        assertFalse(countsAsOnThePhone(snapshot(Download.STATE_FAILED, 7_000_000)))
+        assertFalse(countsAsOnThePhone(snapshot(Download.STATE_REMOVING, 7_000_000)))
+        assertEquals(0L, mediaBytesOf(snapshot(Download.STATE_FAILED, 7_000_000)))
+        assertEquals(69_000_000L, mediaBytesOf(snapshot(Download.STATE_DOWNLOADING, 69_000_000)))
     }
 
     @Test

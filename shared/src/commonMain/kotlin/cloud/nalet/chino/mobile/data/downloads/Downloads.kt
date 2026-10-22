@@ -184,6 +184,9 @@ data class DownloadEntry(
      *  control say its size as the server reported it ([size]). */
     val onPhoneBytes: Long,
     val claim: OwnerClaim,
+    /** What of its media is on the phone now - the manager's count, without
+     *  its folder: a title queued with only its artwork there has none. */
+    val mediaBytes: Long = 0L,
 ) {
     val itemId: String get() = title.itemId
 
@@ -202,9 +205,23 @@ data class DownloadEntry(
             else -> title.estimatedBytes ?: onPhoneBytes.takeIf { it > 0 }
         }
 
-    /** Whether some of it is on the phone: what "delete all" and the
-     *  questions before a sign-out count. */
-    val onPhone: Boolean get() = onPhoneBytes > 0 || status is DownloadStatus.Downloaded || status is DownloadStatus.CheckNeeded
+    /** Whether some of it is on the phone: what the storage line, "delete
+     *  all" and the questions before a sign-out count. Some of its media - a
+     *  title partly downloaded counts; one queued, with nothing but its
+     *  artwork there, doesn't (docs/chino downloads). */
+    val onPhone: Boolean get() = mediaBytes > 0 || status is DownloadStatus.Downloaded || status is DownloadStatus.CheckNeeded
+}
+
+/**
+ * What of [entries] is on the phone - the one figure the downloads screen's
+ * line, "delete all" and the questions before a sign-out compute: the titles
+ * with something of their media there ([DownloadEntry.onPhone]) and, of the
+ * same titles, what they take ([DownloadEntry.onPhoneBytes]). The number and
+ * the size count the same titles.
+ */
+fun onThePhone(entries: List<DownloadEntry>): DownloadsSummary {
+    val there = entries.filter { it.onPhone }
+    return DownloadsSummary(there.size, there.sumOf { it.onPhoneBytes })
 }
 
 /** What downloads take on the phone, and what is left there. */

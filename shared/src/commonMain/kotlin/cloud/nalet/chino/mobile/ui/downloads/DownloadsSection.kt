@@ -68,6 +68,7 @@ import cloud.nalet.chino.mobile.data.downloads.deleteAllSentence
 import cloud.nalet.chino.mobile.data.downloads.deletedManySentence
 import cloud.nalet.chino.mobile.data.downloads.deletedOneSentence
 import cloud.nalet.chino.mobile.data.downloads.downloadGroups
+import cloud.nalet.chino.mobile.data.downloads.onThePhone
 import cloud.nalet.chino.mobile.data.downloads.canTryAgain
 import cloud.nalet.chino.mobile.data.downloads.rowLabel
 import cloud.nalet.chino.mobile.data.downloads.statusSentence
@@ -175,10 +176,12 @@ fun DownloadsSection(onPlay: (itemId: String) -> Unit) {
         }
         storage?.let { use ->
             item(key = "storage") {
-                // What the rows take, summed as "delete all" sums it - the
-                // same figure, at the same moment; what is free, the phone's.
-                val used = use.copy(usedBytes = entries.sumOf { it.onPhoneBytes })
-                Text(text = storageLine(used, device, anythingOnThePhone = entries.any { it.onPhone }), color = ChinoMuted, fontSize = 13.sp)
+                // What is on the phone, counted as "delete all" counts it -
+                // the same titles, the same figure, at the same moment; what
+                // is free, the phone's.
+                val there = onThePhone(entries)
+                val used = use.copy(usedBytes = there.bytes)
+                Text(text = storageLine(used, device, anythingOnThePhone = !there.isEmpty), color = ChinoMuted, fontSize = 13.sp)
             }
         }
         if (entries.isEmpty()) {
@@ -235,11 +238,12 @@ fun DownloadsSection(onPlay: (itemId: String) -> Unit) {
         }
     }
     if (askDeleteAll) {
-        // What it removes from the phone: the titles there, by what they take.
-        val there = entries.filter { it.onPhone }
+        // What it removes from the phone: the titles with something of
+        // their media there - a queued one doesn't count - by what they take.
+        val there = onThePhone(entries)
         DownloadsGoQuestion(
             title = DELETE_ALL_TITLE,
-            sentence = deleteAllSentence(there.size, there.sumOf { it.onPhoneBytes }, device),
+            sentence = deleteAllSentence(there.titles, there.bytes, device),
             confirm = "delete all",
             onConfirm = {
                 askDeleteAll = false
