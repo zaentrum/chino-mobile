@@ -30,8 +30,9 @@ fun statusLabel(status: DownloadStatus): String = when (status) {
 }
 
 /**
- * A row's one text on the downloads screen: the status and the size its
- * offer said, as the server reports it ([size]) - "queued · 347 MB",
+ * A title's one text, on its control and on its row of the downloads
+ * screen alike: the status and the size its offer said, as the server
+ * reports it ([size]) - "queued · 347 MB", "waiting for Wi-Fi · 347 MB",
  * "downloading 15% · 347 MB", "downloaded · 347 MB", the same number before
  * and after. One that failed keeps nothing, and its row says no size - but
  * where its media came in whole and the rest of it did not, what it keeps.

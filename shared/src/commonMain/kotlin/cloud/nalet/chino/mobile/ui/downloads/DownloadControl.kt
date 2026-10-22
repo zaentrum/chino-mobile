@@ -49,6 +49,7 @@ import cloud.nalet.chino.mobile.data.downloads.episodesOnThePhoneLabel
 import cloud.nalet.chino.mobile.data.downloads.offerLabel
 import cloud.nalet.chino.mobile.data.downloads.sentence
 import cloud.nalet.chino.mobile.data.downloads.partLabel
+import cloud.nalet.chino.mobile.data.downloads.rowLabel
 import cloud.nalet.chino.mobile.data.downloads.seasonOfferLabel
 import cloud.nalet.chino.mobile.data.downloads.statusLabel
 import cloud.nalet.chino.mobile.data.downloads.statusSentence
@@ -83,16 +84,17 @@ import kotlinx.coroutines.coroutineScope
  */
 
 /** What a title's control shows. */
-private sealed interface ControlState {
+internal sealed interface ControlState {
     /** Not on the phone: "download · 1.4 GB". [bytes] null while the size
      *  is not known. */
     data class Offer(val bytes: Long?) : ControlState
 
-    /** It plays only as a stream: "can't be downloaded yet". */
+    /** It plays only as a stream: "can't be downloaded". */
     data object CantDownload : ControlState
 
-    /** Asked for, and being worked out: shows as queued. */
-    data object Starting : ControlState
+    /** Asked for, and being worked out: shows as queued, with the size its
+     *  offer said ([bytes]; null where it said none). */
+    data class Starting(val bytes: Long?) : ControlState
 
     /** It could not start, for [reason]. */
     data class StartFailed(val reason: DownloadFailure) : ControlState
@@ -129,7 +131,7 @@ private fun rememberControl(itemId: String, durationMs: Long?): Control? {
     val startFailure = failed[itemId]
     val state = when {
         entry != null -> ControlState.OnPhone(entry)
-        itemId in working -> ControlState.Starting
+        itemId in working -> ControlState.Starting((offer as? DownloadOffer.Available)?.bytes)
         // Found out as it was asked for: it only streams.
         startFailure == DownloadFailure.StreamOnly -> ControlState.CantDownload
         startFailure != null -> ControlState.StartFailed(startFailure)
@@ -182,13 +184,7 @@ private fun ControlView(control: Control, compact: Boolean, modifier: Modifier, 
     val device = LocalDeviceKind.current
     val state = control.state
     val status = (state as? ControlState.OnPhone)?.entry?.status
-    val label = when (state) {
-        is ControlState.Offer -> offerLabel(state.bytes)
-        ControlState.CantDownload -> CANT_DOWNLOAD_LABEL
-        ControlState.Starting -> statusLabel(DownloadStatus.Queued)
-        is ControlState.StartFailed -> statusLabel(DownloadStatus.Failed(state.reason))
-        is ControlState.OnPhone -> statusLabel(state.entry.status)
-    }
+    val label = controlLabel(state)
     val sentence = when (state) {
         ControlState.CantDownload -> CANT_DOWNLOAD_SENTENCE
         is ControlState.StartFailed -> state.reason.sentence(device)
@@ -263,6 +259,22 @@ private fun ControlView(control: Control, compact: Boolean, modifier: Modifier, 
             )
         }
     }
+}
+
+/**
+ * What the control says in [state] - its status and its size as one text,
+ * as the title's row on the downloads screen says it (docs/chino
+ * downloads, "The control says"): "download · 1.4 GB", "queued · 1.4 GB"
+ * (also while it is worked out, with the size its offer said), "waiting for
+ * Wi-Fi · 1.4 GB", "downloading 42% · 1.4 GB", "downloaded · 1.4 GB". A
+ * failure has no size: nothing of it is on the phone.
+ */
+internal fun controlLabel(state: ControlState): String = when (state) {
+    is ControlState.Offer -> offerLabel(state.bytes)
+    ControlState.CantDownload -> CANT_DOWNLOAD_LABEL
+    is ControlState.Starting -> rowLabel(DownloadStatus.Queued, state.bytes)
+    is ControlState.StartFailed -> statusLabel(DownloadStatus.Failed(state.reason))
+    is ControlState.OnPhone -> rowLabel(state.entry.status, state.entry.size)
 }
 
 /** The status, in the label face: what the control says, with its icon; a
