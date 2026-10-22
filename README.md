@@ -18,7 +18,8 @@ published build.
 - Ktor 3 client + kotlinx.serialization for the API
 - Voyager for navigation
 - Coil 3 for image loading
-- Android: Gradle 8.11, AGP 8.9, minSdk 24, target 36, Material 3, Media3 player
+- Android: Gradle 8.11, AGP 8.9, minSdk 24, target 36, Material 3, Media3 player,
+  Google Cast sender (Cast framework, MediaRouter)
 - iOS: deployment target 15.0, SwiftUI host, XcodeGen-generated `.xcodeproj`
 
 ## App ids
@@ -60,9 +61,11 @@ shared/                         KMP library
     data/slots/, data/notices/  what addons add: slot rows and notices (see Addons)
     ui/onboarding/AddServerScreen.kt  bring-your-own-server entry point
     ui/...                      auth / home / browse / detail / person / search / player / trailer / settings / notices
+    cast/                       casting: what the TV plays, the hand-over, the positions written, the warning
   src/commonTest/...            shared unit tests (JVM + iOS simulator)
-  src/androidUnitTest/...       Android-only unit tests on the JVM (Media3's track selection)
-  src/androidMain/...           DataStore-backed stores, Ktor OkHttp engine, Media3 player
+  src/androidUnitTest/...       Android-only unit tests on the JVM (Media3's track selection, the Cast SDK's load request)
+  src/androidMain/...           DataStore-backed stores, Ktor OkHttp engine, Media3 player,
+                                Google Cast sender (cast/) and its themes (res/)
   src/iosMain/...               NSUserDefaults stores, Darwin engine, AVPlayer
                                 player, MainViewController() exposed to Swift
 
@@ -283,6 +286,99 @@ link when there is one. Without a trailer of its own, the button opens that
 link outside the app, as before. The Home hero takes titles with either,
 those with a trailer of their own first, and has the same Trailer button
 after Play and More Info.
+
+## Casting
+
+On Android the app casts to a TV on the same network with Google Cast
+(`cast/`), as the design system's casting pattern draws it: Google's Cast
+button, bar, full controls and notification, in the app's colours and Inter.
+The TV runs Google's Default Media Receiver, so no receiver is registered
+anywhere; its id is one constant (`CAST_RECEIVER_APP_ID`). iOS plays to
+AirPlay instead.
+
+- **The Cast button** — Google's icon and states, in the top bar of the
+  player and of a title's page, on the right — shows only while a device
+  that can play is on the network. Its device chooser is Google's.
+- **Loading** — the TV is sent the title's master as the phone's player asks
+  for it, with the receiver's caps in place of the phone's and no rung
+  (`RECEIVER_CAPS`, `avc:1080,aac`: H.264 up to 1080 lines and AAC, which
+  every Cast device with a screen plays; chino-stream serves an H.264
+  package where there is one, else an H.264 rung of the live encode). Every
+  link the TV gets — the master, the subtitles, the artwork — is signed with
+  a stream token minted for it, which the media and artwork routes accept
+  without the bearer. The phone reads the master first: a subtitle the
+  master carries itself is not side-loaded again, and a server that refuses
+  the title says why before the TV is asked. HLS in fMP4, buffered, the
+  title's length; the title, an episode's series and numbers, the backdrop
+  and the poster; the other text sidecars as side-loaded WebVTT tracks, named
+  as the app's menus name them. Once the TV has the title, the phone turns on
+  the audio the viewer listened to (else the Settings language) and the
+  subtitle it showed, or the default subtitle rule's pick for that audio.
+- **Handing over** — casting started while the phone plays continues on the
+  TV where the phone was, playing or paused as it was, and the phone's player
+  closes once the TV plays. Play, Resume or an episode while a device is
+  connected starts the title on the TV where the player would have started
+  it: the resume point, from the head for a title chino-api calls finished.
+  A title the TV plays for this phone already plays on; only Play from start
+  loads it again. Where the TV does not take over — it can't, or casting
+  stops first — the title stands on the phone where it was, paused.
+- **While casting** — the bar (Google's mini controller: the title, "playing
+  on" and the device's own name, play or pause) sits above the bottom
+  navigation, part of the layout; it opens the full controls (Google's
+  expanded controller: the artwork, the title, the seek bar, play or pause,
+  back and forward 10 seconds, subtitles and audio when the TV offers them,
+  stop casting). The notification and the lock screen show the title, the
+  device, play or pause and stop. Stop casting ends the session and stops the
+  receiver; a session the app was in when it was closed is resumed. Casting
+  starts with the app (`attachCasting` in the Application), not with a
+  screen.
+- **Positions** — the phone writes the position the TV plays to chino-api
+  as its own player does: every 10 seconds while playing, at a pause, and as
+  the title ends or casting stops — the last position the TV confirmed, the
+  one the phone keeps, so Resume continues from there. chino-api decides
+  from it whether the title is finished. While casting needs it - a load, a
+  recovery or a signing of the links anew under way, the TV's media the
+  phone's, a position on its way - a foreground service of the media
+  playback kind keeps the app running (`CastPlaybackService`), so the writes
+  go on with the phone locked or in another app. Android lets the app start
+  it only from the front: as a title is loaded, as a session is found with
+  the app open, as the app comes back with a title on the TV. A session the
+  app resumes in the background has it once the app is opened again; till
+  then the writes go on only while Android lets the app run. Only the phone
+  that cast a title writes it, and only for the account it was cast for: the
+  media carries a marker with this phone's owner id of the account
+  (`CastTag`), made at random and kept on the phone - never in a backup or a
+  transfer to a new phone - which names neither the account nor the server;
+  a second phone signed in to the same account writes nothing, nor does an
+  extra.
+- **Links that run out** — where the TV plays on after a long pause, or in a
+  resumed session, with less life left in its links than it still has to
+  play - and a new token makes them last meaningfully longer - the phone
+  loads the title again where it is, its links signed anew, its tracks kept,
+  playing or paused as it is meant to. Should that fail, it is a title that
+  failed (below).
+- **When the TV can't play a title** — the phone first loads it once more,
+  its links signed anew, where it stood - the last position the TV
+  confirmed, never an earlier one written over it - unless the TV cannot
+  decode it or has no screen. Then "Living Room TV can't play this title."
+  in the design system's warning strip, with the reason under details: the
+  status the server gave the phone for the TV's master, read as the design
+  system reads a status (the server's problem, busy, no stream of the title,
+  no access, the device's link turned down, no answer), else the receiver's
+  code (media it does not play, a stream it could not load from the server
+  or not read, a device that plays sound only). Casting stops, and the title
+  stays where it was on the phone, paused, ready to play there. Where the
+  phone finds out before it asks the TV anything - the server refuses the
+  title, or gives the phone no token for the TV's links (its own sign-in
+  refused, say) - the strip says so and the TV plays on as it did.
+
+Google's Cast screens are in English, as the app is: the app ships the
+English resources only (`localeFilters`), until it has translations of its
+own. Dates and numbers follow the phone's locale.
+
+The receiver is a web player on the TV that loads the master, the renditions,
+the segments and the subtitles from the server itself: the server's stream
+routes must answer it with CORS headers (`Access-Control-Allow-Origin`).
 
 ## Addons
 

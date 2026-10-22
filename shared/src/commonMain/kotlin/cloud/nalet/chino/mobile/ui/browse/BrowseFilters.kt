@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.browse
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -234,7 +235,7 @@ private fun ClearFiltersChip(onClick: () -> Unit) {
 private fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
     val bg = if (active) ChinoCloudBlue else ChinoSurface
     val border = if (active) ChinoCloudBlue else ChinoBorder
-    val fg = if (active) Color.White else ChinoFg2
+    val fg = if (active) ChinoOnFill else ChinoFg2
     Box(
         modifier = Modifier
             .clip(RectangleShape)

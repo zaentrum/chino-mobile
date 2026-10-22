@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Our words while casting (the design system's casting pattern):
+         "playing on {device}" and "stop casting". The Cast framework's own
+         strings of these names - the full controls' line and the
+         notification's - say them too. -->
+    <string name="cast_casting_to_device">playing on %1$s</string>
+    <string name="cast_disconnect">stop casting</string>
+    <string name="chino_cast_stop_casting" translatable="false">stop casting</string>
+
+    <!-- The full controls' skip buttons, read out and shown on a long
+         press. -->
+    <string name="chino_cast_back_10" translatable="false">back 10 seconds</string>
+    <string name="chino_cast_forward_10" translatable="false">forward 10 seconds</string>
+
+    <!-- The quiet notification the app keeps while casting needs it
+         (CastPlaybackService): one line under the app's name, the device by
+         its own name; and its channel in the system's settings. -->
+    <string name="chino_cast_channel" translatable="false">Casting</string>
+    <string name="chino_cast_keeping_place" translatable="false">Keeping your place while %1$s plays</string>
+</resources>

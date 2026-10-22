@@ -55,5 +55,12 @@
             android:name="cloud.nalet.chino.mobile.downloads.DownloadResumeJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Casting's full controls (shared, cast/): opened from the
+             notification, Back lands here rather than out of the app. -->
+        <activity
+            android:name="cloud.nalet.chino.mobile.cast.CastExpandedControlsActivity"
+            android:parentActivityName=".MainActivity"
+            tools:node="merge" />
     </application>
 </manifest>

@@ -101,13 +101,28 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cloud.nalet.chino.mobile.LocalAppContainer
+import cloud.nalet.chino.mobile.cast.CastButton
+import cloud.nalet.chino.mobile.cast.CastFailureStrip
+import cloud.nalet.chino.mobile.cast.CastHandoff
+import cloud.nalet.chino.mobile.cast.CastLoadResult
+import cloud.nalet.chino.mobile.cast.CastMediaInput
+import cloud.nalet.chino.mobile.cast.CastSubtitleStart
+import cloud.nalet.chino.mobile.cast.ChinoCast
+import cloud.nalet.chino.mobile.cast.LocalAgain
+import cloud.nalet.chino.mobile.cast.handoffStartMs
+import cloud.nalet.chino.mobile.cast.handoffSubtitle
+import cloud.nalet.chino.mobile.cast.localAgainAfterCast
+import cloud.nalet.chino.mobile.cast.resumeSecOf
 import cloud.nalet.chino.mobile.data.api.PlayInfo
 import cloud.nalet.chino.mobile.data.api.QualityRung
 import cloud.nalet.chino.mobile.data.api.Segment
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
+import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.feedback.BugReportDialog
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Captions
 import com.composables.icons.lucide.ChevronLeft
@@ -207,6 +222,15 @@ actual class PlayerScreen actual constructor(
         // it waits for the server's check (downloads/DownloadedPlayback.kt).
         var downloadNote: String? by remember { mutableStateOf(null) }
         val device = cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind.current
+        // Casting: a load of the title on the TV under way, and where it
+        // starts there (CastStarting). Null while the title plays here.
+        var castStart: CastHandoff? by remember { mutableStateOf(null) }
+        // A warning of the TV about another title is not this player's; one
+        // about this title, shown here, goes with the player.
+        DisposableEffect(itemId) {
+            if (ChinoCast.failure.value?.itemId != itemId) ChinoCast.dismissFailure()
+            onDispose { if (ChinoCast.failure.value?.itemId == itemId) ChinoCast.dismissFailure() }
+        }
         // An extra that is not there: gone from the detail, or its master
         // answers 404 (at the load, or once playing).
         var notAvailable: ExtraPlayback.NotAvailable? by remember { mutableStateOf(null) }
@@ -216,6 +240,7 @@ actual class PlayerScreen actual constructor(
             error = null
             downloadNote = null
             notAvailable = null
+            castStart = null
             try {
                 val base = container.config.apiBaseUrl.trimEnd('/')
                 // The caps as playback starts: the output the sound goes to
@@ -267,7 +292,8 @@ actual class PlayerScreen actual constructor(
                     if (!playerMode.progress || fromStart || handoff) {
                         null
                     } else {
-                        runCatching { container.chinoApi.getProgress(itemId).positionSec }.getOrNull()
+                        // A finished title has no resume point (resumeSecOf).
+                        runCatching { resumeSecOf(container.chinoApi.getProgress(itemId)) }.getOrNull()
                     }
                 }
                 val infoAsk = async {
@@ -400,7 +426,24 @@ actual class PlayerScreen actual constructor(
                     playerMode = playerMode,
                     extraId = extraId,
                     extra = extra,
+                    item = extra?.item ?: item,
+                    seriesTitle = seriesTitle,
                 )
+                // Opened while casting - Play on a title's page, an episode,
+                // Continue Watching: the title plays on the TV, from where it
+                // would have started here - or on, where the TV plays it for
+                // this phone already, unless it was Play from start - and
+                // this player closes once it does. Before the player is
+                // built, so it never starts here.
+                if (ChinoCast.connectedSession() != null) {
+                    castStart = CastHandoff(
+                        startMs = startMs,
+                        playing = true,
+                        audioLang = firstAudio?.language,
+                        subtitle = CastSubtitleStart.Auto(settings.preferredSubLang, settings.preferredAudioLang),
+                        restart = fromStart,
+                    )
+                }
                 // The scrub previews once the player is up, not before it: a
                 // title's thumbnails.vtt can take chino-stream many seconds
                 // (21 s for Big Buck Bunny's, past the client's 10 s read
@@ -429,11 +472,27 @@ actual class PlayerScreen actual constructor(
         }
         val missing = notAvailable
         val note = downloadNote
+        val casting = castStart
         when {
             note != null -> DownloadNotPlaying(message = note, onBack = close)
             missing != null -> ExtraNotAvailable(title = missing.title, link = missing.link, onBack = close)
             error != null -> ErrorState(message = error!!, itemId = itemId, extraId = extraId, onBack = close)
             ready == null -> LoadingState()
+            // The title starts on the TV. Once it plays there, this player
+            // closes; if it can't, or casting stops first, it stands here
+            // again where it was.
+            casting != null -> CastStarting(
+                state = ready!!,
+                handoff = casting,
+                onBack = close,
+                onHome = { nav.replaceAll(MainShellScreen()) },
+                onPlaying = closeByItself,
+                // Back here, paused where it was: it never plays by itself.
+                onHereAgain = { again ->
+                    ready = ready?.copy(resumeMs = again.startMs, autoPlay = again.autoplay)
+                    castStart = null
+                },
+            )
             else -> PlaybackSurface(
                 state = ready!!,
                 itemId = itemId,
@@ -453,6 +512,7 @@ actual class PlayerScreen actual constructor(
                     notAvailable = ExtraPlayback.NotAvailable(title = extra?.item?.title, link = extra?.link)
                 },
                 onEnded = closeByItself,
+                onCastStart = { castStart = it },
             )
         }
     }
@@ -511,6 +571,13 @@ private data class PlayState(
     val extraId: String?,
     /** The extra's master and what was read off it; null for a title. */
     val extra: ExtraPlayback.Ready?,
+    /** The title's detail (an extra's title's), and its series' title: what
+     *  the TV and the Cast controls show of it. */
+    val item: Item? = null,
+    val seriesTitle: String? = null,
+    /** Whether playback starts playing, or waits paused at [resumeMs] - the
+     *  title back here after the TV couldn't play it. */
+    val autoPlay: Boolean = true,
 ) {
     /** The master at [quality]: a title's ([buildMasterUrl]), else the
      *  extra's — `q` for a rung the viewer picked ([withQuality]). */
@@ -574,6 +641,9 @@ private data class SubtitleTrack(
     val forced: Boolean,
     /** Drawn as pictures (PGS, VobSub, DVB): a text one comes first. */
     val image: Boolean,
+    /** For the deaf and hard of hearing: its label says so, or the master's
+     *  CHARACTERISTICS do (public.accessibility.describes-music-and-sound). */
+    val sdh: Boolean,
     val selected: Boolean,
     val group: Tracks.Group,
     val trackIndex: Int,
@@ -611,6 +681,7 @@ private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
                         fmt.label.orEmpty().contains("forced", ignoreCase = true),
                     image = fmt.sampleMimeType in IMAGE_SUBTITLE_MIMES ||
                         (fmt.sampleMimeType == MimeTypes.APPLICATION_MEDIA3_CUES && fmt.codecs in IMAGE_SUBTITLE_MIMES),
+                    sdh = isSdhSubtitle(fmt.label) || (fmt.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND) != 0,
                     selected = g.isTrackSelected(i),
                     group = g,
                     trackIndex = i,
@@ -620,10 +691,10 @@ private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
 
 /** The captions menu's labels ([subtitleLabels]): each track by its language
  *  ("German", "No dialogue" for zxx), with what its own label says beyond
- *  that ("English · SDH"); a track in no language by its own label, else
- *  "Unknown". */
+ *  that ("English · Commentary"), then its kind ("English · for deaf and hard
+ *  of hearing"); a track in no language by its own label, else "Unknown". */
 private fun withMenuLabels(tracks: List<SubtitleTrack>): List<SubtitleTrack> {
-    val labels = subtitleLabels(tracks.map { SubtitleLabelInput(it.language, it.title, it.forced) })
+    val labels = subtitleLabels(tracks.map { SubtitleLabelInput(it.language, it.title, it.forced, it.sdh) })
     return tracks.mapIndexed { i, t -> t.copy(label = labels[i]) }
 }
 
@@ -794,6 +865,8 @@ private fun PlaybackSurface(
     onExtraMissing: () -> Unit,
     /** Playback reached the end of what closes there ([PlayerMode.closesAtEnd]). */
     onEnded: () -> Unit,
+    /** Casting started while this player played: the TV takes over from it. */
+    onCastStart: (CastHandoff) -> Unit,
 ) {
     val context = LocalContext.current
     val container = LocalAppContainer.current
@@ -1005,13 +1078,15 @@ private fun PlaybackSurface(
             it.setMediaSource(mediaSource)
             it.prepare()
             if (seekTarget > 0) it.seekTo(seekTarget)
-            it.playWhenReady = true
+            // A rebuilt player (a quality switch) plays on, as before; the
+            // first one waits paused where the state says so.
+            it.playWhenReady = pendingResumeMs >= 0 || state.autoPlay
         }
     }
 
     var positionMs by remember { mutableStateOf(state.resumeMs) }
     var durationMs by remember { mutableStateOf(0L) }
-    var isPlaying by remember { mutableStateOf(true) }
+    var isPlaying by remember { mutableStateOf(state.autoPlay) }
     var bufferedMs by remember { mutableStateOf(0L) }
     var muted by remember { mutableStateOf(false) }
     var volume by remember { mutableStateOf(1f) }
@@ -1096,6 +1171,7 @@ private fun PlaybackSurface(
                         isSidecar = { isSidecarKey(it.key) },
                         lang = { it.language },
                         forced = { it.forced },
+                        sdh = { it.sdh },
                     ),
                 )
                 subtitlesEnabled = subtitleTracks.any { it.selected }
@@ -1265,6 +1341,33 @@ private fun PlaybackSurface(
             delay(10_000)
             if (player.isPlaying) saveProgress(player)
         }
+    }
+
+    // Casting starts while this player plays (the Cast button in its top
+    // bar): the TV continues where it is - playing or paused as it is, with
+    // its subtitle - and this player pauses; it is released as the screen
+    // turns to the TV's start (CastStarting), which saves where it was.
+    val cast by ChinoCast.state.collectAsState()
+    var castBefore by remember { mutableStateOf(cast.connected) }
+    LaunchedEffect(cast.connected) {
+        val connected = cast.connected
+        if (connected && !castBefore) {
+            val ended = player.playbackState == Player.STATE_ENDED
+            val known = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.info?.durationMs ?: 0L
+            val audioLang = audioTracks.firstOrNull { it.selected }?.language ?: state.firstAudioLang
+            val handoff = CastHandoff(
+                startMs = handoffStartMs(player.currentPosition, known, ended),
+                playing = player.playWhenReady && !ended,
+                audioLang = audioLang,
+                subtitle = handoffSubtitle(subtitleKey, state.sidecarSubtitles, CastSubtitleStart.Auto(state.subtitlePref, state.audioPref)),
+                // The phone says where: the TV continues from here, even
+                // where it played this title for this phone before.
+                restart = true,
+            )
+            player.pause()
+            onCastStart(handoff)
+        }
+        castBefore = connected
     }
 
     ImmersiveFullscreenEffect(active = fullscreen)
@@ -1654,6 +1757,68 @@ private fun PlaybackSurface(
                 },
             )
         }
+        // The TV couldn't play the title: the warning, over this player,
+        // which stands here again, paused where it was - casting stopped.
+        val castFailure by ChinoCast.failure.collectAsState()
+        castFailure?.takeIf { it.itemId == itemId }?.let { failure ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(start = 16.dp, top = 72.dp, end = 16.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                CastFailureStrip(failure = failure, onDismiss = ChinoCast::dismissFailure, modifier = Modifier.widthIn(max = 560.dp))
+            }
+        }
+    }
+}
+
+/**
+ * The title starting on the TV ([ChinoCast.load]): the top bar, and a
+ * spinner where the picture was. Once the TV plays it, [onPlaying] closes the
+ * player - the bar while casting takes over on the screen below; where the TV
+ * can't, or casting stops first, [onHereAgain] stands it here again where it
+ * was ([localAgainAfterCast]).
+ */
+@Composable
+private fun CastStarting(
+    state: PlayState,
+    handoff: CastHandoff,
+    onBack: () -> Unit,
+    onHome: () -> Unit,
+    onPlaying: () -> Unit,
+    onHereAgain: (LocalAgain) -> Unit,
+) {
+    LaunchedEffect(handoff) {
+        // Its links are signed for the TV as it loads (ChinoCast), with a
+        // token minted for it - not this player's.
+        val input = CastMediaInput(
+            apiBase = state.base,
+            itemId = state.itemId,
+            extraId = state.extraId,
+            phoneMasterUrl = state.masterUrl(AUTO_QUALITY),
+            item = state.item,
+            seriesTitle = state.seriesTitle,
+            extraHeading = state.extra?.heading,
+            durationMs = state.info?.durationMs ?: state.item?.durationMs,
+            startMs = handoff.startMs,
+            autoplay = handoff.playing,
+            sidecars = state.sidecarSubtitles,
+            audioLang = handoff.audioLang,
+            audioPref = state.audioPref,
+            subtitleStart = handoff.subtitle,
+            writesProgress = state.writable,
+            restart = handoff.restart,
+        )
+        when (ChinoCast.load(input)) {
+            CastLoadResult.Playing -> onPlaying()
+            is CastLoadResult.Failed, CastLoadResult.Ended -> onHereAgain(localAgainAfterCast(handoff))
+        }
+    }
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        CircularProgressIndicator(color = ChinoCloudBlue, modifier = Modifier.align(Alignment.Center))
+        TopBar(title = state.title, onBack = onBack, onHome = onHome)
     }
 }
 
@@ -1947,6 +2112,14 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 style = ChinoHeading,
                 modifier = Modifier.weight(1f),
+            )
+            // The Cast button, on the right: Google's icon in the chrome's
+            // circle, there while a device is on the network.
+            CastButton(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.1f)),
             )
         }
     }
@@ -2704,7 +2877,7 @@ private fun CheckboxIndicator(selected: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         if (selected) {
-            Text(text = "1", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(text = "1", color = ChinoOnFill, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -2870,7 +3043,7 @@ private fun AutoNextOverlay(
                             .clickable(onClick = onPlayNow)
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) {
-                        Text(text = "Play now", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(text = "Play now", color = ChinoOnFill, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
                     Box(
                         modifier = Modifier
@@ -2951,12 +3124,12 @@ private fun NextEpisodeCard(
                             // intent), Play for the plain manual button.
                             imageVector = if (secondsLeft != null) Lucide.SkipForward else Lucide.Play,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = ChinoOnFill,
                             modifier = Modifier.size(16.dp),
                         )
                         Text(
                             text = "Next episode",
-                            color = Color.White,
+                            color = ChinoOnFill,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                         )

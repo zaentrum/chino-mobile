@@ -37,10 +37,10 @@ class SubtitleChoicesTest {
             listOf(
                 "s-en" to "English",
                 "s-fr" to "French",
-                "s-de" to "German · SDH",
+                "s-de" to "German · for deaf and hard of hearing",
                 "s-it" to "Italian",
                 "emb-3" to "German",
-                "emb-4" to "French (forced)",
+                "emb-4" to "French · foreign-language parts only",
             ),
             choices.map { it.id to it.label },
         )
@@ -96,7 +96,10 @@ class SubtitleChoicesTest {
             "tok",
         )
         assertEquals(listOf(false, true, true), forced.map { it.forced })
-        assertEquals(listOf("English", "English (forced)", "German · Forced"), forced.map { it.label })
+        assertEquals(
+            listOf("English", "English · foreign-language parts only", "German · foreign-language parts only"),
+            forced.map { it.label },
+        )
     }
 
     @Test
@@ -197,6 +200,32 @@ class SubtitleChoicesTest {
         assertEquals(listOf("side-en", "hls-en-forced", "hls-fr"), menu(tracks))
         // No sidecars at all: the master's renditions, as they come.
         assertEquals(listOf("hls-en", "hls-fr"), menu(listOf(Track("hls-en", "en"), Track("hls-fr", "fr"))))
+    }
+
+    @Test
+    fun aRenditionOfAnotherKindOrRegionIsNoCopy() {
+        data class Labelled(val id: String, val lang: String, val title: String?, val sidecar: Boolean = false)
+        val tracks = listOf(
+            Labelled("hls-en-sdh", "en", "English SDH"),
+            Labelled("hls-pt-pt", "pt-PT", "Português"),
+            Labelled("hls-en", "en", "English"),
+            Labelled("side-en", "eng", "English", sidecar = true),
+            Labelled("side-pt-br", "pt-BR", null, sidecar = true),
+        )
+        val menu = sidecarsThenOtherRenditions(tracks, { it.sidecar }, { it.lang }, { false }, sdh = { isSdhSubtitle(it.title) })
+        // Plain English is the sidecar again; SDH and European Portuguese are not.
+        assertEquals(listOf("side-en", "side-pt-br", "hls-en-sdh", "hls-pt-pt"), menu.map { it.id })
+    }
+
+    @Test
+    fun aSubtitleForTheDeafSaysSo() {
+        assertTrue(isSdhSubtitle("English SDH"))
+        assertTrue(isSdhSubtitle("English (CC)"))
+        assertTrue(isSdhSubtitle("Hard of hearing"))
+        assertTrue(isSdhSubtitle(null, "public.accessibility.describes-music-and-sound"))
+        assertFalse(isSdhSubtitle("English"))
+        assertFalse(isSdhSubtitle("Ascii"))
+        assertFalse(isSdhSubtitle(null))
     }
 
     @Test

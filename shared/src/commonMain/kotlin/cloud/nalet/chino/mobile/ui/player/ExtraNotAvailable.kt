@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.model.Trailer
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.trailer.trailerLinkLabel
@@ -128,7 +129,9 @@ private fun MessageButton(label: String, icon: ImageVector?, primary: Boolean, o
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (icon != null) Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-        Text(text = label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        // Dark on the blue fill, white on the neutral one.
+        val content = if (primary) ChinoOnFill else Color.White
+        if (icon != null) Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
+        Text(text = label, color = content, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }

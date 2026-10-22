@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Nothing of the app leaves the phone through a backup or a transfer to a new
-  phone (Android 12 and later): not the downloads (files/downloads, its index
-  and cache in databases/chino_downloads.db), not their settings
+  phone (Android 12 and later): not the downloads (files/downloads, their
+  index and cache in databases/chino_downloads.db), not their settings
   (shared_prefs/chino_downloads.xml), not the positions waiting to be sent
-  (files/progress-book.json), not WorkManager's database, and not the accounts
-  and their tokens (files/datastore). android:allowBackup="false" stops the
-  cloud backup but not a device-to-device transfer: every domain is excluded
-  for both. A new phone signs in and downloads anew.
+  (files/progress-book.json), not WorkManager's database, not the accounts
+  and their tokens (files/datastore), and not casting's owner ids
+  (shared_prefs/chino_cast_owner.xml), which name this phone to a TV - copied
+  to another phone, both would write the positions the TV plays.
+  android:allowBackup="false" stops the cloud backup but not a
+  device-to-device transfer: every domain is excluded for both. A new phone
+  signs in and downloads anew.
 -->
 <data-extraction-rules>
     <cloud-backup>

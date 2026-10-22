@@ -3,6 +3,8 @@ package cloud.nalet.chino.mobile.ui.components
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
+import cloud.nalet.chino.mobile.ui.theme.avatarColor
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -55,8 +57,8 @@ fun Avatar(
     val bg = avatarColor(seed)
     // Match chino-web's Avatar.tsx initial calc: split on whitespace /
     // dot / underscore / hyphen, take the first two non-empty words,
-    // first letter of each uppercased. "Andreas Meinen" → "AM",
-    // "andreas.meinen" → "AM", single-word "andreas" → "A". Web fallback
+    // first letter of each uppercased. "Demo User" → "DU",
+    // "demo.user" → "DU", single-word "demo" → "D". Web fallback
     // is "?" when the name is empty.
     val initial = displayName
         .split(Regex("[\\s._-]+"))
@@ -75,9 +77,11 @@ fun Avatar(
             .let { if (onClick != null) it.clickable(onClick = onClick) else it },
         contentAlignment = Alignment.Center,
     ) {
+        // The initials on their colour are dark, as every label on a filled
+        // colour is (5.68:1 at the least; white had 1.74 to 3.37).
         Text(
             text = initial,
-            color = Color.White,
+            color = ChinoOnFill,
             // CDP-verified: web avatar uses font-weight 600 / 15px / 22.5
             // line-height. Fixed 15sp + 22sp lineHeight reads cleaner
             // than the previous `size * 0.4` (14.4sp at 36dp) and pins
@@ -94,26 +98,4 @@ fun Avatar(
             )
         }
     }
-}
-
-/** Deterministic hue per seed — matches the TV's palette so the same user
- *  shows the same colour everywhere they sign in. */
-private fun avatarColor(seed: String): Color {
-    val palette = listOf(
-        ChinoCloudBlue, // brand blue
-        Color(0xFFFFB454), // amber
-        ChinoGreen, // emerald
-        Color(0xFF9E86FF), // violet
-        Color(0xFFFF6B6B), // coral
-        Color(0xFF14B8A6), // teal
-        Color(0xFFE879F9), // fuchsia
-        Color(0xFFEAB308), // mustard
-        Color(0xFF38BDF8), // sky
-        Color(0xFFF472B6), // pink
-        Color(0xFF4ADE80), // lime
-        Color(0xFFFB923C), // orange
-    )
-    val hash = seed.fold(0) { acc, c -> acc * 31 + c.code }
-    val idx = ((hash % palette.size) + palette.size) % palette.size
-    return palette[idx]
 }

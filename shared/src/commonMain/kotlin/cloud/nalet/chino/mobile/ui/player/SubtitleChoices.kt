@@ -34,7 +34,7 @@ fun subtitleKind(format: String?): SubtitleKind {
 data class SubtitleChoice(
     /** The sidecar's id, or "emb-<stream index>" for an embedded track. */
     val id: String,
-    /** Named by language ([subtitleLabels]). */
+    /** Named by language, then kind ([subtitleLabels]). */
     val label: String,
     /** The normalised language ([normalizeLang]); "" when none. */
     val lang: String,
@@ -51,7 +51,8 @@ data class SubtitleChoice(
  * The captions menu, as chino-web merges it: the sidecars of
  * GET /items/{id}/subtitles first (each at /api/v1/play/subs/{id}.vtt), then
  * the embedded text streams /play/info lists (/items/{id}/play/subtitles/
- * {index}.vtt — ffmpeg extracts them as WebVTT). Labels name the language.
+ * {index}.vtt — ffmpeg extracts them as WebVTT). Labels name the language,
+ * then the kind: forced, for the deaf and hard of hearing ([subtitleLabel]).
  *
  * Picture formats stay in the list, marked unavailable unless [drawsPgs]
  * (and an embedded picture stream is always unavailable: the extractor cannot
@@ -133,11 +134,37 @@ fun <T> sidecarsThenOtherRenditions(
     isSidecar: (T) -> Boolean,
     lang: (T) -> String?,
     forced: (T) -> Boolean,
+    sdh: (T) -> Boolean = { false },
 ): List<T> {
     val (sidecars, renditions) = tracks.partition(isSidecar)
-    val carried = sidecars.mapTo(HashSet()) { normalizeLang(lang(it)) to forced(it) }
-    return sidecars + renditions.filter { (normalizeLang(lang(it)) to forced(it)) !in carried }
+    val carried = sidecars.mapTo(HashSet()) { sameSubtitleKey(lang(it), forced(it), sdh(it)) }
+    return sidecars + renditions.filter { sameSubtitleKey(lang(it), forced(it), sdh(it)) !in carried }
 }
+
+/**
+ * What makes a rendition and a sidecar the same subtitle
+ * ([sidecarsThenOtherRenditions]): its language with the script and region it
+ * names ([languageTag]: "pt-BR" is not "pt-PT", "zh-Hant" not "zh-Hans"),
+ * whether it is forced, and whether it is for the deaf and hard of hearing
+ * ([isSdhSubtitle]). Two subtitles of one language are two.
+ */
+fun sameSubtitleKey(lang: String?, forced: Boolean, sdh: Boolean = false): Triple<String, Boolean, Boolean> =
+    Triple(languageTag(lang), forced, sdh)
+
+private val SDH_WORDS = Regex(
+    """(^|[^A-Za-z])(SDH|CC|HoH|closed[ -]captions?|hearing[ -]impaired|hard[ -]of[ -]hearing|deaf)([^A-Za-z]|$)""",
+    RegexOption.IGNORE_CASE,
+)
+
+/** The HLS characteristic of a subtitle for the deaf and hard of hearing. */
+private const val DESCRIBES_SOUND = "public.accessibility.describes-music-and-sound"
+
+/** Whether a subtitle is for the deaf and hard of hearing: its name says so
+ *  ("English SDH", "English (CC)", "for deaf and hard of hearing"), or its
+ *  HLS characteristics do. */
+fun isSdhSubtitle(name: String?, characteristics: String? = null): Boolean =
+    characteristics?.contains(DESCRIBES_SOUND, ignoreCase = true) == true ||
+        (name != null && SDH_WORDS.containsMatchIn(name))
 
 /** The subtitle that comes on by itself ([autoSubtitleTrack]) among the ones
  *  this player can show: the default rule's ([defaultSubtitleTrack]), else

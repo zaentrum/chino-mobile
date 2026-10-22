@@ -6,6 +6,7 @@ import kotlinx.cinterop.useContents
 import platform.AVFoundation.AVLayerVideoGravityResizeAspect
 import platform.AVFoundation.AVMediaCharacteristicAudible
 import platform.AVFoundation.AVMediaCharacteristicContainsOnlyForcedSubtitles
+import platform.AVFoundation.AVMediaCharacteristicDescribesMusicAndSoundForAccessibility
 import platform.AVFoundation.AVMediaCharacteristicLegible
 import platform.AVFoundation.AVMediaSelectionGroup
 import platform.AVFoundation.AVMediaSelectionOption
@@ -118,6 +119,9 @@ internal data class SubtitleRendition(
     val language: String?,
     /** FORCED=YES: it carries only the forced subtitles. */
     val forced: Boolean,
+    /** CHARACTERISTICS public.accessibility.describes-music-and-sound: for
+     *  the deaf and hard of hearing. */
+    val sdh: Boolean = false,
 )
 
 /**
@@ -348,6 +352,7 @@ internal class IosVideoPlayer {
                 name = o.renditionName(),
                 language = o.extendedLanguageTag ?: o.locale?.languageCode,
                 forced = o.hasMediaCharacteristic(AVMediaCharacteristicContainsOnlyForcedSubtitles),
+                sdh = o.hasMediaCharacteristic(AVMediaCharacteristicDescribesMusicAndSoundForAccessibility),
             )
         }
     }

@@ -751,6 +751,10 @@ data class StreamTokenResponse(
 @Serializable
 data class ProgressResponse(
     @SerialName("position_sec") val positionSec: Int = 0,
+    /** The viewer finished the title (chino-api's rule: its last 5 % or 2
+     *  minutes): no resume point, position_sec 0. An older chino-api leaves
+     *  it out. */
+    val finished: Boolean = false,
 )
 
 @Serializable

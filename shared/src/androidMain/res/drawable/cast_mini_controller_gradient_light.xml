@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The strip above Google's mini controller (the Cast framework's drawable
+     of this name, a grey shadow there): the bar's top edge, a 1 dp border
+     line on surface, as the casting pattern draws the bar. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/chino_cast_surface" />
+        </shape>
+    </item>
+    <item
+        android:gravity="top"
+        android:height="1dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/chino_cast_border" />
+        </shape>
+    </item>
+</layer-list>

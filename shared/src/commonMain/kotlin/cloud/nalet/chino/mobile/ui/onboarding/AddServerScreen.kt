@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.onboarding
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -305,7 +306,7 @@ private fun PrimaryButton(label: String, enabled: Boolean, onClick: () -> Unit) 
     ) {
         Text(
             text = label,
-            color = if (enabled) ChinoBg2 else ChinoMuted,
+            color = if (enabled) ChinoOnFill else ChinoMuted,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
         )

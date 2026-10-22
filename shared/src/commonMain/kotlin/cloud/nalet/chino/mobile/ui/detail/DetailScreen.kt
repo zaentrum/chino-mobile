@@ -28,12 +28,14 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
 import cloud.nalet.chino.mobile.ui.theme.PosterImage
+import cloud.nalet.chino.mobile.ui.theme.contentOn
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
@@ -104,6 +106,8 @@ import cafe.adriel.voyager.core.screen.uniqueScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
+import cloud.nalet.chino.mobile.cast.CastButton
+import cloud.nalet.chino.mobile.cast.CastEvents
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.player.LocalAutoCloseGuard
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
@@ -157,6 +161,14 @@ class DetailScreen(private val itemId: String) : Screen {
             } else {
                 delay(REFRESH_ON_RETURN_DELAY_MS)
                 model.refresh()
+            }
+        }
+        // Casting stopped, or the title ended on the TV: the position the TV
+        // played is the one kept, and the page's play button reads it again.
+        LaunchedEffect(model) {
+            CastEvents.positionKept.collect { id ->
+                val shown = model.state.value as? DetailUiState.Ready ?: return@collect
+                if (shown.item.id == id || shown.seasons.any { s -> s.episodes.any { it.id == id } }) model.refresh()
             }
         }
         val state by model.state.collectAsState()
@@ -591,6 +603,17 @@ private fun ReadyContent(
                 onClick = onHome,
             )
         }
+        // The Cast button, on the right of the same row: Google's icon in the
+        // overlay buttons' square, there while a device is on the network.
+        CastButton(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(end = 16.dp, top = HERO_BUTTONS_TOP)
+                .size(HERO_BUTTON_SIZE)
+                .clip(RectangleShape)
+                .background(Color(0x80000000)),
+        )
     }
 }
 
@@ -802,14 +825,15 @@ private fun ActionRow(
         // (POST to mark, DELETE to un-mark).
         CircleIconButton(
             icon = if (watched) Lucide.Check else Lucide.Eye,
-            tint = Color.White,
+            tint = if (watched) ChinoOnFill else Color.White,
             background = if (watched) ChinoGreen else Color.White.copy(alpha = 0.1f),
             onClick = onToggleWatched,
         )
+        // Liked: the design system's red, the heart dark on it.
         CircleIconButton(
             icon = Lucide.Heart,
-            tint = Color.White,
-            background = if (liked) Color(0xFFE11D48) else Color.White.copy(alpha = 0.1f),
+            tint = if (liked) ChinoOnFill else Color.White,
+            background = if (liked) ChinoRed else Color.White.copy(alpha = 0.1f),
             onClick = onToggleLike,
         )
     }
@@ -833,17 +857,19 @@ private fun PillButton(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // On the blue fill, dark; on the neutral one, white.
+        val content = if (primary) ChinoOnFill else Color.White
         if (icon != null) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = Color.White,
+                tint = content,
                 modifier = Modifier.size(20.dp),
             )
         }
         Text(
             text = label,
-            color = Color.White,
+            color = content,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
         )
@@ -899,7 +925,7 @@ private fun WatchlistButton(
             Icon(
                 imageVector = if (inAnyList) Lucide.Check else Lucide.Plus,
                 contentDescription = if (inAnyList) "In your lists" else "Add to watchlist",
-                tint = Color.White,
+                tint = if (inAnyList) ChinoOnFill else Color.White,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -1512,7 +1538,8 @@ private fun EpisodeStillChip(
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                tint = Color.White,
+                // Dark on the watched green, white on the dark chip.
+                tint = contentOn(background),
                 modifier = Modifier.size(14.dp),
             )
         }

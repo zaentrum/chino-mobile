@@ -1,8 +1,11 @@
 package cloud.nalet.chino.mobile.ui.feedback
 
+import cloud.nalet.chino.mobile.ui.theme.ChinoBorderControl
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.contentOn
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -177,7 +180,7 @@ fun BugReportDialog(
                     )
                 }
                 Text(
-                    text = "Thanks — the report landed on the dev backlog.",
+                    text = "Thanks — the report reached the people who run this server.",
                     color = ChinoMuted,
                     fontSize = 13.sp,
                 )
@@ -284,7 +287,6 @@ fun BugReportDialog(
                     DialogButton(
                         label = "Submit",
                         containerColor = ChinoCloudBlue,
-                        textColor = ChinoBg2,
                         enabled = !submitting && description.isNotBlank(),
                         busy = submitting,
                         onClick = submit,
@@ -299,7 +301,8 @@ fun BugReportDialog(
 private fun DialogButton(
     label: String,
     containerColor: Color,
-    textColor: Color = Color.White,
+    /** Dark on a filled colour, light on a neutral one. */
+    textColor: Color = contentOn(containerColor),
     enabled: Boolean = true,
     busy: Boolean = false,
     onClick: () -> Unit,
@@ -337,16 +340,21 @@ private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit) {
             .width(40.dp)
             .height(22.dp)
             .clip(RectangleShape)
-            .background(if (value) ChinoCloudBlue else ChinoBorder)
+            // The design system's switch: on, the blue track with the dark
+            // knob; off, the dark track, its edge, the dim knob.
+            .background(if (value) ChinoCloudBlue else ChinoBg2)
+            .border(1.dp, if (value) ChinoCloudBlue else ChinoBorderControl, RectangleShape)
             .clickable { onChange(!value) },
         contentAlignment = if (value) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
+        // Inside the track's 1dp edge and 2dp of room, as the design
+        // system's switch has it.
         Box(
             modifier = Modifier
-                .padding(2.dp)
-                .size(18.dp)
+                .padding(3.dp)
+                .size(16.dp)
                 .clip(RectangleShape)
-                .background(Color.White),
+                .background(if (value) ChinoOnFill else ChinoDim),
         )
     }
 }

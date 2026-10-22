@@ -1,12 +1,14 @@
 package cloud.nalet.chino.mobile.android
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.fragment.app.FragmentActivity
 import cloud.nalet.chino.mobile.App
 import cloud.nalet.chino.mobile.android.auth.AppAuthSignInLauncher
 
-class MainActivity : ComponentActivity() {
+/** A FragmentActivity: the Cast button's device chooser and the bar while
+ *  casting are fragments (Google's Cast widgets). */
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as ChinoMobileApplication

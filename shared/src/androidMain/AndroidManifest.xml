@@ -1,2 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Casting's foreground service (cast/CastPlaybackService): the app
+         keeps running while the TV plays a title whose position the phone
+         writes. FOREGROUND_SERVICE the Cast framework declares as well. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <application>
+        <!-- Google Cast: the framework's options - the Default Media
+             Receiver, the full controls, the notification (cast/). -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="cloud.nalet.chino.mobile.cast.ChinoCastOptionsProvider" />
+
+        <!-- The full controls while casting, opened from the bar and the
+             notification. The app names its parent (Back from the
+             notification's full controls lands in the app). -->
+        <activity
+            android:name="cloud.nalet.chino.mobile.cast.CastExpandedControlsActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Chino.CastExpandedControls" />
+
+        <service
+            android:name="cloud.nalet.chino.mobile.cast.CastPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+    </application>
+</manifest>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The design system's tokens Google's Cast widgets are drawn in (the
+         casting pattern): the full controls on bg, the bar on surface, text
+         in fg and fg-muted, the seek bar and the active controls in
+         cloud-blue, and dark on a blue fill. -->
+    <color name="chino_cast_bg">#0B0F19</color>
+    <color name="chino_cast_surface">#11161F</color>
+    <color name="chino_cast_surface_2">#161B26</color>
+    <color name="chino_cast_border">#1F2633</color>
+    <color name="chino_cast_border_2">#2A3142</color>
+    <color name="chino_cast_fg">#E6E6E6</color>
+    <color name="chino_cast_fg_muted">#AEB8C2</color>
+    <color name="chino_cast_fg_dim">#7B8597</color>
+    <color name="chino_cast_cloud_blue">#58A6FF</color>
+    <!-- What has buffered ahead on the seek bar: fg-muted, faint. -->
+    <color name="chino_cast_buffered">#66AEB8C2</color>
+
+    <!-- Google's own colours of the same names, in ours: the Cast
+         framework's full controls (no theme attribute reaches these) and the
+         MediaRouter's device chooser. -->
+    <color name="cast_expanded_controller_background_color">@color/chino_cast_bg</color>
+    <color name="cast_expanded_controller_text_color">@color/chino_cast_fg_muted</color>
+    <color name="cast_expanded_controller_progress_text_color">@color/chino_cast_fg_muted</color>
+    <color name="cast_expanded_controller_seek_bar_progress_background_tint_color">@color/chino_cast_border_2</color>
+    <color name="mr_dynamic_dialog_background_dark">@color/chino_cast_surface</color>
+    <color name="mr_dynamic_dialog_header_text_color_dark">@color/chino_cast_fg_muted</color>
+    <color name="mr_dynamic_dialog_route_text_color_dark">@color/chino_cast_fg</color>
+    <color name="mr_dynamic_dialog_icon_dark">@color/chino_cast_fg</color>
+    <color name="mr_cast_progressbar_progress_and_thumb_dark">@color/chino_cast_cloud_blue</color>
+    <color name="mr_cast_progressbar_background_dark">@color/chino_cast_border_2</color>
+    <color name="mr_cast_route_divider_dark">@color/chino_cast_border</color>
+    <color name="mr_cast_meta_default_background">@color/chino_cast_surface_2</color>
+    <color name="mr_cast_meta_default_text_color">@color/chino_cast_fg</color>
+</resources>

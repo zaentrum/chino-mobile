@@ -485,10 +485,11 @@ private const val MASTER_SUBTITLE_ID = "hls-"
 
 /** An extra's captions menu: its master's subtitle renditions, named as a
  *  title's tracks are ([subtitleLabels]) — the language first, then what the
- *  NAME says beyond it, "(forced)" for a forced one. AVPlayer draws the one
- *  picked, so each is available and has no cue file. */
+ *  NAME says beyond it, then the kind: "foreign-language parts only" for a
+ *  forced one, "for deaf and hard of hearing" for one with sound described.
+ *  AVPlayer draws the one picked, so each is available and has no cue file. */
 internal fun masterSubtitleChoices(renditions: List<SubtitleRendition>): List<SubtitleChoice> {
-    val labels = subtitleLabels(renditions.map { SubtitleLabelInput(it.language, it.name, it.forced) })
+    val labels = subtitleLabels(renditions.map { SubtitleLabelInput(it.language, it.name, it.forced, it.sdh) })
     return renditions.mapIndexed { i, r ->
         SubtitleChoice(
             id = MASTER_SUBTITLE_ID + r.index,

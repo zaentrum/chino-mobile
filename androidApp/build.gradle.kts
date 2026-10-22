@@ -45,6 +45,10 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.lifecycle.runtime.ktx)
             implementation(libs.androidx.browser)
+            // MainActivity is a FragmentActivity on an AppCompat theme: the
+            // Cast button's device chooser and the mini controller are
+            // fragments, and Google's Cast widgets are AppCompat widgets.
+            implementation(libs.androidx.appcompat)
             implementation(libs.appauth)
             implementation(compose.runtime)
             implementation(compose.foundation)
@@ -66,6 +70,9 @@ kotlin {
             // Needed at runtime so the test APK can launch composables in
             // an empty ComponentActivity host.
             implementation(libs.compose.ui.test.manifest)
+            // Google's Cast widgets, driven on the device (CastWidgetsInstrumentedTest).
+            implementation(libs.play.services.cast.framework)
+            implementation(libs.androidx.mediarouter)
         }
     }
 }
@@ -157,6 +164,15 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+    }
+
+    // English only: the app's own words are English, and the libraries'
+    // translations would put Google's Cast screens in the phone's language
+    // beside ours ("playing on", "stop casting"). Dates and numbers still
+    // follow the phone's locale - they are formatted from it, not read from
+    // resources. This goes when the app gets translations of its own.
+    androidResources {
+        localeFilters += "en"
     }
 
     compileOptions {

@@ -2,6 +2,7 @@ package cloud.nalet.chino.mobile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +17,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import cafe.adriel.voyager.navigator.CurrentScreen
 import cafe.adriel.voyager.navigator.Navigator
+import cloud.nalet.chino.mobile.cast.CastBar
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.auth.AccountStore
 import cloud.nalet.chino.mobile.data.auth.LocalSignInLauncher
@@ -33,6 +36,7 @@ import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.player.AutoCloseGuard
 import cloud.nalet.chino.mobile.ui.player.HoldInputAfterAutoClose
 import cloud.nalet.chino.mobile.ui.player.LocalAutoCloseGuard
+import cloud.nalet.chino.mobile.ui.player.PlayerScreen
 import cloud.nalet.chino.mobile.ui.shell.LogoMark
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoTheme
@@ -165,7 +169,18 @@ fun App(
                     // action meant for the player as it closed by itself does
                     // nothing to the screen it returned to.
                     HoldInputAfterAutoClose(autoCloseGuard) {
-                        Navigator(initialScreen)
+                        Navigator(initialScreen) { navigator ->
+                            // The bar while casting, part of the screen's
+                            // layout at its foot - a title's page, a person's,
+                            // the notices. The shell draws its own above its
+                            // bottom navigation, and the player none.
+                            val top = navigator.lastItem
+                            val ownBar = top is MainShellScreen || top is PlayerScreen
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                Box(modifier = Modifier.fillMaxWidth().weight(1f)) { CurrentScreen() }
+                                if (!ownBar) CastBar(padNavigationBar = true)
+                            }
+                        }
                     }
                     // What addons told the signed-in person, asked for beside
                     // the navigator — whichever screen it shows — while the

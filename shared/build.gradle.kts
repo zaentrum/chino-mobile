@@ -105,6 +105,20 @@ kotlin {
             // requirement; without it the player crashes mid-prepare
             // with "Legacy decoding is disabled" for text/vtt samples).
             implementation(libs.media3.extractor)
+            // Google Cast sender (cast/): the framework, its device
+            // discovery, the AppCompat its widgets are themed with, and the
+            // mini controller fragment hosted in Compose.
+            implementation(libs.play.services.cast.framework)
+            implementation(libs.androidx.mediarouter)
+            implementation(libs.androidx.appcompat)
+            implementation(libs.androidx.fragment.compose)
+            implementation(libs.androidx.lifecycle.process)
+        }
+
+        // androidUnitTest builds the Cast SDK's MediaInfo, whose custom data
+        // is an org.json object - only stubbed in the unit tests' android.jar.
+        getByName("androidUnitTest").dependencies {
+            implementation(libs.org.json)
         }
 
         iosMain.dependencies {

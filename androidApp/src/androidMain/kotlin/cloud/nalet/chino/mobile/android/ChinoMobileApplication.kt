@@ -5,6 +5,7 @@ import android.app.Application
 import android.os.Build
 import android.os.Bundle
 import cloud.nalet.chino.mobile.AppConfig
+import cloud.nalet.chino.mobile.cast.attachCasting
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.PlatformServerConfigStoreFactory
 import cloud.nalet.chino.mobile.data.PlatformSettingsStoreFactory
@@ -50,6 +51,10 @@ class ChinoMobileApplication : Application(), AppContainerHost {
         // the server answers again the positions played without it go out,
         // and downloads that wait go on.
         downloadsPlatform.watch(this)
+        // Casting's sender with the process, not with a screen: a session the
+        // app resumes, the positions the TV plays, stop casting from the
+        // notification - all with no screen open.
+        attachCasting(this, container)
     }
 
     /** Rebuild the DI graph from scratch — called after the user connects to
@@ -61,6 +66,7 @@ class ChinoMobileApplication : Application(), AppContainerHost {
      *  killing the process. */
     fun rebuildContainer(): AppContainer {
         container = buildContainer()
+        attachCasting(this, container)
         return container
     }
 
