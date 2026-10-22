@@ -103,19 +103,63 @@ class DownloadBookTest {
         var book = claim(emptyMap(), title("shared"), parent, now = 1, savedPositionSec = null).titles
         book = claim(book, title("shared"), child, now = 1, savedPositionSec = null).titles
         book = claim(book, title("kids"), child, now = 1, savedPositionSec = null).titles
-        // The child's cap was lowered: "shared" is no longer the child's.
-        val change = applyAvailability(book, child, asked = listOf("shared", "kids"), available = setOf("kids"), now = 50)
+        // The child's cap was lowered: "shared" is no longer the child's -
+        // said twice, an hour apart.
+        val first = applyAvailability(book, child, asked = listOf("shared", "kids"), available = setOf("kids"), now = 50)
+        val change = applyAvailability(first.change.titles, child, listOf("shared", "kids"), setOf("kids"), now = 50 + GONE_CONFIRM_MS)
         assertEquals(listOf("shared"), change.deleted.map { it.itemId })
         // The parent keeps it, media and all; the child's other title is
         // checked as of now.
         assertTrue(change.change.removed.isEmpty())
         assertEquals(listOf("shared"), visibleTo(change.change.titles, parent).map { it.itemId })
         assertEquals(listOf("kids"), visibleTo(change.change.titles, child).map { it.itemId })
-        assertEquals(50, change.change.titles.getValue(title("kids").key).claimOf("child")?.checkedAtMs)
+        assertEquals(50 + GONE_CONFIRM_MS, change.change.titles.getValue(title("kids").key).claimOf("child")?.checkedAtMs)
         // A title not asked about is not touched.
         val none = applyAvailability(book, child, asked = listOf("kids"), available = emptySet(), now = 60)
-        assertEquals(listOf("kids"), none.deleted.map { it.itemId })
-        assertEquals(listOf("shared"), visibleTo(none.change.titles, child).map { it.itemId })
+        assertEquals(listOf("kids"), none.marked.map { it.itemId })
+        assertNull(none.change.titles.getValue(title("shared").key).claimOf("child")?.goneAtMs)
+    }
+
+    @Test
+    fun aTitleGoesOnlyAfterTwoAnswersAnHourApart() {
+        val hour = GONE_CONFIRM_MS
+        val book = claim(emptyMap(), title("film"), child, now = 1, savedPositionSec = 300).titles
+        val key = title("film").key
+        // The first answer that it is not the account's: marked, nothing
+        // else - on the phone, its last good check as it was.
+        val first = applyAvailability(book, child, listOf("film"), emptySet(), now = 10 * hour)
+        assertTrue(first.deleted.isEmpty())
+        assertEquals(listOf("film"), first.marked.map { it.itemId })
+        assertTrue(first.change.removed.isEmpty())
+        val marked = first.change.titles.getValue(key).claimOf("child")!!
+        assertEquals(10 * hour, marked.goneAtMs)
+        assertEquals(1, marked.checkedAtMs)
+        assertEquals(300, marked.savedPositionSec)
+        // Said again within the hour: still marked, since the first answer.
+        val soon = applyAvailability(first.change.titles, child, listOf("film"), emptySet(), now = 11 * hour - 1)
+        assertTrue(soon.deleted.isEmpty())
+        assertEquals(10 * hour, soon.change.titles.getValue(key).claimOf("child")?.goneAtMs)
+        // An hour after the first: deleted, the media with its last claim.
+        val second = applyAvailability(soon.change.titles, child, listOf("film"), emptySet(), now = 11 * hour)
+        assertEquals(listOf("film"), second.deleted.map { it.itemId })
+        assertEquals(listOf(key), second.change.removed)
+        assertTrue(visibleTo(second.change.titles, child).isEmpty())
+    }
+
+    @Test
+    fun anAnswerThatTheTitleIsTheAccountsClearsTheMark() {
+        val hour = GONE_CONFIRM_MS
+        val book = claim(emptyMap(), title("film"), child, now = 1, savedPositionSec = null).titles
+        val key = title("film").key
+        // A server having a bad moment, then itself again.
+        val glitch = applyAvailability(book, child, listOf("film"), emptySet(), now = hour)
+        val fine = applyAvailability(glitch.change.titles, child, listOf("film"), setOf("film"), now = hour + 5)
+        assertNull(fine.change.titles.getValue(key).claimOf("child")?.goneAtMs)
+        assertEquals(hour + 5, fine.change.titles.getValue(key).claimOf("child")?.checkedAtMs)
+        // A later "not the account's" is a first answer again, not a second.
+        val later = applyAvailability(fine.change.titles, child, listOf("film"), emptySet(), now = 3 * hour)
+        assertTrue(later.deleted.isEmpty())
+        assertEquals(3 * hour, later.change.titles.getValue(key).claimOf("child")?.goneAtMs)
     }
 
     @Test
@@ -175,8 +219,12 @@ class AskAvailableTest {
         var book = claim(emptyMap(), title("adult"), parent, 1, null).titles
         book = claim(book, title("adult"), child, 1, null).titles
         book = claim(book, title("kid"), child, 1, null).titles
-        val answer = askAvailable(server.api, visibleTo(book, child).map { it.itemId }, "child")!!
-        val change = applyAvailability(book, child, visibleTo(book, child).map { it.itemId }, answer, now = 9)
+        val ids = visibleTo(book, child).map { it.itemId }
+        // Two answers an hour apart: the first marks it, the second deletes it.
+        val first = applyAvailability(book, child, ids, askAvailable(server.api, ids, "child")!!, now = 9)
+        assertEquals(listOf("adult"), first.marked.map { it.itemId })
+        assertTrue(first.deleted.isEmpty())
+        val change = applyAvailability(first.change.titles, child, ids, askAvailable(server.api, ids, "child")!!, now = 9 + GONE_CONFIRM_MS)
         assertEquals(listOf("adult"), change.deleted.map { it.itemId })
         assertEquals(listOf("adult"), visibleTo(change.change.titles, parent).map { it.itemId })
     }

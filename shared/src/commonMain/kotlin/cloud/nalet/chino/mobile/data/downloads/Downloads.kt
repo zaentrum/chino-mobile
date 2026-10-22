@@ -33,6 +33,10 @@ data class OwnerClaim(
     /** When the server last said the account may watch it
      *  (POST /me/available), or when it was asked for. */
     @SerialName("checked_at") val checkedAtMs: Long,
+    /** When the server first said the account may no longer watch it, since
+     *  it last said it may; null for none. A second such answer, an hour or
+     *  more later, deletes it ([applyAvailability]). */
+    @SerialName("gone_at") val goneAtMs: Long? = null,
 )
 
 /**

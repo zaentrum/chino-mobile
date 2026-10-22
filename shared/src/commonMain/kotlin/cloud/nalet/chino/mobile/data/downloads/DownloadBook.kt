@@ -102,16 +102,30 @@ fun titleOf(titles: Map<String, DownloadedTitle>, owner: Owner?, itemId: String)
  *  was not checked for [CHECK_EVERY_MS]. */
 fun checkDue(claim: OwnerClaim, now: Long): Boolean = now - claim.checkedAtMs >= CHECK_EVERY_MS
 
+/** How far apart the two answers that a title is no longer the account's
+ *  must be before it is deleted: one wrong answer of a server having a bad
+ *  moment never takes downloads off the phone. */
+const val GONE_CONFIRM_MS = 60L * 60 * 1000
+
 /** What the server's answer to a check came to: the titles as they are now,
- *  and those it took off the phone for the account. */
-data class AvailabilityChange(val change: BookChange, val deleted: List<DownloadedTitle>)
+ *  those it took off the phone for the account, and those it only marked -
+ *  the first answer that they are not the account's any more. */
+data class AvailabilityChange(
+    val change: BookChange,
+    val deleted: List<DownloadedTitle>,
+    val marked: List<DownloadedTitle> = emptyList(),
+)
 
 /**
  * The server's answer to which of [asked] (item ids) [owner] may watch now:
- * [available] are checked as of [now]; the others are no longer the
- * account's - the title left the library, or its cap no longer allows it -
- * and its claim goes, the media with the last one. Only an answer the
- * server gave the owning account decides this; no answer decides nothing.
+ * [available] are checked as of [now], and any mark on them goes. The others
+ * are no longer the account's - the title left the library, or its cap no
+ * longer allows it - by two answers at least [GONE_CONFIRM_MS] apart: the
+ * first only marks the claim ([OwnerClaim.goneAtMs]) and changes nothing
+ * else - it still plays, and its last good check stands; the second, an
+ * hour or more after the first, takes the claim, the media with the last
+ * one. Only an answer the server gave the owning account decides this; no
+ * answer decides nothing.
  */
 fun applyAvailability(
     titles: Map<String, DownloadedTitle>,
@@ -123,19 +137,36 @@ fun applyAvailability(
     val askedSet = asked.toSet()
     var book = BookChange(titles)
     val deleted = ArrayList<DownloadedTitle>()
+    val marked = ArrayList<DownloadedTitle>()
     for (t in titles.values) {
         if (!t.ownedBy(owner) || t.itemId !in askedSet) continue
-        if (t.itemId in available) {
-            val checked = t.copy(owners = t.owners.map { if (it.subject == owner.subject) it.copy(checkedAtMs = now) else it })
-            book = BookChange(book.titles + (t.key to checked), book.removed)
-        } else {
-            deleted += t
-            val next = unclaim(book.titles, t.key, owner.subject)
-            book = BookChange(next.titles, book.removed + next.removed)
+        val claim = t.claimOf(owner.subject) ?: continue
+        val goneSince = claim.goneAtMs
+        when {
+            t.itemId in available -> {
+                val checked = t.withClaim(owner.subject) { it.copy(checkedAtMs = now, goneAtMs = null) }
+                book = BookChange(book.titles + (t.key to checked), book.removed)
+            }
+            goneSince == null -> {
+                val first = t.withClaim(owner.subject) { it.copy(goneAtMs = now) }
+                marked += first
+                book = BookChange(book.titles + (t.key to first), book.removed)
+            }
+            now - goneSince >= GONE_CONFIRM_MS -> {
+                deleted += t
+                val next = unclaim(book.titles, t.key, owner.subject)
+                book = BookChange(next.titles, book.removed + next.removed)
+            }
+            // Said again within the hour: marked as it was, since the first.
+            else -> marked += t
         }
     }
-    return AvailabilityChange(book, deleted)
+    return AvailabilityChange(book, deleted, marked)
 }
+
+/** [title] with [subject]'s claim changed by [change]. */
+private fun DownloadedTitle.withClaim(subject: String, change: (OwnerClaim) -> OwnerClaim): DownloadedTitle =
+    copy(owners = owners.map { if (it.subject == subject) change(it) else it })
 
 /**
  * The stop reason a download should have now: it runs only for an account

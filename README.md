@@ -213,12 +213,17 @@ no download control yet: its host passes no `DownloadsPlatform`.
 - **What the library decides** — `POST /api/v1/me/available` (chino-api) says
   in one request which of the account's downloads it may watch now: as the
   app starts and comes to the front while the server answers, and before a
-  download plays. What it leaves out is deleted (the title left the library,
-  or a parent lowered the account's cap), and said once on the downloads
-  screen; a download playing stops. No answer, a 5xx, a 401 or a 429 never
-  deletes. A server from before the route is asked title by title. Without
-  the server, a download checked within 30 days plays; past them it waits for
-  the server ("downloaded · check needed").
+  download plays. What it leaves out (the title left the library, or a
+  parent lowered the account's cap) is deleted only when it says so twice,
+  at least an hour apart (`GONE_CONFIRM_MS`): the first answer marks the
+  title (`gone_at`) and changes nothing else - it still plays - and an
+  answer that the title is the account's again clears the mark; the second
+  deletes it, says so once on the downloads screen, and stops it playing.
+  One wrong answer of a server having a bad moment never takes downloads off
+  the phone. No answer, a 5xx, a 401 or a 429 decides nothing. A server
+  from before the route is asked title by title. Without the server, a
+  download checked within 30 days plays; past them it waits for the server
+  ("downloaded · check needed").
 - **What a download keeps** — one video rendition, picked by the download
   quality from the master as the server serves it when the download starts
   (Settings: what an hour takes at each quality, the same sample of titles
