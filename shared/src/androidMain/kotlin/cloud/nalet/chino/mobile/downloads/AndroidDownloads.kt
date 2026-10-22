@@ -42,6 +42,7 @@ import cloud.nalet.chino.mobile.data.downloads.STOP_NONE
 import cloud.nalet.chino.mobile.data.downloads.StorageUse
 import cloud.nalet.chino.mobile.data.downloads.applyAvailability
 import cloud.nalet.chino.mobile.data.downloads.askAvailable
+import cloud.nalet.chino.mobile.data.downloads.availabilityAsked
 import cloud.nalet.chino.mobile.data.downloads.checkDue
 import cloud.nalet.chino.mobile.data.downloads.claim
 import cloud.nalet.chino.mobile.data.downloads.downloadKey
@@ -499,8 +500,12 @@ internal class AndroidDownloads(
     }
 
     /**
-     * Asks the server about every download of the account signed in now -
-     * whichever [itemIds] the caller is after. A title goes after two answers
+     * Asks the server about the downloads of the account signed in now:
+     * [itemIds] of them, or all of them ([availabilityAsked]) - the
+     * play-time check and a subtitle the server no longer has ask about
+     * their own title alone, one quick request even on a server asked title
+     * by title, inside the seconds the play-time check waits; the background
+     * check asks about all. A title goes after two answers
      * that it is not the account's ([applyAvailability]): an hour apart where
      * the answer is the library's word - it still answers for others of the
      * account's, or says the library holds titles for it - else a day apart
@@ -514,7 +519,7 @@ internal class AndroidDownloads(
         val owner = container.activeOwner.value ?: return AvailabilityCheck.NotAnswered
         if (owner.server != container.serverBase) return AvailabilityCheck.NotAnswered
         engine.titles.awaitReady()
-        val ids = visibleTo(engine.titles.titles.value, owner).map { it.itemId }.distinct()
+        val ids = availabilityAsked(visibleTo(engine.titles.titles.value, owner), itemIds)
         if (ids.isEmpty()) return AvailabilityCheck.Done(emptyList())
         // With the owner's own bearer, and only while it is signed in.
         val bearer = container.tokenManager.validAccessToken()

@@ -358,6 +358,35 @@ class AskAvailableTest {
     }
 
     @Test
+    fun aCheckForOneTitleAsksAboutThatTitleAlone() = runTest {
+        // Forty downloads of the child's and one of the parent's.
+        var book = claim(emptyMap(), title("parents"), parent, 1, null).titles
+        for (n in 1..40) book = claim(book, title("t$n"), child, 1, null).titles
+        val mine = visibleTo(book, child)
+        assertEquals(listOf("t7"), availabilityAsked(mine, listOf("t7")))
+        // Never another account's title, nor one not on the phone.
+        assertEquals(emptyList(), availabilityAsked(mine, listOf("parents", "elsewhere")))
+        // None named: all of the account's.
+        assertEquals(40, availabilityAsked(mine, null).size)
+        // A server from before the route, asked title by title: pressing
+        // play on one download is one request, not forty.
+        val gets = mutableListOf<String>()
+        val old = FakeServer { request ->
+            val path = request.url.encodedPath
+            when {
+                path.endsWith("/v1/me/available") -> respondText("404 page not found", HttpStatusCode.NotFound)
+                path.contains("/v1/items/") -> {
+                    gets += path.substringAfterLast('/')
+                    respondJson("""{"id":"t7","title":"t7","type":"movie"}""")
+                }
+                else -> respondText("not found", HttpStatusCode.NotFound)
+            }
+        }
+        assertEquals(AvailableAnswer(setOf("t7")), askAvailable(old.api, availabilityAsked(mine, listOf("t7")), "child"))
+        assertEquals(listOf("t7"), gets)
+    }
+
+    @Test
     fun manyTitlesAreAskedAboutInChunks() = runTest {
         val ids = (1..1_200).map { "t$it" }
         val chunks = mutableListOf<Int>()

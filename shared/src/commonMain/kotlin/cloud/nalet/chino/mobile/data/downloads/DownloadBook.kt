@@ -201,6 +201,16 @@ fun stopReasonFor(title: DownloadedTitle?, active: Owner?, serverOffersDownloads
     else -> STOP_NONE
 }
 
+/** The item ids a check asks the server about: of the account's own
+ *  [titles], those [itemIds] names, or every one where it names none - a
+ *  title of another account's is never asked about with this one's
+ *  bearer. */
+fun availabilityAsked(titles: List<DownloadedTitle>, itemIds: List<String>?): List<String> {
+    val owned = titles.map { it.itemId }.distinct()
+    val wanted = itemIds?.toSet() ?: return owned
+    return owned.filter { it in wanted }
+}
+
 /** How many titles one POST /me/available asks about. */
 const val MAX_AVAILABLE_IDS = 500
 
