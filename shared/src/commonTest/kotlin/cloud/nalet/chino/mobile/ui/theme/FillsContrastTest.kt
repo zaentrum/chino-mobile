@@ -10,7 +10,8 @@ import kotlin.test.assertTrue
  * A label or an icon on a filled colour is dark (ChinoOnFill): the design
  * system's rule, with its numbers - on blue 7.58:1, green 5.68, red 5.71,
  * amber 10.21 - and the account avatars' twelve colours, which are the TV
- * app's, picked as it picks them.
+ * app's, picked as it picks them. Dim text keeps 4.5:1 on the background and
+ * the surfaces.
  */
 class FillsContrastTest {
     /** WCAG 2's contrast ratio of two opaque colours. */
@@ -30,6 +31,17 @@ class FillsContrastTest {
         assertRatio(5.68, ChinoGreen)
         assertRatio(5.71, ChinoRed)
         assertRatio(10.21, ChinoWarning)
+    }
+
+    @Test
+    fun dimTextKeepsFourAndAHalfToOneOnTheBackgroundAndBothSurfaces() {
+        // The TV's fg-dim; the off switch's knob is the same token.
+        assertEquals(5.15, contrast(ChinoDim, ChinoBg), 0.01)
+        assertEquals(4.87, contrast(ChinoDim, ChinoSurface), 0.01)
+        assertEquals(4.63, contrast(ChinoDim, ChinoSurfaceHi), 0.01)
+        listOf(ChinoBg, ChinoBg2, ChinoSurface, ChinoSurfaceHi).forEach {
+            assertTrue(contrast(ChinoDim, it) >= 4.5, "dim on $it: ${contrast(ChinoDim, it)}")
+        }
     }
 
     @Test

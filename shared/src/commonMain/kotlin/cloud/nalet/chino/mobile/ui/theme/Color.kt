@@ -15,7 +15,10 @@ internal val ChinoBorder2 = Color(0xFF2A3142)    // nalet.border-2
 internal val ChinoFg = Color(0xFFE6E6E6)         // fg
 internal val ChinoFg2 = Color(0xFFC9D1D9)        // nalet.text — wordmark grey / fg-2
 internal val ChinoMuted = Color(0xFFAEB8C2)      // nalet.fg-muted
-internal val ChinoDim = Color(0xFF6E7787)        // nalet.fg-dim — hint text
+// nalet.fg-dim — hint text, as on the TV: 5.15:1 on bg, 4.87 on surface, 4.63
+// on surface-2.
+internal val ChinoDim = Color(0xFF7B8597)
+internal val ChinoBorderControl = Color(0xFF646C7A) // nalet.border-control — a control's edge
 internal val ChinoCloudBlue = Color(0xFF58A6FF)  // nalet.accent — chevron + accent
 internal val ChinoGreen = Color(0xFF2EA043)      // signal green — watched / success
 internal val ChinoRed = Color(0xFFF85149)        // signal red — destructive / error
@@ -31,12 +34,6 @@ internal val ChinoWarningBorder = Color(0xFF846B3B)
 // On blue 7.58:1 (white was 2.53), green 5.68 (3.37), red 5.71 (3.35), amber
 // 10.21 (1.88); on the avatars' twelve colours 5.68 to 10.99 (1.74 to 3.37).
 internal val ChinoOnFill = ChinoBg
-
-// The design system's switch, off: its dim knob (the design system's fg-dim)
-// and its track's edge (border-control), on the dark track (bg-2). On, the
-// knob is ChinoOnFill on the cloud-blue track.
-internal val SwitchKnobOff = Color(0xFF7B8597)
-internal val SwitchEdgeOff = Color(0xFF646C7A)
 
 /** The design system's filled colours, on which a label is [ChinoOnFill]. */
 private val Fills = setOf(ChinoCloudBlue, ChinoGreen, ChinoRed, ChinoWarning)
