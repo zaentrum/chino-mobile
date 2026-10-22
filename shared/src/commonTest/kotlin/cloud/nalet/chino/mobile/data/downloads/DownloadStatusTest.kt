@@ -216,6 +216,22 @@ class DownloadWordsTest {
     }
 
     @Test
+    fun theAccountPickerSaysRemoveAndThisPhoneNeverThisDevice() {
+        assertEquals("Tap to switch. Tap ✕ to remove an account from this phone.", pickerHintLine(DeviceKind.Phone))
+        assertEquals("Tap to switch. Tap ✕ to remove an account from this tablet.", pickerHintLine(DeviceKind.Tablet))
+        assertEquals("remove account", REMOVE_ACCOUNT_LABEL)
+        assertEquals(
+            "This removes Anna from this phone. You'll need to sign in again to use the account.",
+            accountRemovedSentence("Anna", DeviceKind.Phone),
+        )
+        // Beside "Casting on Living Room TV stops.": the phone is "this
+        // phone" or "this tablet", "the device" is the TV.
+        for (text in listOf(accountRemovedSentence("Anna", DeviceKind.Tablet), pickerHintLine(DeviceKind.Phone))) {
+            assertEquals(false, "this device" in text, text)
+        }
+    }
+
+    @Test
     fun whatTheServersDecisionTookOffThePhone() {
         assertEquals(
             "This title isn't available to this account anymore, so it was deleted from this phone.",

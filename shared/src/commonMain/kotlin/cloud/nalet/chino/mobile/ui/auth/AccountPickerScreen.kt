@@ -3,10 +3,8 @@ package cloud.nalet.chino.mobile.ui.auth
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
-import cloud.nalet.chino.mobile.ui.theme.contentOn
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
-import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
@@ -14,8 +12,6 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
-import cloud.nalet.chino.mobile.ui.theme.ChinoRed
-import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
 
 import androidx.compose.foundation.background
@@ -73,9 +69,10 @@ import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
 import cloud.nalet.chino.mobile.data.downloads.Owner
 import cloud.nalet.chino.mobile.data.downloads.REMOVE_ACCOUNT_TITLE
 import cloud.nalet.chino.mobile.data.downloads.accountDownloadsGoSentence
+import cloud.nalet.chino.mobile.data.downloads.accountRemovedSentence
 import cloud.nalet.chino.mobile.data.downloads.castingStopsSentence
 import cloud.nalet.chino.mobile.ui.downloads.leaveCastingOf
-import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
+import cloud.nalet.chino.mobile.ui.components.QuestionDialog
 import com.composables.icons.lucide.LogOut
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
@@ -214,6 +211,7 @@ class AccountPickerScreen(
                 account = acct,
                 downloads = summary,
                 castingTo = castingTo,
+                busy = false,
                 onConfirm = {
                     scope.launch {
                         // An explicit removal on this phone: casting stops,
@@ -336,102 +334,36 @@ private fun AddAccountTile(signing: Boolean, onClick: () -> Unit) {
     }
 }
 
+/**
+ * The question before an account goes from the phone: the one question the
+ * app asks before what can't be undone ([QuestionDialog]) - "remove
+ * account", what goes ("The 23 downloads of Anna, 12.4 GB, are deleted from
+ * this phone.", or with none "This removes Anna from this phone. ..."), that
+ * casting stops while it casts, "cancel" and "remove account". [busy]: the
+ * removal runs, and the question stays until it is done.
+ */
 @Composable
 private fun ConfirmRemoveDialog(
     account: Account,
     downloads: DownloadsSummary,
     /** The device the account casts to now, if it does: casting stops. */
     castingTo: String?,
+    busy: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val casting = castingTo?.let { " " + castingStopsSentence(it) }.orEmpty()
     val device = LocalDeviceKind.current
-    // Drawn in the screen's own window: the system Back closes it, as a tap
-    // on the scrim does, rather than going past it and leaving the screen.
-    SystemBackHandler(onBack = onDismiss)
-    // Full-screen scrim + centered card. Compose-MP has no Material AlertDialog
-    // in commonMain without pulling the material3 Dialog (which works, but a
-    // hand-rolled scrim keeps the dark-canvas styling consistent with the rest
-    // of the app and matches the TV's pattern). Scrim click = dismiss; the card
-    // swallows its own clicks.
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xCC000000))
-            .clickable(onClick = onDismiss),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(24.dp)
-                .clip(RectangleShape)
-                .background(ChinoSurface)
-                .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
-                .clickable(enabled = false) {}
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Avatar(displayName = account.displayName, email = account.email, size = 64.dp)
-            if (downloads.isEmpty) {
-                // No downloads: the question as it always was.
-                Text(
-                    text = "Remove ${account.displayName}?",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    style = ChinoHeading,
-                )
-                Text(
-                    text = "You'll need to sign in again to use this account on this device.$casting",
-                    color = ChinoFg2,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DialogButton(label = "Cancel", containerColor = ChinoBorder2, onClick = onDismiss)
-                    DialogButton(label = "Remove", containerColor = ChinoRed, onClick = onConfirm)
-                }
-            } else {
-                // Its downloads go with it: the title is the action, the
-                // danger button repeats it, the sentence names what goes.
-                Text(
-                    text = REMOVE_ACCOUNT_TITLE,
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    style = ChinoHeading,
-                )
-                Text(
-                    text = accountDownloadsGoSentence(downloads, account.displayName, device) + casting,
-                    color = ChinoFg2,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                )
-                // In this dialog's own style: its buttons as the one above.
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DialogButton(label = "Cancel", containerColor = ChinoBorder2, onClick = onDismiss)
-                    DialogButton(label = "Remove account", containerColor = ChinoRed, onClick = onConfirm)
-                }
-            }
-        }
+    val goes = if (downloads.isEmpty) {
+        accountRemovedSentence(account.displayName, device)
+    } else {
+        accountDownloadsGoSentence(downloads, account.displayName, device)
     }
-}
-
-@Composable
-private fun DialogButton(label: String, containerColor: Color, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RectangleShape)
-            .background(containerColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        // Dark on a filled colour (Remove's red), light on a neutral one.
-        Text(text = label, color = contentOn(containerColor), fontSize = 14.sp)
-    }
+    QuestionDialog(
+        title = REMOVE_ACCOUNT_TITLE,
+        body = listOfNotNull(goes, castingTo?.let(::castingStopsSentence)).joinToString(" "),
+        action = REMOVE_ACCOUNT_TITLE,
+        onAction = onConfirm,
+        onDismiss = onDismiss,
+        busy = busy,
+    )
 }

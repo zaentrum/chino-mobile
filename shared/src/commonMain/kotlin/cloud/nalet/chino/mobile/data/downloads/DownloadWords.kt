@@ -180,6 +180,19 @@ fun accountDownloadsGoSentence(summary: DownloadsSummary, accountName: String, d
         "The ${summary.titles} downloads of $accountName, ${formatSize(summary.bytes)}, are deleted from this ${device.word}."
     }
 
+/** Remove account, with none of its downloads on the phone: what goes, by
+ *  the account's name - "This removes Anna from this phone. You'll need to
+ *  sign in again to use the account." */
+fun accountRemovedSentence(accountName: String, device: DeviceKind): String =
+    "This removes $accountName from this ${device.word}. You'll need to sign in again to use the account."
+
+/** The account picker's line under its title: what a tap on a tile and on
+ *  its ✕ do. */
+fun pickerHintLine(device: DeviceKind): String = "Tap to switch. Tap ✕ to remove an account from this ${device.word}."
+
+/** The ✕ on an account's tile, as a screen reader names it. */
+const val REMOVE_ACCOUNT_LABEL = REMOVE_ACCOUNT_TITLE
+
 /** The download notification's title: a film's, or an episode's with its
  *  series and code - "Pioneer One · S01E01 · Earthfall". */
 fun notificationTitle(title: String, seriesTitle: String?, episodeCode: String?): String =

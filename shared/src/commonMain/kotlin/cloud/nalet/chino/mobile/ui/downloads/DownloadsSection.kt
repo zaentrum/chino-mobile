@@ -74,6 +74,7 @@ import cloud.nalet.chino.mobile.data.downloads.rowLabel
 import cloud.nalet.chino.mobile.data.downloads.statusSentence
 import cloud.nalet.chino.mobile.data.downloads.storageLine
 import cloud.nalet.chino.mobile.data.model.episodeCode
+import cloud.nalet.chino.mobile.ui.components.DangerButton
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
@@ -228,12 +229,8 @@ fun DownloadsSection(onPlay: (itemId: String) -> Unit) {
                 }
             }
             item(key = "delete-all") {
-                TextAction(
-                    text = "delete all",
-                    compact = false,
-                    onClick = { askDeleteAll = true },
-                    color = ChinoRed,
-                )
+                // The design system's danger button, as its question's is.
+                DangerButton(label = "delete all", onClick = { askDeleteAll = true }, modifier = Modifier.padding(top = 4.dp))
             }
         }
     }
