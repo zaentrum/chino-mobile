@@ -148,3 +148,9 @@ fun speedLabel(rate: Float): String = when {
     rate == rate.toInt().toFloat() -> "${rate.toInt()}x"
     else -> "${rate}x"
 }
+
+/** Whether the player hides the system bars: in fullscreen, and whenever the
+ *  phone is held sideways - the picture fills the screen then, and the
+ *  status bar would sit over its top. A swipe from the edge brings them
+ *  back for a moment. */
+fun playerHidesSystemBars(fullscreen: Boolean, landscape: Boolean): Boolean = fullscreen || landscape

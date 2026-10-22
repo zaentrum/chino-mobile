@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
@@ -70,6 +71,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -1564,7 +1566,11 @@ private fun PlaybackSurface(
         castBefore = connected
     }
 
-    ImmersiveFullscreenEffect(active = fullscreen)
+    // Held sideways the picture fills the screen, and the status bar would
+    // sit over its top: the system bars hide, as in fullscreen, and a swipe
+    // from the edge brings them back for a moment.
+    val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    ImmersiveFullscreenEffect(active = playerHidesSystemBars(fullscreen = fullscreen, landscape = landscape))
 
     // Auto-hide chrome — bumped on any interaction, suppressed while user
     // is dragging anything or a popover is open.
@@ -2179,9 +2185,10 @@ private fun Chrome(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // Push controls above the gesture pill / nav bar.
-                    // Gradient backdrop stays edge-to-edge below.
-                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    // Push controls above the gesture pill / nav bar, and
+                    // clear of a cutout. Gradient backdrop stays edge-to-edge
+                    // below.
+                    .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.displayCutout))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -2331,10 +2338,11 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                // Push the row content below the status bar. The gradient
+                // Push the row content below the status bar - and clear of
+                // a cutout, with the bars hidden held sideways. The gradient
                 // backdrop stays edge-to-edge above so the fade is
                 // continuous up to the screen top.
-                .windowInsetsPadding(WindowInsets.statusBars)
+                .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout))
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 32.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -2376,6 +2384,29 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
                     .background(ChinoSurfaceHi),
             )
         }
+    }
+}
+
+/** The seek bar's track not played yet, and what is buffered of it: solid
+ *  greys, so the bar reads the same over a bright picture as over a dark one
+ *  (docs/chino playback: nothing over the picture is see-through). */
+private val TRACK_UNPLAYED = Color(0xFF3A4150)
+private val TRACK_BUFFERED = Color(0xFF7B8597)
+
+/** The card colour of the player's menus. */
+private val MENU_BACKGROUND = Color(0xFF161B22)
+
+/** A menu that scrolls fades out at its end while there is more below it,
+ *  so a list cut at a row's edge still shows it goes on. */
+private fun Modifier.fadeAtEnd(scroll: androidx.compose.foundation.ScrollState): Modifier = drawWithContent {
+    drawContent()
+    if (scroll.canScrollForward) {
+        val h = 32.dp.toPx().coerceAtMost(size.height)
+        drawRect(
+            brush = Brush.verticalGradient(0f to Color.Transparent, 1f to MENU_BACKGROUND, startY = size.height - h, endY = size.height),
+            topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - h),
+            size = androidx.compose.ui.geometry.Size(size.width, h),
+        )
     }
 }
 
@@ -2499,14 +2530,14 @@ private fun Scrubber(
                 // BottomStart + thumb at BottomStart with -5dp offset
                 // produced a vertical mismatch that read as a floating
                 // dot).
-                // Idle track
+                // Idle track - solid, never see-through over the picture.
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .fillMaxWidth()
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(Color.White.copy(alpha = 0.15f)),
+                        .background(TRACK_UNPLAYED),
                 )
                 // Buffered
                 Box(
@@ -2515,7 +2546,7 @@ private fun Scrubber(
                         .width(bufferedWidthDp)
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(Color.White.copy(alpha = 0.3f)),
+                        .background(TRACK_BUFFERED),
                 )
                 // Played
                 Box(
@@ -2876,7 +2907,7 @@ private fun VolumeSlider(
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(Color.White.copy(alpha = 0.2f)),
+                    .background(TRACK_UNPLAYED),
             )
             Box(
                 modifier = Modifier
@@ -2998,7 +3029,8 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup()) {
+        val scroll = rememberScrollState()
+        Column(modifier = Modifier.fillMaxWidth().fadeAtEnd(scroll).verticalScroll(scroll).selectableGroup()) {
             MenuHeader(title = "audio", trailing = null)
             if (tracks.isEmpty()) {
                 Text(
@@ -3078,7 +3110,8 @@ private fun CaptionsMenuCard(
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup()) {
+        val scroll = rememberScrollState()
+        Column(modifier = Modifier.fillMaxWidth().fadeAtEnd(scroll).verticalScroll(scroll).selectableGroup()) {
             // Lowercase, as its items (the design system's subtitles).
             MenuHeader(title = "subtitles", trailing = null)
             Row(
@@ -3216,7 +3249,8 @@ internal fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup()) {
+        val scroll = rememberScrollState()
+        Column(modifier = Modifier.fillMaxWidth().fadeAtEnd(scroll).verticalScroll(scroll).selectableGroup()) {
             MenuHeader(title = "speed", trailing = null)
             rates.forEach { r ->
                 val active = (r == currentSpeed)
@@ -3260,7 +3294,8 @@ internal fun QualityMenuCard(
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup()) {
+        val scroll = rememberScrollState()
+        Column(modifier = Modifier.fillMaxWidth().fadeAtEnd(scroll).verticalScroll(scroll).selectableGroup()) {
             MenuHeader(title = "quality", trailing = null)
             // The server's names as it gives them; the `q` it names alike
             // are one picture and one row - the first, the higher - on
