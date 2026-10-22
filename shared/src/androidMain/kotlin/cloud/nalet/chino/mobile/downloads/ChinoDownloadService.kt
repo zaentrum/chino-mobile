@@ -15,10 +15,11 @@ import cloud.nalet.chino.mobile.shared.R
 
 /**
  * The foreground service downloads run in, with its notification: what is
- * on its way and how far, or what it waits for. Media3's DownloadService
- * does the rest - it keeps running while a download waits for its
- * requirements (Android 12 and later), and below 12 its scheduler
- * ([WorkManagerScheduler]) starts it again once they hold.
+ * on its way and how far. Media3's DownloadService does the rest. While the
+ * downloads wait for a connection it does not run (DownloadEngine stops it):
+ * below Android 12 its scheduler ([WorkManagerScheduler]) starts it again
+ * once the connection is back; from 12 the app does as it comes to the
+ * front, and the manager runs them while the process lives.
  */
 class ChinoDownloadService : DownloadService(
     NOTIFICATION_ID,
@@ -27,6 +28,21 @@ class ChinoDownloadService : DownloadService(
     R.string.chino_downloads_channel,
     0,
 ) {
+    override fun onCreate() {
+        running = true
+        super.onCreate()
+    }
+
+    override fun onDestroy() {
+        running = false
+        super.onDestroy()
+        // Stopped while the downloads wait, Media3's last update of its
+        // notification may have gone out as a plain one: the service takes
+        // it with it, and nothing stays in the shade for a download that
+        // waits.
+        runCatching { androidx.core.app.NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID) }
+    }
+
     override fun getDownloadManager(): DownloadManager = DownloadEngine.get(this).manager
 
     override fun getScheduler(): Scheduler? =
@@ -47,27 +63,36 @@ class ChinoDownloadService : DownloadService(
     }
 
     companion object {
+        /** Whether the service runs in this process now. */
+        @Volatile
+        var running = false
+            private set
+
         const val CHANNEL_ID = "chino_downloads"
         private const val NOTIFICATION_ID = 7301
         private const val SCHEDULER_WORK = "chino-downloads"
     }
 }
 
-/** The notification: the title on its way, or how many, with how far it
- *  is; or what the downloads wait for. Plain words, as the app's. */
+/** The notification: the title on its way - a film by its title, an
+ *  episode with its series and code - with how far it is and how many wait;
+ *  or what the downloads wait for, for the moment before the service stops
+ *  for them. Never one word twice: nothing active and nothing waiting is the
+ *  channel's name alone. Plain words, as the app's. */
 private fun downloadNotification(context: Context, downloads: List<Download>, notMet: Int): Notification {
     val active = downloads.filter { it.state == Download.STATE_DOWNLOADING }
-    val waiting = downloads.count { it.state == Download.STATE_QUEUED || it.state == Download.STATE_RESTARTING }
+    val waiting = downloads.count {
+        (it.state == Download.STATE_QUEUED || it.state == Download.STATE_RESTARTING) && it.stopReason == Download.STOP_REASON_NONE
+    }
     val titleOf = { d: Download -> d.request.data.takeIf { it.isNotEmpty() }?.decodeToString() }
     val title = when {
         active.size == 1 -> titleOf(active[0]) ?: "Downloads"
         else -> "Downloads"
     }
     val wifiOnly = DownloadEngine.get(context).preferences.value.wifiOnly
-    val text = when {
+    val text: String? = when {
         notMet and (Requirements.NETWORK or Requirements.NETWORK_UNMETERED) != 0 ->
             if (wifiOnly) "Waiting for Wi-Fi" else "Waiting for a connection"
-        notMet and Requirements.DEVICE_CHARGING != 0 -> "Waiting · battery low"
         active.isNotEmpty() -> {
             val percent = active.first().percentDownloaded.takeIf { it >= 0 }?.toInt()?.coerceIn(0, 99)
             buildString {
@@ -77,7 +102,7 @@ private fun downloadNotification(context: Context, downloads: List<Download>, no
             }
         }
         waiting > 0 -> "Queued"
-        else -> "Downloads"
+        else -> null
     }
     val open = context.packageManager.getLaunchIntentForPackage(context.packageName)?.let {
         PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

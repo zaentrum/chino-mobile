@@ -32,13 +32,29 @@ data class PlayedPosition(
         server == other.server && accountId == other.accountId && itemId == other.itemId
 }
 
+/** A title the player marked watched (in its credits, or past 95 %) while
+ *  the server could not be reached: POST /me/items/{id}/watched, later. */
+@Serializable
+data class WatchedMark(
+    val server: String,
+    @SerialName("account_id") val accountId: String,
+    @SerialName("item_id") val itemId: String,
+    @SerialName("at") val atMs: Long,
+    val attempts: Int = 0,
+) {
+    fun sameTitle(other: WatchedMark): Boolean =
+        server == other.server && accountId == other.accountId && itemId == other.itemId
+}
+
 /** What the phone keeps of positions: the ones still to send, in the order
- *  they were played, and the last one played of each title - where a
- *  download resumes without the server. */
+ *  they were played, the watched marks still to send, and the last position
+ *  played of each title on the phone - where a download resumes without the
+ *  server. */
 @Serializable
 data class ProgressBook(
     val queue: List<PlayedPosition> = emptyList(),
     val last: List<PlayedPosition> = emptyList(),
+    val watched: List<WatchedMark> = emptyList(),
 )
 
 /** Where the [ProgressBook] is kept: a file on Android, memory elsewhere. */
@@ -80,7 +96,8 @@ enum class SendOutcome {
  *  sent before it is dropped. */
 const val MAX_ATTEMPTS = 10
 
-/** What a flush did: [sent] and [dropped] positions, [left] still queued. */
+/** What a flush did: [sent] and [dropped] positions and marks, [left] still
+ *  queued. */
 data class FlushResult(val sent: Int, val dropped: Int, val left: Int)
 
 /**
@@ -88,8 +105,9 @@ data class FlushResult(val sent: Int, val dropped: Int, val left: Int)
  * kept across restarts ([ProgressBookStore]) and sent in the order they
  * were played once the server can be reached ([flush]). One per title: a
  * later position of the same title takes its place, with its time, as the
- * server keeps one per title. Nothing but positions goes out - the server's
- * rule makes a title finished from where it was saved.
+ * server keeps one per title. Each goes with its age, so the server writes
+ * it only over an older one. The watched marks the player could not send go
+ * after them.
  */
 class ProgressQueue(
     private val store: ProgressBookStore,
@@ -105,18 +123,35 @@ class ProgressQueue(
         book.copy(last = book.last.filterNot { it.sameTitle(p) } + p)
     }
 
+    /** Forgets the last positions of the titles [keep] does not keep: only
+     *  the titles on the phone need theirs. */
+    suspend fun forgetLastExcept(keep: (PlayedPosition) -> Boolean) = edit { book ->
+        book.copy(last = book.last.filter(keep))
+    }
+
     /** Queues [p] to be sent; it takes the place of an earlier one of the
      *  same title. True when it is the first one waiting for its account on
      *  its server: nothing was queued for them before. */
     suspend fun enqueue(p: PlayedPosition): Boolean = mutex.withLock {
         val book = store.read()
-        val first = book.queue.none { it.server == p.server && it.accountId == p.accountId }
+        val first = book.queue.none { it.server == p.server && it.accountId == p.accountId } &&
+            book.watched.none { it.server == p.server && it.accountId == p.accountId }
         store.write(book.copy(queue = (book.queue.filterNot { it.sameTitle(p) } + p).sortedBy { it.atMs }))
         first
     }
 
+    /** Queues a watched mark; true when it is the first thing waiting for
+     *  its account on its server. */
+    suspend fun enqueueWatched(m: WatchedMark): Boolean = mutex.withLock {
+        val book = store.read()
+        val first = book.queue.none { it.server == m.server && it.accountId == m.accountId } &&
+            book.watched.none { it.server == m.server && it.accountId == m.accountId }
+        store.write(book.copy(watched = book.watched.filterNot { it.sameTitle(m) } + m))
+        first
+    }
+
     /** Takes a queued position of [p]'s title off the queue: [p], newer,
-     *  reached the server. */
+     *  reached the server. Writes nothing when none was queued. */
     suspend fun supersede(p: PlayedPosition) = edit { book ->
         book.copy(queue = book.queue.filterNot { it.sameTitle(p) && it.atMs <= p.atMs })
     }
@@ -132,41 +167,81 @@ class ProgressQueue(
         store.read().queue.filter { it.server == server && it.accountId == accountId }
     }
 
+    /** The watched marks still to send for [accountId] on [server]. */
+    suspend fun pendingWatched(server: String, accountId: String): List<WatchedMark> = mutex.withLock {
+        store.read().watched.filter { it.server == server && it.accountId == accountId }
+    }
+
     /**
      * Sends [accountId]'s queued positions for [server] through [send], the
-     * oldest first. One sent or refused for good leaves the queue; one the
-     * server cannot take now stays, counted, and the ones after it go on -
-     * dropped once it has failed [MAX_ATTEMPTS] times; when the server can
-     * take none ([SendOutcome.Wait]) the flush stops with the rest kept,
-     * uncounted. The queue is not locked while a position is on its way: the
-     * player keeps saving, and a position played again meanwhile stays for
-     * the next flush. Other accounts' and servers' positions stay: they go
-     * with their own sign-in.
+     * oldest first, then its watched marks through [sendWatched]. One sent
+     * or refused for good leaves the queue; one the server cannot take now
+     * stays, counted, and the ones after it go on - dropped once it has
+     * failed [MAX_ATTEMPTS] times; when the server can take none
+     * ([SendOutcome.Wait]) the flush stops with the rest kept, uncounted.
+     * The queue is not locked while a position is on its way: the player
+     * keeps saving, and a position played again meanwhile stays for the next
+     * flush. Other accounts' and servers' positions stay: they go with their
+     * own sign-in.
      */
-    suspend fun flush(server: String, accountId: String, send: suspend (PlayedPosition) -> SendOutcome): FlushResult =
-        flushing.withLock {
-            var sent = 0
-            var dropped = 0
-            val pending = mutex.withLock { store.read().queue.filter { it.server == server && it.accountId == accountId } }
-            for (p in pending) {
-                when (send(p)) {
+    suspend fun flush(
+        server: String,
+        accountId: String,
+        sendWatched: suspend (WatchedMark) -> SendOutcome = { SendOutcome.Wait },
+        send: suspend (PlayedPosition) -> SendOutcome,
+    ): FlushResult = flushing.withLock {
+        var sent = 0
+        var dropped = 0
+        var stopped = false
+        for (p in pending(server, accountId)) {
+            when (send(p)) {
+                SendOutcome.Sent -> {
+                    sent++
+                    edit { book -> book.copy(queue = book.queue.filterNot { it == p }) }
+                }
+                SendOutcome.Drop -> {
+                    dropped++
+                    edit { book -> book.copy(queue = book.queue.filterNot { it == p }) }
+                }
+                SendOutcome.Retry -> {
+                    val gaveUp = p.attempts + 1 >= MAX_ATTEMPTS
+                    if (gaveUp) dropped++
+                    edit { book ->
+                        book.copy(
+                            queue = if (gaveUp) {
+                                book.queue.filterNot { it == p }
+                            } else {
+                                book.queue.map { if (it == p) it.copy(attempts = it.attempts + 1) else it }
+                            },
+                        )
+                    }
+                }
+                SendOutcome.Wait -> {
+                    stopped = true
+                    break
+                }
+            }
+        }
+        if (!stopped) {
+            for (m in pendingWatched(server, accountId)) {
+                when (sendWatched(m)) {
                     SendOutcome.Sent -> {
                         sent++
-                        edit { book -> book.copy(queue = book.queue.filterNot { it == p }) }
+                        edit { book -> book.copy(watched = book.watched.filterNot { it == m }) }
                     }
                     SendOutcome.Drop -> {
                         dropped++
-                        edit { book -> book.copy(queue = book.queue.filterNot { it == p }) }
+                        edit { book -> book.copy(watched = book.watched.filterNot { it == m }) }
                     }
                     SendOutcome.Retry -> {
-                        val gaveUp = p.attempts + 1 >= MAX_ATTEMPTS
+                        val gaveUp = m.attempts + 1 >= MAX_ATTEMPTS
                         if (gaveUp) dropped++
                         edit { book ->
                             book.copy(
-                                queue = if (gaveUp) {
-                                    book.queue.filterNot { it == p }
+                                watched = if (gaveUp) {
+                                    book.watched.filterNot { it == m }
                                 } else {
-                                    book.queue.map { if (it == p) it.copy(attempts = it.attempts + 1) else it }
+                                    book.watched.map { if (it == m) it.copy(attempts = it.attempts + 1) else it }
                                 },
                             )
                         }
@@ -174,11 +249,16 @@ class ProgressQueue(
                     SendOutcome.Wait -> break
                 }
             }
-            FlushResult(sent, dropped, left = pending(server, accountId).size)
         }
+        FlushResult(sent, dropped, left = pending(server, accountId).size + pendingWatched(server, accountId).size)
+    }
 
+    /** Writes the book changed by [change] - nothing when it did not
+     *  change it: a save of a title streamed writes no file. */
     private suspend fun edit(change: (ProgressBook) -> ProgressBook) = mutex.withLock {
-        store.write(change(store.read()))
+        val book = store.read()
+        val next = change(book)
+        if (next != book) store.write(next)
     }
 }
 
@@ -196,23 +276,38 @@ fun sendOutcomeOf(e: Throwable): SendOutcome = when {
 }
 
 /** What a proxy answers for a server behind it that is down. */
-private val SERVER_DOWN = 502..504
+internal val SERVER_DOWN = 502..504
 
 /**
- * Sends the player's positions, and keeps the ones the server does not get.
- * A position goes to the server at once ([post]); one that cannot - no
- * connection, the server down - is queued ([ProgressQueue]) and sent later
- * by [flush], when the server can be reached again. Every position is also
- * the title's last one played on this phone.
+ * Sends the player's positions and watched marks, and keeps the ones the
+ * server does not get. A position goes to the server at once ([post]); one
+ * that cannot - no connection, the server down - is queued ([ProgressQueue])
+ * and sent later by [flush], when the server can be reached again, with its
+ * age and with the account's own bearer, so a change of account meanwhile
+ * sends none of it as another. A position of a title on the phone
+ * ([onPhone]) is also that title's last one played here.
  */
 class ProgressSync(
     private val queue: ProgressQueue,
-    private val post: suspend (itemId: String, body: ProgressBody) -> Unit,
+    /** POSTs a position, with [bearer] - the account's own - where given,
+     *  else as the account signed in now. */
+    private val post: suspend (itemId: String, body: ProgressBody, bearer: String?) -> Unit,
     /** The account signed in now, or null. */
     private val account: suspend () -> String?,
     /** The connected server's API base. */
     private val server: () -> String,
     private val scope: CoroutineScope,
+    /** POSTs a watched mark, with [bearer] where given. */
+    private val postWatched: suspend (itemId: String, bearer: String?) -> Unit = { _, _ -> },
+    /** The bearer of [accountId] while it is the account signed in now; null
+     *  once another is (a flush for it then stops). */
+    private val bearerOf: suspend (accountId: String) -> String? = { null },
+    /** Whether [itemId] is on the phone for [accountId]: only those keep
+     *  their last position here. */
+    private val onPhone: (accountId: String, itemId: String) -> Boolean = { _, _ -> true },
+    /** Called when the server refused a position or watched mark of
+     *  [itemId] as not there (404, 410) for [accountId]. */
+    private val onRefused: (accountId: String, itemId: String) -> Unit = { _, _ -> },
     /** Called when the first position waiting for the server is queued
      *  (for the account, on the server): the platform sends the queue once
      *  a connection is back, even with the app closed, and again while the
@@ -232,8 +327,8 @@ class ProgressSync(
     suspend fun saveNow(itemId: String, positionSec: Int, durationSec: Int): SendOutcome? {
         val accountId = account() ?: return null
         val p = PlayedPosition(server(), accountId, itemId, positionSec, durationSec, now())
-        queue.remember(p)
-        val outcome = send(p)
+        if (onPhone(accountId, itemId)) queue.remember(p)
+        val outcome = send(p, bearer = null, queued = false)
         when (outcome) {
             SendOutcome.Sent, SendOutcome.Drop -> queue.supersede(p)
             SendOutcome.Retry, SendOutcome.Wait -> if (queue.enqueue(p)) onQueued()
@@ -241,11 +336,34 @@ class ProgressSync(
         return outcome
     }
 
-    /** Sends what is queued for the account signed in now. Null when nobody
-     *  is signed in. */
+    /** Marks [itemId] watched, in the app's scope: kept and sent later when
+     *  the server cannot be reached. */
+    fun markWatched(itemId: String) {
+        scope.launch { runCatching { markWatchedNow(itemId) } }
+    }
+
+    suspend fun markWatchedNow(itemId: String): SendOutcome? {
+        val accountId = account() ?: return null
+        val m = WatchedMark(server(), accountId, itemId, now())
+        val outcome = sendWatched(m, bearer = null)
+        if (outcome == SendOutcome.Retry || outcome == SendOutcome.Wait) {
+            if (queue.enqueueWatched(m)) onQueued()
+        }
+        return outcome
+    }
+
+    /** Sends what is queued for the account signed in now, with its own
+     *  bearer. Null when nobody is signed in, or its bearer could not be
+     *  had. */
     suspend fun flush(): FlushResult? {
         val accountId = account() ?: return null
-        return queue.flush(server(), accountId) { send(it) }
+        val bearer = bearerOf(accountId) ?: return null
+        return queue.flush(
+            server(),
+            accountId,
+            send = { send(it, bearer, queued = true) },
+            sendWatched = { sendWatched(it, bearer) },
+        )
     }
 
     /** The last position played on this phone of [itemId], in seconds. */
@@ -254,10 +372,11 @@ class ProgressSync(
         return queue.lastPlayed(server(), accountId, itemId)?.positionSec
     }
 
-    /** Whether positions of the account signed in now are still to send. */
+    /** Whether positions or watched marks of the account signed in now are
+     *  still to send. */
     suspend fun hasPending(): Boolean {
         val accountId = account() ?: return false
-        return queue.pending(server(), accountId).isNotEmpty()
+        return queue.pending(server(), accountId).isNotEmpty() || queue.pendingWatched(server(), accountId).isNotEmpty()
     }
 
     /** Whether positions of [itemId] are still to send: the phone's is newer
@@ -267,16 +386,43 @@ class ProgressSync(
         return queue.pending(server(), accountId).any { it.itemId == itemId }
     }
 
-    private suspend fun send(p: PlayedPosition): SendOutcome = try {
-        post(p.itemId, ProgressBody(positionSec = p.positionSec, durationSec = p.durationSec))
+    /** Forgets the last positions of titles no longer on the phone. */
+    suspend fun forgetLastOfTitlesNotOnThePhone() {
+        queue.forgetLastExcept { onPhone(it.accountId, it.itemId) }
+    }
+
+    private suspend fun send(p: PlayedPosition, bearer: String?, queued: Boolean): SendOutcome = try {
+        // A queued position goes with its age now: the server writes it only
+        // over an older one (chino-api's played_ms_ago).
+        val age = if (queued) (now() - p.atMs).coerceAtLeast(0L) else null
+        post(p.itemId, ProgressBody(positionSec = p.positionSec, durationSec = p.durationSec, playedMsAgo = age), bearer)
         onReach(true)
         SendOutcome.Sent
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        // An answer, even a refusal, is the server reached; a proxy's word
-        // that the server behind it is down is not.
-        onReach(e is ApiStatusException && e.status !in SERVER_DOWN)
+        reachOf(e)
+        if (e.isNotThere()) onRefused(p.accountId, p.itemId)
         sendOutcomeOf(e)
+    }
+
+    private suspend fun sendWatched(m: WatchedMark, bearer: String?): SendOutcome = try {
+        postWatched(m.itemId, bearer)
+        onReach(true)
+        SendOutcome.Sent
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        reachOf(e)
+        if (e.isNotThere()) onRefused(m.accountId, m.itemId)
+        sendOutcomeOf(e)
+    }
+
+    private fun Exception.isNotThere(): Boolean = this is ApiStatusException && (status == 404 || status == 410)
+
+    /** An answer, even a refusal, is the server reached; a proxy's word that
+     *  the server behind it is down is not. */
+    private fun reachOf(e: Exception) {
+        onReach(e is ApiStatusException && e.status !in SERVER_DOWN)
     }
 }

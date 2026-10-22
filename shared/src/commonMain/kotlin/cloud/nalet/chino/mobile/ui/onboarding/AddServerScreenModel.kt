@@ -5,6 +5,8 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.BootstrapResult
 import cloud.nalet.chino.mobile.data.ServerBootstrap
+import cloud.nalet.chino.mobile.data.ServerConfig
+import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +16,10 @@ sealed interface AddServerState {
     data object Idle : AddServerState
     data object Probing : AddServerState
     data class Error(val message: String) : AddServerState
+
+    /** The new server answered, and changing to it deletes the downloads of
+     *  the one connected now: asked first ([AddServerScreenModel.confirm]). */
+    data class AskDropDownloads(val summary: DownloadsSummary, val config: ServerConfig, val url: String) : AddServerState
     data object Done : AddServerState
 }
 
@@ -61,20 +67,47 @@ class AddServerScreenModel(
                 BootstrapResult.Fail(BootstrapResult.Fail.Kind.UNREACHABLE, it.message)
             }) {
                 is BootstrapResult.Ok -> {
-                    if (clearAccountsOnConnect) {
-                        runCatching {
-                            container.accountStore.snapshotBlocking().accounts.forEach {
-                                container.accountStore.remove(it.id)
-                            }
-                        }
+                    // Another server than the one connected now: its downloads
+                    // go - asked first where there are any.
+                    val oldServer = container.serverBase
+                    val another = clearAccountsOnConnect && r.config.baseUrl.trimEnd('/') != oldServer
+                    val summary = if (another) container.downloads?.summaryOfServer(oldServer) else null
+                    if (summary != null && !summary.isEmpty) {
+                        _state.value = AddServerState.AskDropDownloads(summary, r.config, rawUrl)
+                    } else {
+                        finish(r.config, rawUrl, dropDownloadsOf = oldServer.takeIf { another })
                     }
-                    container.serverConfigStore.save(r.config)
-                    container.serverConfigStore.addRecent(ServerBootstrap.normalize(rawUrl))
-                    _state.value = AddServerState.Done
                 }
                 is BootstrapResult.Fail -> _state.value = AddServerState.Error(messageFor(r))
             }
         }
+    }
+
+    /** "change server", confirmed: the old server's downloads go, then as
+     *  before. */
+    fun confirm() {
+        val ask = _state.value as? AddServerState.AskDropDownloads ?: return
+        _state.value = AddServerState.Probing
+        screenModelScope.launch { finish(ask.config, ask.url, dropDownloadsOf = container.serverBase) }
+    }
+
+    /** "cancel": nothing changes, the old server stays. */
+    fun cancel() {
+        if (_state.value is AddServerState.AskDropDownloads) _state.value = AddServerState.Idle
+    }
+
+    private suspend fun finish(config: ServerConfig, rawUrl: String, dropDownloadsOf: String?) {
+        if (dropDownloadsOf != null) runCatching { container.downloads?.dropServer(dropDownloadsOf) }
+        if (clearAccountsOnConnect) {
+            runCatching {
+                container.accountStore.snapshotBlocking().accounts.forEach {
+                    container.accountStore.remove(it.id)
+                }
+            }
+        }
+        container.serverConfigStore.save(config)
+        container.serverConfigStore.addRecent(ServerBootstrap.normalize(rawUrl))
+        _state.value = AddServerState.Done
     }
 
     private fun messageFor(f: BootstrapResult.Fail): String = when (f.kind) {

@@ -80,4 +80,26 @@ class TokenRefreshTest {
         assertEquals(url, signedNow(url, null))
         assertEquals(url, signedNow(url, ""))
     }
+
+    @Test
+    fun aPlaylistIsKeptWithoutTheTokensWrittenIntoIt() {
+        val signed = """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,URI="a0/playlist.m3u8?stream=SECRET&caps=avc,hvc&v=7",GROUP-ID="audio",LANGUAGE="en",NAME="English",DEFAULT=YES
+            #EXT-X-STREAM-INF:BANDWIDTH=3000000,AVERAGE-BANDWIDTH=2000000,RESOLUTION=1280x720,AUDIO="audio"
+            v1/playlist.m3u8?stream=SECRET&caps=avc,hvc&v=7
+            #EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=100000,URI="v1/iframes.m3u8?stream=SECRET"
+        """.trimIndent()
+        val kept = withoutStreamTokens(signed)
+        assertTrue("SECRET" !in kept, kept)
+        assertTrue("a0/playlist.m3u8?caps=avc,hvc&v=7" in kept, kept)
+        assertTrue("\nv1/playlist.m3u8?caps=avc,hvc&v=7\n" in kept, kept)
+        assertTrue("URI=\"v1/iframes.m3u8\"" in kept, kept)
+        // Everything else as it was: the same lines, the same tags.
+        assertEquals(signed.lines().size, kept.lines().size)
+        assertEquals(signed.lines().filter { it.startsWith("#EXT-X-STREAM-INF") }, kept.lines().filter { it.startsWith("#EXT-X-STREAM-INF") })
+        // A media playlist's segments and its map; CRLF line ends kept.
+        val media = "#EXTM3U\r\n#EXT-X-MAP:URI=\"init.mp4?stream=SECRET&v=7\"\r\n#EXTINF:6.000,\r\nseg-00001.m4s?stream=SECRET&v=7\r\n"
+        assertEquals("#EXTM3U\r\n#EXT-X-MAP:URI=\"init.mp4?v=7\"\r\n#EXTINF:6.000,\r\nseg-00001.m4s?v=7\r\n", withoutStreamTokens(media))
+    }
 }

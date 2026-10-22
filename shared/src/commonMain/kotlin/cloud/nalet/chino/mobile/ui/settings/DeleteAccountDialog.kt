@@ -35,6 +35,9 @@ import androidx.compose.ui.window.DialogProperties
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.account.AccountDeletion
 import cloud.nalet.chino.mobile.data.account.deleteAccountThenSignOut
+import cloud.nalet.chino.mobile.data.downloads.yourDownloadsGoSentence
+import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
+import cloud.nalet.chino.mobile.ui.downloads.downloadsOf
 import cloud.nalet.chino.mobile.data.account.isFinal
 import cloud.nalet.chino.mobile.data.account.text
 import cloud.nalet.chino.mobile.data.account.title
@@ -115,6 +118,9 @@ fun DeleteAccountDialog(
     }
 
     val who = account.email.ifBlank { account.displayName }
+    // Its downloads on this phone go with it: the question says so.
+    val downloads = remember(account.id) { downloadsOf(container, account.id) }
+    val device = LocalDeviceKind.current
     AlertDialog(
         onDismissRequest = { if (!deleting) onDismiss() },
         properties = DialogProperties(dismissOnBackPress = !deleting, dismissOnClickOutside = !deleting),
@@ -152,6 +158,9 @@ fun DeleteAccountDialog(
                             Text(text = line, color = ChinoFg2, fontSize = 14.sp)
                         }
                     }
+                }
+                if (!downloads.isEmpty) {
+                    Text(text = yourDownloadsGoSentence(downloads, device), color = ChinoFg2, fontSize = 14.sp)
                 }
                 Text(text = "This can't be undone.", color = ChinoFg2, fontSize = 14.sp)
                 // Progress, or why the account is still there: announced.

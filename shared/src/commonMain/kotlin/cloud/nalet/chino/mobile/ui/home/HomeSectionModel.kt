@@ -5,7 +5,11 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.api.ProgressBody
+import cloud.nalet.chino.mobile.data.api.NO_ANSWER_SENTENCE
 import cloud.nalet.chino.mobile.data.api.catalogueMessage
+import cloud.nalet.chino.mobile.data.api.loadDetails
+import cloud.nalet.chino.mobile.data.api.loadFailure
+import cloud.nalet.chino.mobile.data.api.sentence
 import cloud.nalet.chino.mobile.data.api.signInRefused
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.async
@@ -36,7 +40,7 @@ sealed interface HomeUiState {
     ) : HomeUiState
     /** [signInRefused]: the server refuses the sign-in (a 401 or 403), so
      *  the page offers the ways out - another server, signing in again. */
-    data class Error(val message: String, val signInRefused: Boolean = false) : HomeUiState
+    data class Error(val message: String, val signInRefused: Boolean = false, val details: String? = null) : HomeUiState
 }
 
 /**
@@ -243,9 +247,18 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                     )
                 }
             } catch (e: Exception) {
-                // In words a person can act on (catalogueMessage), not the
-                // request's path and the server's error line.
-                HomeUiState.Error(e.catalogueMessage(), signInRefused = e.signInRefused)
+                // The design system's case for it, by its status - a list:
+                // a 404 there is the app and the server not matching - in
+                // words a person can act on; a refused sign-in keeps its own
+                // ways on (catalogueMessage).
+                if (e.signInRefused) {
+                    HomeUiState.Error(e.catalogueMessage(), signInRefused = true)
+                } else {
+                    HomeUiState.Error(
+                        e.loadFailure(singleThing = false).sentence() ?: NO_ANSWER_SENTENCE,
+                        details = e.loadDetails(),
+                    )
+                }
             }
         }
     }

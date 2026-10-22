@@ -8,6 +8,52 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
+ * Who a download is for: an account, by its subject - the sign-in's `sub`,
+ * the same however often it signs in again - on a server, by its API base.
+ * Never its token: a sign-in that expired or was refused hides nothing and
+ * deletes nothing, and signing in again as the same subject brings it all
+ * back.
+ */
+data class Owner(val server: String, val subject: String)
+
+/**
+ * One account's claim on a download. Several accounts on one phone may
+ * download the same title of the same server: it is fetched once, and goes
+ * from the phone with its last claim.
+ */
+@Serializable
+data class OwnerClaim(
+    /** The account's subject. */
+    val subject: String,
+    /** When the account asked for it, ms since the epoch. */
+    @SerialName("added_at") val addedAtMs: Long,
+    /** Where the server had the account as it asked: where it resumes
+     *  without the server before it is played on this phone. */
+    @SerialName("saved_position_sec") val savedPositionSec: Int? = null,
+    /** When the server last said the account may watch it
+     *  (POST /me/available), or when it was asked for. */
+    @SerialName("checked_at") val checkedAtMs: Long,
+)
+
+/**
+ * The key of one server's title on the phone: its item id and a digest of
+ * the server - Media3's download id, and the name of its folder. Two servers
+ * may hold the same item id; one server's title is one download, however
+ * many accounts claim it.
+ */
+fun downloadKey(server: String, itemId: String): String = "${itemId.filter { it.isLetterOrDigit() || it == '-' }}~${serverDigest(server)}"
+
+/** A server's API base as 16 hex digits: FNV-1a over its normalised form. */
+internal fun serverDigest(server: String): String {
+    var h = 0xcbf29ce484222325uL
+    for (b in server.trim().trimEnd('/').lowercase().encodeToByteArray()) {
+        h = h xor b.toUByte().toULong()
+        h *= 0x100000001b3uL
+    }
+    return h.toString(16).padStart(16, '0')
+}
+
+/**
  * A title kept on the phone: what the detail page, the downloads screen and
  * the player need of it without the server, written beside its media when
  * the download starts (title.json). Platform-neutral; the media itself is
@@ -39,23 +85,26 @@ data class DownloadedTitle(
      *  episode's still). Null where the server had none. */
     val poster: String? = null,
     val backdrop: String? = null,
-    /** When the download was asked for, ms since the epoch. */
-    @SerialName("added_at") val addedAtMs: Long,
-    /** The server it came from (its API base): progress made with it goes
-     *  to that server only. */
+    /** The server it came from (its API base): only that server's accounts
+     *  see it, and only that server is asked for it. */
     val server: String,
-    /** The server answered 404 or 410 for it on a later look: it is no
-     *  longer in the library. The download stays until it is deleted. */
-    @SerialName("gone_from_library") val goneFromLibrary: Boolean = false,
+    /** The accounts it is for. Empty: nobody's, and it goes. */
+    val owners: List<OwnerClaim> = emptyList(),
     /** Its subtitles and artwork are on the phone. */
     @SerialName("extras_done") val extrasDone: Boolean = false,
     /** Why it stopped, the last time it did; null while it goes on. */
     val failure: DownloadFailure? = null,
-    /** Where the server had the viewer as the download was asked for: where
-     *  it resumes without the server before it is played on this phone. */
-    @SerialName("saved_position_sec") val savedPositionSec: Int? = null,
 ) {
+    val key: String get() = downloadKey(server, itemId)
+
     val isEpisode: Boolean get() = item.kind == "episode" || item.parentId != null
+
+    fun claimOf(subject: String): OwnerClaim? = owners.firstOrNull { it.subject == subject }
+
+    fun ownedBy(owner: Owner): Boolean = server == owner.server && owners.any { it.subject == owner.subject }
+
+    /** When the first account asked for it. */
+    val firstAddedAtMs: Long get() = owners.minOfOrNull { it.addedAtMs } ?: 0L
 }
 
 /** One sidecar subtitle kept with a title. */
@@ -81,14 +130,11 @@ sealed interface DownloadStatus {
     data object Queued : DownloadStatus
 
     /** Downloads are set to Wi-Fi only and the phone has none: "waiting for
-     *  Wi-Fi". It starts by itself on Wi-Fi. */
+     *  Wi-Fi". It goes on by itself on Wi-Fi. */
     data object WaitingForWifi : DownloadStatus
 
     /** Mobile data is allowed and the phone has no connection at all. */
     data object WaitingForConnection : DownloadStatus
-
-    /** The battery is low: it carries on once the phone charges. */
-    data object WaitingForBattery : DownloadStatus
 
     /** On its way, [percent] in whole percent. */
     data class Downloading(val percent: Int) : DownloadStatus
@@ -96,43 +142,72 @@ sealed interface DownloadStatus {
     /** On the phone, [bytes] of it. */
     data class Downloaded(val bytes: Long) : DownloadStatus
 
+    /** On the phone, but not checked with the server for [CHECK_EVERY_MS]
+     *  while it cannot be reached: it does not play until it is. With the
+     *  server the check runs by itself and this never shows. */
+    data class CheckNeeded(val bytes: Long) : DownloadStatus
+
     /** It stopped for [reason]: "couldn't download". */
     data class Failed(val reason: DownloadFailure) : DownloadStatus
-
-    /** Being deleted. */
-    data object Removing : DownloadStatus
 }
 
-/** Why a download stopped, each one sentence the control shows. */
+/** Why a download stopped: a reason, never an instruction - the control
+ *  offers "try again" itself ([sentence]). */
 @Serializable
-enum class DownloadFailure(val sentence: String) {
-    NoSpace("Not enough space on this phone."),
-    NoAnswer("Check the connection to the server, then try again."),
-    ServerProblem("The server ran into a problem. Try again in a moment."),
-    Refused("The server didn't accept the download."),
-    Gone("This title isn't in the library anymore."),
-    StreamOnly("This title can only be streamed for now."),
-    Stopped("The download stopped before it was done. Try again."),
+enum class DownloadFailure {
+    NoSpace,
+    NoAnswer,
+    ServerProblem,
+    Refused,
+    Gone,
+    StreamOnly,
+    Stopped,
+
+    /** The server turned downloads off (features.downloads false). */
+    ServerOff,
 }
 
-/** A title on the phone or on its way, and where it is. [bytes]: what is on
- *  the phone of it so far. */
+/** A title on the phone or on its way, as the account it is shown to has
+ *  it: where it is, what of it is on the phone ([bytes]), and that
+ *  account's claim on it. */
 data class DownloadEntry(
     val title: DownloadedTitle,
     val status: DownloadStatus,
     val bytes: Long,
+    val claim: OwnerClaim,
 ) {
     val itemId: String get() = title.itemId
 
+    val addedAtMs: Long get() = claim.addedAtMs
+
     /** The size the downloads screen shows: what it took once it is on the
-     *  phone, what the server said it would take before; null when neither
-     *  is known. */
+     *  phone, what the server said it would take while it comes; none for
+     *  one that stopped (nothing of it may be there). */
     val size: Long?
-        get() = if (status is DownloadStatus.Downloaded) status.bytes else title.estimatedBytes ?: bytes.takeIf { it > 0 }
+        get() = when (status) {
+            is DownloadStatus.Downloaded -> status.bytes
+            is DownloadStatus.CheckNeeded -> status.bytes
+            is DownloadStatus.Failed -> null
+            else -> title.estimatedBytes ?: bytes.takeIf { it > 0 }
+        }
+
+    /** Whether some of it is on the phone: what "delete all" and the
+     *  questions before a sign-out count. */
+    val onPhone: Boolean get() = status is DownloadStatus.Downloaded || status is DownloadStatus.CheckNeeded || bytes > 0
 }
 
 /** What downloads take on the phone, and what is left there. */
 data class StorageUse(val usedBytes: Long, val freeBytes: Long)
+
+/** An account's downloads on the phone, as a question before they go names
+ *  them: how many, and what they take. */
+data class DownloadsSummary(val titles: Int, val bytes: Long) {
+    val isEmpty: Boolean get() = titles == 0
+}
+
+/** Titles the server's decision took off the phone (POST /me/available
+ *  left them out), named once on the downloads screen. */
+data class DeletedNotice(val titles: List<String>)
 
 /** The download preferences: the quality, as a size class ([sizeClass]),
  *  and whether mobile data may be used. */
@@ -142,48 +217,89 @@ data class DownloadPreferences(
 )
 
 /** One of the qualities Settings offers, with what an hour of video takes at
- *  it as the server's playlists say; null where none said. */
+ *  it as the server's playlists say; null where too few titles say it. */
 data class DownloadQuality(val sizeClass: Int, val bytesPerHour: Long?) {
     val name: String get() = qualityName(sizeClass)
 }
 
+/** What a check with the server came to, for the account signed in now. */
+sealed interface AvailabilityCheck {
+    /** The server answered: [deleted] titles went from the phone. */
+    data class Done(val deleted: List<DownloadedTitle>) : AvailabilityCheck
+
+    /** No answer, or not for this account (it changed meanwhile): nothing
+     *  changed. */
+    data object NotAnswered : AvailabilityCheck
+}
+
 /**
  * Downloads on this platform: Media3's download manager on Android. The
- * screens read and act through this; a platform without downloads has none
- * (AppContainer.downloads is null) and shows no download control.
+ * screens read and act through this, always for the account signed in now
+ * on the connected server (the active owner); a platform without downloads
+ * has none (AppContainer.downloads is null) and shows no download control.
  */
 interface Downloads {
-    /** Everything on the phone or on its way, newest first. */
+    /** The active owner's titles on the phone or on their way, newest
+     *  first. Empty while nobody is signed in. */
     val entries: StateFlow<List<DownloadEntry>>
 
     val preferences: StateFlow<DownloadPreferences>
+
+    /** Titles the server took off the phone for the active owner that the
+     *  downloads screen has not shown yet; null for none. */
+    val notice: StateFlow<DeletedNotice?>
 
     suspend fun setQuality(sizeClass: Int)
 
     suspend fun setWifiOnly(wifiOnly: Boolean)
 
-    /** Starts the download [plan] describes; it goes through the platform's
-     *  download manager from here, and shows in [entries] at once. */
+    /** Starts the download [plan] describes, for the active owner; it goes
+     *  through the platform's download manager from here, and shows in
+     *  [entries] at once. A title another account downloaded already is
+     *  that account's and this one's from now on. */
     suspend fun start(plan: DownloadPlan)
 
-    /** Stops a download on its way and deletes what it fetched. */
+    /** Stops a download on its way: the active owner's claim goes, and its
+     *  media with the last claim. */
     fun cancel(itemId: String)
 
-    /** Deletes a title from the phone, at once and without asking. */
+    /** Deletes a title from the active owner's downloads, at once and
+     *  without asking; its media goes with the last claim. */
     fun delete(itemId: String)
 
-    /** Deletes every title from the phone. */
+    /** Deletes all of the active owner's downloads. */
     fun deleteAll()
 
     /** Starts a failed download again, where it stopped. */
     fun retry(itemId: String)
 
-    /** What downloads take and what is free, as the phone counts them now -
-     *  a walk of the disk, off the main thread. */
+    /** What the active owner's downloads take and what is free, as the
+     *  phone counts them now - a walk of the disk, off the main thread. */
     suspend fun storage(): StorageUse
 
-    /** Records whether the server still has [itemId] in its library. */
-    suspend fun setInLibrary(itemId: String, inLibrary: Boolean)
+    /** Whether [owner] has [itemId] on the phone, or on its way. */
+    fun isOnPhone(owner: Owner, itemId: String): Boolean
+
+    /** [owner]'s downloads on the phone, for the question before they go. */
+    fun summaryOf(owner: Owner): DownloadsSummary
+
+    /** All downloads of [server] on the phone, whoever they are for. */
+    fun summaryOfServer(server: String): DownloadsSummary
+
+    /** An explicit sign-out or removal of [owner]'s account on this phone:
+     *  its claims go, and the media whose last claim it was. */
+    suspend fun dropOwner(owner: Owner)
+
+    /** A server change: every download of [server] goes. */
+    suspend fun dropServer(server: String)
+
+    /** The notice's [titles] were shown: they are not told again. */
+    fun noticeSeen(titles: List<String>)
+
+    /** Asks the server which of the active owner's downloads - [itemIds],
+     *  or all of them - it may watch now, in one request, and deletes the
+     *  others, as the library decides. */
+    suspend fun checkAvailability(itemIds: List<String>? = null): AvailabilityCheck
 
     /** Asks the person once whether downloads may show their progress in a
      *  notification, where the platform asks that. */

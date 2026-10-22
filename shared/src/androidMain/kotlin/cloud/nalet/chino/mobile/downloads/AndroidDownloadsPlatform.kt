@@ -85,11 +85,19 @@ class AndroidDownloadsPlatform(context: Context) : DownloadsPlatform {
 
     private var pending: Job? = null
 
+    /** Activities started now: the app is in front while there is one. */
+    @Volatile
+    private var started = 0
+
+    /** Whether the app is in front now. */
+    val inFront: Boolean get() = started > 0
+
     /**
      * Follows the app while its process lives: the phone's connection
      * ([watchNetwork]), and the app coming to the front - downloads that
-     * wait or were stopped go on (Android 15 stops them after its daily
-     * limit, until the app is opened), and positions still to send are
+     * wait or were stopped go on where they can (Android 15 stops them after
+     * its daily limit, until the app is opened), the server is asked which
+     * downloads the account may still watch, and positions still to send are
      * sent, the sign-in they waited for perhaps just made.
      */
     fun watch(app: Application) {
@@ -98,9 +106,13 @@ class AndroidDownloadsPlatform(context: Context) : DownloadsPlatform {
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityResumed(activity: Activity) = cameToFront(host)
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
-            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityStarted(activity: Activity) {
+                started++
+            }
             override fun onActivityPaused(activity: Activity) = Unit
-            override fun onActivityStopped(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) {
+                started = (started - 1).coerceAtLeast(0)
+            }
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
             override fun onActivityDestroyed(activity: Activity) = Unit
         })
@@ -112,6 +124,11 @@ class AndroidDownloadsPlatform(context: Context) : DownloadsPlatform {
             val container = runCatching { host.container }.getOrNull() ?: return@launch
             // One planned already stays as it is: its backoff counts on.
             if (runCatching { container.progressSync.hasPending() }.getOrDefault(false)) planFlush(ExistingWorkPolicy.KEEP)
+            // With the server: what the account may still watch, at most
+            // every few minutes.
+            if (container.serverReach.state.value == Reach.Reachable) {
+                runCatching { (container.downloads as? AndroidDownloads)?.checkQuietly() }
+            }
         }
     }
 
@@ -137,7 +154,13 @@ class AndroidDownloadsPlatform(context: Context) : DownloadsPlatform {
             val container = runCatching { host.container }.getOrNull() ?: return@launch
             if (container.serverReach.check() == Reach.Reachable) {
                 runCatching { container.progressSync.flush() }
+                runCatching { (container.downloads as? AndroidDownloads)?.checkQuietly() }
             }
+            // A connection again: downloads that waited for it run, with the
+            // service in the foreground where Android lets the app start it -
+            // while it is in front. In the background the manager runs them
+            // as long as the process does.
+            if (inFront) runCatching { DownloadEngine.get(context).resumeIfPending() }
         }
     }
 

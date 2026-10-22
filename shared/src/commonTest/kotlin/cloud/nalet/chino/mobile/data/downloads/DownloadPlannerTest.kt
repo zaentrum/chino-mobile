@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 /** A download worked out from the server: whether the title can come along,
  *  what it keeps, what it comes to - before it starts. */
 class DownloadPlannerTest {
-    private val master = """
+    private var master = """
         #EXTM3U
         #EXT-X-MEDIA:TYPE=AUDIO,URI="a0/playlist.m3u8?stream=TOKEN&v=1",GROUP-ID="audio",LANGUAGE="de",NAME="Deutsch",DEFAULT=YES,CHANNELS="2"
         #EXT-X-MEDIA:TYPE=AUDIO,URI="a1/playlist.m3u8?stream=TOKEN&v=1",GROUP-ID="audio",LANGUAGE="en",NAME="English",DEFAULT=NO,CHANNELS="2"
@@ -33,6 +33,12 @@ class DownloadPlannerTest {
             path.endsWith("/v1/items/stream/play/info") -> respondJson("""{"mode":"transcode","duration_ms":7200000}""")
             path.endsWith("/v1/items/broken/play/info") -> respondText("bad gateway", HttpStatusCode.BadGateway)
             path.endsWith("/v1/items/film/play/master.m3u8") -> respondText(master, HttpStatusCode.OK)
+            path.endsWith("/v1/items/ep1/play/info") ->
+                respondJson("""{"mode":"packaged","duration_ms":1800000}""")
+            path.endsWith("/v1/items/ep1/play/master.m3u8") -> respondText(master, HttpStatusCode.OK)
+            path.endsWith("/v1/items/ep1") ->
+                respondJson("""{"id":"ep1","title":"Earthfall","type":"episode","parent_id":"show","season_number":1,"episode_number":1}""")
+            path.endsWith("/v1/items/show") -> respondJson("""{"id":"show","title":"Pioneer One","type":"series"}""")
             path.endsWith("/v1/items/film/subtitles") ->
                 respondJson("""{"subtitles":[{"id":"s-en","lang":"eng","url":"/api/v1/play/subs/s-en.vtt","format":"webvtt"},{"id":"s-fr","lang":"fre","url":"/api/v1/play/subs/s-fr.vtt"}]}""")
             path.endsWith("/v1/items/film/segments") -> respondJson("""{"segments":[{"kind":"credits","start_ms":7000000,"end_ms":7200000}]}""")
@@ -91,10 +97,29 @@ class DownloadPlannerTest {
     }
 
     @Test
-    fun settingsReadTheSizeOfAnHourFromThePackagedTitlesMasters() = runTest {
-        assertEquals(
-            listOf(DownloadQuality(1080, bytesPerHour(4_000_000)), DownloadQuality(720, bytesPerHour(2_000_000))),
-            planner.qualities(),
+    fun aPlanPicksFromTheMasterAsTheServerServesItNow() = runTest {
+        // The size was read while the ladder had a 720p rung.
+        assertEquals(DownloadOffer.Available(2_000_000L * 7_200 / 8), planner.offer("film", 720, null))
+        // The server's ladder changed since: no 720p any more.
+        master = master.replace(
+            "#EXT-X-STREAM-INF:BANDWIDTH=3000000,AVERAGE-BANDWIDTH=2000000,CODECS=\"hvc1.1.2.L93.90,mp4a.40.2\",RESOLUTION=1280x720,AUDIO=\"audio\"\nv1/playlist.m3u8?stream=TOKEN&v=1",
+            "#EXT-X-STREAM-INF:BANDWIDTH=1500000,AVERAGE-BANDWIDTH=1000000,CODECS=\"hvc1.1.2.L90.90,mp4a.40.2\",RESOLUTION=854x480,AUDIO=\"audio\"\nv2/playlist.m3u8?stream=TOKEN&v=2",
         )
+        val plan = assertIs<PlanResult.Ready>(planner.plan("film", 720, audioPref = "eng", subtitlePref = "off")).plan
+        // Read again, and the rung it has now: never the one of a stale ladder.
+        assertEquals("v2/playlist.m3u8?stream=TOKEN&v=2", plan.variant.uri)
+        assertEquals(2, requests.count { it.endsWith("/master.m3u8") })
+    }
+
+    @Test
+    fun anEpisodesPlanSavesItsSeriesTitle() = runTest {
+        val plan = assertIs<PlanResult.Ready>(planner.plan("ep1", 720, audioPref = "eng", subtitlePref = "off")).plan
+        assertEquals("Pioneer One", plan.seriesTitle)
+    }
+
+    @Test
+    fun settingsShowNoFigureWhereTooFewTitlesSayIt() = runTest {
+        // One packaged title: its qualities, without a figure.
+        assertEquals(listOf(DownloadQuality(1080, null), DownloadQuality(720, null)), planner.qualities(audioPref = "eng"))
     }
 }

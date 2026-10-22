@@ -192,63 +192,67 @@ On Android a film or an episode can be downloaded and watched without a
 connection (`data/downloads/` shared, `downloads/` in androidMain). iOS shows
 no download control yet: its host passes no `DownloadsPlatform`.
 
+- **Whose** — a download is an account's: its owner is the account's subject
+  (the sign-in's `sub`) on its server, never its token. Each account sees,
+  plays and is asked about its own downloads only, and nobody signed in sees
+  none. One title of one server is one Media3 download whoever claims it: a
+  second account adds its claim, and the media goes with the last one
+  (`DownloadBook`). Only the signed-in account's downloads run; the others
+  wait, stopped, and fetch nothing. An expired or refused sign-in hides
+  nothing and deletes nothing: signing in again as the same account brings
+  it all back. An explicit sign-out or removal of the account on the phone,
+  or a change of server, takes its downloads - asked first.
 - **What can be downloaded** — one rule, `downloadability`: a title that
-  plays from its package (`/play/info` mode `packaged`). Anything the server
-  makes from the original while it plays (a copy, an encode) says "can't be
-  downloaded yet". The server has the last word: `features.downloads` of its
-  `/api/config` (chino-api's `DOWNLOADS_ENABLED`, on by default); while it is
-  false no new download is offered, and what is on the phone stays.
+  plays from its package (`/play/info` mode `packaged`); anything else says
+  "can't be downloaded". The server has the last word: `features.downloads`
+  of its `/api/config` (chino-api's `DOWNLOADS_ENABLED`, on by default);
+  while it is false no download is offered and unfinished ones stop.
+- **What the library decides** — `POST /api/v1/me/available` (chino-api) says
+  in one request which of the account's downloads it may watch now: as the
+  app starts and comes to the front while the server answers, and before a
+  download plays. What it leaves out is deleted (the title left the library,
+  or a parent lowered the account's cap), and said once on the downloads
+  screen; a download playing stops. No answer, a 5xx, a 401 or a 429 never
+  deletes. A server from before the route is asked title by title. Without
+  the server, a download checked within 30 days plays; past them it waits for
+  the server ("downloaded · check needed").
 - **What a download keeps** — one video rendition, picked by the download
-  quality (Settings: the size classes the player's quality menu names a
-  package's renditions by, "720p", each with what an hour takes as the
-  server's masters say; the tallest rendition not taller than it, else the
-  shortest); the audio in the viewer's language and the original audio (the
-  master's default) when that is another; the sidecar subtitles (WebVTT,
-  SubRip) in the viewer's languages and the forced ones of the audio kept;
-  the poster, the backdrop (an episode's still) and the metadata the detail,
-  the downloads screen and the player need. The size shown before a download
-  is the variant's AVERAGE-BANDWIDTH over the title's length (192 kbit/s more
-  for a second audio rendition); once it is on the phone, what it took.
-- **How** — Media3's `DownloadManager` and `DownloadService` (a foreground
-  service with a notification of its progress), one title at a time, three
-  segments at once, into app-specific storage (no storage permission). It
-  runs while its requirements hold: Wi-Fi only by default (Settings, "Download
-  over Wi-Fi only"), and while the battery is low it waits for the charger.
-  Media3 keeps the service running while it waits (Android 12 and later) and
-  goes on as the requirements come back; below 12 WorkManager starts it again.
-  A download cut off by the app closing goes on when the app opens, and so
-  does one Android 15 stopped after its six hours a day for data sync
-  services. A process the system starts for the service alone, with no screen
-  open, reaches the app's graph through the Application: it signs its
-  requests and fetches subtitles and artwork as the app would. A download
-  asked for on a page - a whole season - is worked out in the app's scope, so
-  leaving the page stops none of it.
-- **The stream token** — chino-stream writes the token it was asked with into
-  every URI of its playlists. A download keeps each piece under its URL
-  without the token and signs every request with the one valid now (a
-  `ResolvingDataSource`); a refused token is forgotten and a new one minted on
-  the next attempt. A download resumed after the token's 6 h asks with a fresh
-  one; playing a finished download reads the phone alone and never asks the
-  server.
+  quality from the master as the server serves it when the download starts
+  (Settings: what an hour takes at each quality, the same sample of titles
+  for every quality, none where too few titles have it); the audio in the
+  viewer's language and the original; the sidecar subtitles in the viewer's
+  languages; the poster, the backdrop and the metadata the detail page, the
+  downloads screen and the player need.
+- **How** — Media3's `DownloadManager` and `DownloadService` (a `dataSync`
+  foreground service with a notification, only while a download is on its
+  way), one title at a time, into app-specific storage (no storage
+  permission), Wi-Fi only by default. Waiting for a connection, the service
+  stops: the downloads go on when it comes back - while the app runs, and
+  below Android 12 by WorkManager with the app closed. Android 15's six
+  hours a day for data sync services pause them until the app is opened.
+  Before the disk is full they stop, "Not enough space on this phone".
+- **The stream token** — never on the disk: each playlist is kept without
+  the tokens chino-stream writes into it, each piece under its URL without
+  one, and every request is signed as it goes out - only one to the
+  connected server, for a title of the signed-in account. A refused token is
+  forgotten and a new one minted on the next attempt. Playing a finished
+  download reads the phone alone.
 - **Storage** — `files/downloads/media/` (Media3's cache, never evicted),
-  `files/downloads/titles/<id>/` (`title.json`, `poster.jpg`, `backdrop.jpg`,
-  `subs/<id>.vtt`), `databases/chino_downloads.db` (the download index and the
-  cache's own). Deleting a title removes its pieces and its folder at once.
-- **Without the server** — when the phone has no connection or the server
-  does not answer (`/api/config`, within 4 s), the app opens on the downloads,
-  without a sign-in, with the banner "Can't reach the server. Your downloads
-  still play." Screens that need the server show what couldn't load and
-  "try again". A downloaded title plays from its download wherever it is
-  opened. Positions played without the server are kept (`progress-book.json`)
-  and sent in the order they were played once it answers again — at the next
-  start, when the connection comes back, when the app comes to the front, or
-  by a WorkManager job — as positions only, so the server's rule decides what
-  is finished. No answer, or a sign-in it did not accept, keeps them all for
-  later; a position the server fails on is tried ten times without holding
-  the others back; one it refuses (the title gone, not the viewer's) is
-  dropped. A title the
-  server no longer has (404, 410) keeps its download and says it isn't in the
-  library anymore.
+  `files/downloads/titles/<key>/` (`title.json` with the owners' claims,
+  `poster.jpg`, `backdrop.jpg`, `subs/`), `databases/chino_downloads.db` (the
+  download index and the cache's own). The title files are written off the
+  main thread; a write the disk refuses stays in memory and is tried again.
+  Nothing of the app goes into a backup or a transfer to another phone
+  (`data_extraction_rules.xml`).
+- **Without the server** — the app opens on the account's downloads, after
+  "Who's watching?" where the phone has several accounts, with the banner
+  "Can't reach the server. Your downloads still play." A downloaded title's
+  page is built from what is on the phone. Positions played without the
+  server are kept (`progress-book.json`, the last position only for titles
+  on the phone) and sent once it answers - each with its age
+  (`played_ms_ago`), so the server writes it only over an older one, and
+  with the bearer of the account that played it. Watched marks wait the
+  same way.
 
 ## Trailers
 

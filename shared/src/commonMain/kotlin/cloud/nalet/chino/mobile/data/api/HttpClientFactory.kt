@@ -50,6 +50,9 @@ internal fun HttpClientConfig<*>.chinoApiClient(
     apiTimeouts()
     install(Auth) {
         bearer {
+            // A request that carries an account's own bearer (asAccount) keeps
+            // it: the plugin adds the one signed in now's to the others only.
+            sendWithoutRequest { request -> !request.attributes.contains(AccountBearer) }
             // refresh_token is opaque to Ktor's Auth plugin — it never sends
             // it itself; TokenManager owns refresh entirely via the issuer's
             // token endpoint. An empty string satisfies BearerTokens.
@@ -162,3 +165,7 @@ object HttpClientFactory {
         }
     }
 }
+
+/** A request that carries an account's own bearer ([asAccount]): the auth
+ *  plugin neither replaces it nor renews it with the one signed in now's. */
+internal val AccountBearer = io.ktor.util.AttributeKey<String>("chino-account-bearer")

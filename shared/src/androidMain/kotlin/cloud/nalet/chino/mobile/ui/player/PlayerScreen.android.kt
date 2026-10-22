@@ -203,6 +203,10 @@ actual class PlayerScreen actual constructor(
 
         var ready: PlayState? by remember { mutableStateOf(null) }
         var error: String? by remember { mutableStateOf(null) }
+        // A download that may not play: the server took it off the phone, or
+        // it waits for the server's check (downloads/DownloadedPlayback.kt).
+        var downloadNote: String? by remember { mutableStateOf(null) }
+        val device = cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind.current
         // An extra that is not there: gone from the detail, or its master
         // answers 404 (at the load, or once playing).
         var notAvailable: ExtraPlayback.NotAvailable? by remember { mutableStateOf(null) }
@@ -210,6 +214,7 @@ actual class PlayerScreen actual constructor(
         LaunchedEffect(itemId, fromStart, resumeSec, extraId) {
             ready = null
             error = null
+            downloadNote = null
             notAvailable = null
             try {
                 val base = container.config.apiBaseUrl.trimEnd('/')
@@ -219,9 +224,20 @@ actual class PlayerScreen actual constructor(
                 // A title on this phone plays from its download, with the
                 // server or without it (downloads/DownloadedPlayback.kt).
                 if (extraId == null) {
-                    cloud.nalet.chino.mobile.downloads.downloadedSession(appContext, container, itemId, fromStart, resumeSec)?.let { local ->
-                        ready = downloadedPlayState(local, itemId, base, caps, container.settings.flow.first())
-                        return@LaunchedEffect
+                    when (val local = cloud.nalet.chino.mobile.downloads.downloadedSession(appContext, container, itemId, fromStart, resumeSec)) {
+                        is cloud.nalet.chino.mobile.downloads.LocalPlay.Ready -> {
+                            ready = downloadedPlayState(local.session, itemId, base, caps, container.settings.flow.first())
+                            return@LaunchedEffect
+                        }
+                        cloud.nalet.chino.mobile.downloads.LocalPlay.NoLongerAvailable -> {
+                            downloadNote = cloud.nalet.chino.mobile.data.downloads.deletedOneSentence(device)
+                            return@LaunchedEffect
+                        }
+                        cloud.nalet.chino.mobile.downloads.LocalPlay.CheckNeeded -> {
+                            downloadNote = cloud.nalet.chino.mobile.data.downloads.CHECK_NEEDED_SENTENCE
+                            return@LaunchedEffect
+                        }
+                        cloud.nalet.chino.mobile.downloads.LocalPlay.None -> Unit
                     }
                 }
                 // An extra: the title's detail and the extra's master, and
@@ -400,8 +416,21 @@ actual class PlayerScreen actual constructor(
             }
         }
 
+        // Playing from the phone, and the server takes the title off it now
+        // (a check elsewhere, a refusal of its progress): playback stops, and
+        // the player says why.
+        LaunchedEffect(itemId) {
+            container.downloadsTaken.collect { taken ->
+                if (itemId in taken && ready?.local != null) {
+                    ready = null
+                    downloadNote = cloud.nalet.chino.mobile.data.downloads.deletedOneSentence(device)
+                }
+            }
+        }
         val missing = notAvailable
+        val note = downloadNote
         when {
+            note != null -> DownloadNotPlaying(message = note, onBack = close)
             missing != null -> ExtraNotAvailable(title = missing.title, link = missing.link, onBack = close)
             error != null -> ErrorState(message = error!!, itemId = itemId, extraId = extraId, onBack = close)
             ready == null -> LoadingState()
@@ -631,6 +660,32 @@ private fun LoadingState() {
         CircularProgressIndicator(color = Color(0xFF58A6FF))
     }
 }
+
+/** A download that does not play, and why - the server took it off the
+ *  phone, or it waits for the server's check - with the way back. Not a
+ *  failure to report: the app does what the library decided. */
+@Composable
+private fun DownloadNotPlaying(message: String, onBack: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(horizontal = 24.dp),
+        ) {
+            Text(text = message, color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Box(
+                modifier = Modifier
+                    .clip(androidx.compose.ui.graphics.RectangleShape)
+                    .background(Color(0x1AFFFFFF))
+                    .clickable(onClick = onBack)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+            ) {
+                Text(text = "back", color = Color.White, style = cloud.nalet.chino.mobile.ui.theme.ChinoMono)
+            }
+        }
+    }
+}
+
 
 /** Terminal playback failure — both the prepare-time catch and Media3's
  *  onPlayerError land here (the auto bug report has already fired by then).
@@ -1191,7 +1246,10 @@ private fun PlaybackSurface(
                 val credits = inCredits(state.segments, playedMs)
                 if (state.playerMode.watched && !markedWatched && reachedWatched(playedMs, durationMs, credits)) {
                     markedWatched = true
-                    container.appScope.launch { runCatching { container.chinoApi.postWatched(itemId) } }
+                    // Sent at once, or kept and sent once the server can be
+                    // reached: a title finished in its credits offline is
+                    // watched all the same (ProgressSync).
+                    container.progressSync.markWatched(itemId)
                     playbackEvent(
                         "mark_watched",
                         mapOf("at" to (playedMs / 1000).toString(), "via" to if (credits) "credits" else "p95"),

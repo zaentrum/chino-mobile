@@ -6,8 +6,10 @@ import cloud.nalet.chino.mobile.data.auth.withoutStreamToken
 /*
  * The URLs a download fetches. chino-stream writes the stream token into
  * every URI of its playlists, so the same rendition comes with a new token
- * each time a playlist is read: a download names each piece without it (its
- * key on the phone), and signs each request with the token valid then.
+ * each time a playlist is read: a download keeps each playlist without them
+ * ([withoutStreamTokens]) and each piece under its URL without one (its key
+ * on the phone), and the request signs each as it goes out, with the token
+ * valid then. No token is ever on the disk.
  */
 
 /**
@@ -69,3 +71,26 @@ fun samePiece(a: String, b: String): Boolean = pieceKey(a) == pieceKey(b)
  * (none could be minted: no connection) the URL goes as it is.
  */
 fun signedNow(url: String, token: String?): String = if (token.isNullOrBlank()) url else withStreamToken(url, token)
+
+/**
+ * An HLS playlist without the stream tokens chino-stream wrote into it: the
+ * `stream` parameter taken out of every URI - a URI line, and a tag's
+ * URI="..." attribute - and nothing else changed. What a download keeps of
+ * a playlist; the request that fetches what it names is signed as it goes.
+ */
+fun withoutStreamTokens(playlist: String): String =
+    playlist.split('\n').joinToString("\n") { raw ->
+        val cr = raw.endsWith('\r')
+        val line = if (cr) raw.dropLast(1) else raw
+        val out = when {
+            line.startsWith("#") -> URI_ATTRIBUTE.replace(line) { m -> "URI=\"" + withoutStreamToken(m.groupValues[1]) + "\"" }
+            line.isBlank() -> line
+            else -> {
+                val lead = line.takeWhile { it.isWhitespace() }
+                lead + withoutStreamToken(line.trim())
+            }
+        }
+        if (cr) "$out\r" else out
+    }
+
+private val URI_ATTRIBUTE = Regex("""URI="([^"]*)"""")

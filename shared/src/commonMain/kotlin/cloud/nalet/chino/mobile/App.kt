@@ -26,7 +26,7 @@ import cloud.nalet.chino.mobile.data.downloads.StartScreen
 import cloud.nalet.chino.mobile.data.downloads.startScreen
 import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
-import cloud.nalet.chino.mobile.ui.downloads.DownloadsScreen
+import cloud.nalet.chino.mobile.ui.downloads.ProvideDeviceKind
 import cloud.nalet.chino.mobile.ui.shell.Section
 import cloud.nalet.chino.mobile.ui.notices.NoticesPolling
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
@@ -110,7 +110,13 @@ fun App(
             // Whether the server answers, where the phone keeps downloads:
             // without it the app opens on them (startScreen).
             val reach = if (configured && container.downloadsSupported) container.serverReach.check() else Reach.Unknown
-            if (reach == Reach.Reachable) container.appScope.launch { runCatching { container.progressSync.flush() } }
+            if (reach == Reach.Reachable) {
+                container.appScope.launch {
+                    runCatching { container.progressSync.flush() }
+                    // Only the titles on the phone keep their last position.
+                    runCatching { container.progressSync.forgetLastOfTitlesNotOnThePhone() }
+                }
+            }
             BootState(accounts = accts, serverConfigured = configured, reach = reach)
         }
     }
@@ -127,6 +133,7 @@ fun App(
         // Images signed with a stream token valid as they are fetched.
         SignedAppImages(container)
         ChinoTheme {
+          ProvideDeviceKind {
             val snapshot = boot
             Box(modifier = Modifier.fillMaxSize()) {
                 if (snapshot == null) {
@@ -134,7 +141,8 @@ fun App(
                 } else {
                     // Start-destination gate (mirrors the TV NavHost):
                     //  - no server configured              -> Add-Server (neutral first run)
-                    //  - server it cannot reach             -> the downloads, no sign-in
+                    //  - server it cannot reach             -> the account's downloads,
+                    //                                          after the picker for several
                     //  - server, no active account          -> Auth (sign in)
                     //  - server + >=2 accounts              -> "Who's watching?" picker
                     //  - server + exactly one active account -> MainShell
@@ -151,7 +159,7 @@ fun App(
                         StartScreen.AccountPicker -> AccountPickerScreen()
                         StartScreen.Home -> MainShellScreen()
                         StartScreen.Downloads -> MainShellScreen(startSection = Section.Downloads)
-                        StartScreen.DownloadsSignedOut -> DownloadsScreen()
+                        StartScreen.AccountPickerThenDownloads -> AccountPickerScreen(startSection = Section.Downloads)
                     }
                     // Around the navigator: a Back, a tap or an accessibility
                     // action meant for the player as it closed by itself does
@@ -172,6 +180,7 @@ fun App(
                 // it's the outermost Box's last child.
                 StatusBarAccent()
             }
+          }
         }
     }
 }

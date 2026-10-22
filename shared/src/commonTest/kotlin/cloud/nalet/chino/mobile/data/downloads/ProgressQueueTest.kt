@@ -3,8 +3,10 @@ package cloud.nalet.chino.mobile.data.downloads
 import cloud.nalet.chino.mobile.data.api.ApiStatusException
 import cloud.nalet.chino.mobile.data.api.FakeServer
 import cloud.nalet.chino.mobile.data.api.ProgressBody
+import cloud.nalet.chino.mobile.data.api.forgetBearer
 import cloud.nalet.chino.mobile.data.api.respondJson
 import cloud.nalet.chino.mobile.data.api.respondText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.io.IOException
 import kotlinx.coroutines.test.TestScope
@@ -174,55 +176,157 @@ class ProgressQueueTest {
 }
 
 /** The player's positions: to the server at once, else kept and sent once
- *  it can be reached - positions only, the server's finished rule applies. */
+ *  it can be reached - with their age, as the account that played them,
+ *  positions only; the server's finished rule applies. */
 class ProgressSyncTest {
     private var serverUp = false
+    private var account: String? = "anna"
     private val posted = mutableListOf<Pair<String, ProgressBody>>()
-    private val server = FakeServer { request ->
+    private val watchedPosts = mutableListOf<String>()
+    private val bearers = mutableListOf<String?>()
+    private val refused = mutableListOf<String>()
+    private var switchToBenAfterFirstPost = false
+    private var forgetBearer = false
+    private val server = FakeServer(accessToken = { account?.let { "token-of-$it" } }) { request ->
         if (!serverUp) throw IOException("no connection")
+        bearers += request.headers[HttpHeaders.Authorization]
         val path = request.url.encodedPath
+        if (path.endsWith("/watched")) {
+            watchedPosts += path.substringAfter("/v1/me/items/").substringBefore("/watched")
+            return@FakeServer respondJson("{}")
+        }
         val id = path.substringAfter("/v1/items/").substringBefore("/progress")
         if (id == "gone") return@FakeServer respondText("not found", HttpStatusCode.NotFound)
         val body = (request.body as io.ktor.http.content.TextContent).text
         posted += id to lenient.decodeFromString(ProgressBody.serializer(), body)
+        // Another account picked while the flush is on its way - and the
+        // client's own bearer forgotten, as the app does on a switch.
+        if (switchToBenAfterFirstPost && posted.size == 1) {
+            account = "ben"
+            forgetBearer = true
+        }
         respondJson("{}")
     }
     private var clock = 1_000L
     private var queuedSignals = 0
     private val reach = mutableListOf<Boolean>()
+    private var onPhone: (String) -> Boolean = { true }
 
-    private fun TestScope.sync(store: ProgressBookStore, account: String? = "anna") = ProgressSync(
+    private fun TestScope.sync(store: ProgressBookStore) = ProgressSync(
         queue = ProgressQueue(store),
-        post = { id, body -> server.api.postProgress(id, body) },
+        post = { id, body, bearer ->
+            if (forgetBearer) {
+                server.http.forgetBearer()
+                forgetBearer = false
+            }
+            server.api.postProgress(id, body, bearer)
+        },
         account = { account },
         server = { SERVER },
         scope = this,
+        postWatched = { id, bearer -> server.api.postWatched(id, bearer) },
+        // The bearer of the account asked about, while it is signed in.
+        bearerOf = { id -> "token-of-$id".takeIf { account == id } },
+        onPhone = { _, itemId -> onPhone(itemId) },
+        onRefused = { _, itemId -> refused += itemId },
         onQueued = { queuedSignals++ },
         onReach = { reach += it },
-        now = { clock++ },
+        now = { clock },
     )
 
     @Test
-    fun withoutTheServerAPositionIsKeptAndSentOnceItAnswers() = runTest {
+    fun withoutTheServerAPositionIsKeptAndSentOnceItAnswersWithItsAge() = runTest {
         val store = JsonBookStore()
         val s = sync(store)
+        clock = 10_000
         assertEquals(SendOutcome.Wait, s.saveNow("film", 600, 5_400))
+        clock = 20_000
         assertEquals(SendOutcome.Wait, s.saveNow("film", 900, 5_400))
+        clock = 30_000
         assertEquals(SendOutcome.Wait, s.saveNow("episode", 120, 1_800))
         // The platform is asked once, as the first position waits.
         assertEquals(1, queuedSignals)
-        assertTrue(s.hasPending())
         assertEquals(listOf(false, false, false), reach)
         assertTrue(s.hasUnsent("film"))
-        // The app closed and opened again; the server answers now.
+        assertTrue(s.hasPending())
+        // The app closed and opened again; the server answers now, 65 s on.
         serverUp = true
+        clock = 85_000
         val result = sync(store).flush()
         assertEquals(FlushResult(sent = 2, dropped = 0, left = 0), result)
-        // In the order played; the film's last position only; no dismiss.
+        // In the order played; the film's last position only; each with how
+        // long ago it was played; no dismiss.
         assertEquals(listOf("film" to 900, "episode" to 120), posted.map { it.first to it.second.positionSec })
+        assertEquals(listOf(65_000L, 55_000L), posted.map { it.second.playedMsAgo })
         assertFalse(posted.any { it.second.dismiss })
         assertFalse(sync(store).hasUnsent("film"))
         assertFalse(sync(store).hasPending())
+    }
+
+    @Test
+    fun aPositionPlayedNowGoesWithoutAnAge() = runTest {
+        serverUp = true
+        sync(JsonBookStore()).saveNow("film", 700, 5_400)
+        assertEquals(listOf<Long?>(null), posted.map { it.second.playedMsAgo })
+    }
+
+    @Test
+    fun aFlushSendsAsTheAccountThatPlayedEvenWhenAnotherIsPickedMeanwhile() = runTest {
+        val s = sync(JsonBookStore())
+        s.saveNow("a", 10, 100)
+        s.saveNow("b", 20, 100)
+        serverUp = true
+        bearers.clear()
+        // Ben is picked as the first of anna's positions goes out: the rest
+        // goes as anna all the same, with her own bearer.
+        switchToBenAfterFirstPost = true
+        assertEquals(2, s.flush()?.sent)
+        assertEquals("ben", account)
+        assertEquals(listOf<String?>("Bearer token-of-anna", "Bearer token-of-anna"), bearers)
+    }
+
+    @Test
+    fun anotherAccountsQueueWaitsForItsOwnSignIn() = runTest {
+        val store = JsonBookStore()
+        val s = sync(store)
+        s.saveNow("d", 40, 100)
+        account = "ben"
+        serverUp = true
+        bearers.clear()
+        assertEquals(FlushResult(0, 0, 0), s.flush())
+        assertTrue(bearers.isEmpty())
+        assertEquals(listOf(40), ProgressQueue(store).pending(SERVER, "anna").map { it.positionSec })
+    }
+
+    @Test
+    fun aFlushIsNoneWithoutTheAccountsBearer() = runTest {
+        val store = JsonBookStore()
+        sync(store).saveNow("a", 10, 100)
+        serverUp = true
+        val s = ProgressSync(
+            queue = ProgressQueue(store),
+            post = { id, body, bearer -> server.api.postProgress(id, body, bearer) },
+            account = { "anna" },
+            server = { SERVER },
+            scope = this,
+            bearerOf = { null },
+        )
+        assertNull(s.flush())
+        assertEquals(1, ProgressQueue(store).pending(SERVER, "anna").size)
+    }
+
+    @Test
+    fun aWatchedMarkWithoutTheServerIsKeptAndSentAfterThePositions() = runTest {
+        val store = JsonBookStore()
+        val s = sync(store)
+        s.saveNow("film", 5_000, 5_400)
+        assertEquals(SendOutcome.Wait, s.markWatchedNow("film"))
+        assertEquals(1, queuedSignals)
+        assertTrue(s.hasPending())
+        serverUp = true
+        assertEquals(FlushResult(sent = 2, dropped = 0, left = 0), sync(store).flush())
+        assertEquals(listOf("film"), posted.map { it.first })
+        assertEquals(listOf("film"), watchedPosts)
     }
 
     @Test
@@ -239,17 +343,46 @@ class ProgressSyncTest {
     }
 
     @Test
-    fun aTitleTheLibraryNoLongerHasIsNotKeptForLater() = runTest {
+    fun aTitleStreamedWritesNothingOnThePhone() = runTest {
+        serverUp = true
+        onPhone = { false }
+        val store = JsonBookStore()
+        val s = sync(store)
+        repeat(3) { s.saveNow("streamed", 10 * it, 600) }
+        // Sent each time, and nothing written: no last position for a title
+        // that is not on the phone, no queue to change.
+        assertEquals(3, posted.size)
+        assertEquals(0, store.writes)
+        assertNull(s.lastPlayedSec("streamed"))
+    }
+
+    @Test
+    fun onlyTheTitlesOnThePhoneKeepTheirLastPosition() = runTest {
+        val store = JsonBookStore()
+        val s = sync(store)
+        serverUp = true
+        s.saveNow("film", 600, 5_400)
+        s.saveNow("other", 60, 5_400)
+        onPhone = { it == "film" }
+        s.forgetLastOfTitlesNotOnThePhone()
+        assertEquals(600, s.lastPlayedSec("film"))
+        assertNull(s.lastPlayedSec("other"))
+    }
+
+    @Test
+    fun aTitleTheLibraryNoLongerHasIsNotKeptForLaterAndSaysSo() = runTest {
         serverUp = true
         val s = sync(JsonBookStore())
         assertEquals(SendOutcome.Drop, s.saveNow("gone", 60, 600))
         assertEquals(0, queuedSignals)
         assertEquals(listOf(true), reach)
+        assertEquals(listOf("gone"), refused)
     }
 
     @Test
     fun nobodySignedInSavesNothing() = runTest {
-        val s = sync(JsonBookStore(), account = null)
+        account = null
+        val s = sync(JsonBookStore())
         assertNull(s.saveNow("film", 60, 600))
         assertNull(s.flush())
         assertFalse(s.hasPending())

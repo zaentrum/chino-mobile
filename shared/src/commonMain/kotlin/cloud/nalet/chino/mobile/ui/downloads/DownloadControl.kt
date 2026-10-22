@@ -45,6 +45,7 @@ import cloud.nalet.chino.mobile.data.downloads.DownloadFailure
 import cloud.nalet.chino.mobile.data.downloads.DownloadOffer
 import cloud.nalet.chino.mobile.data.downloads.DownloadStatus
 import cloud.nalet.chino.mobile.data.downloads.offerLabel
+import cloud.nalet.chino.mobile.data.downloads.sentence
 import cloud.nalet.chino.mobile.data.downloads.partLabel
 import cloud.nalet.chino.mobile.data.downloads.seasonOfferLabel
 import cloud.nalet.chino.mobile.data.downloads.statusLabel
@@ -58,6 +59,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoMono
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import com.composables.icons.lucide.Check
+import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Trash2
@@ -66,7 +68,6 @@ import com.composables.icons.lucide.X
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 
 /*
  * The download control: one per title, next to "play" on its page, with
@@ -156,6 +157,7 @@ fun EpisodeDownloadControl(itemId: String, durationMs: Long?, modifier: Modifier
 
 @Composable
 private fun ControlView(control: Control, compact: Boolean, modifier: Modifier) {
+    val device = LocalDeviceKind.current
     val state = control.state
     val status = (state as? ControlState.OnPhone)?.entry?.status
     val label = when (state) {
@@ -167,18 +169,21 @@ private fun ControlView(control: Control, compact: Boolean, modifier: Modifier) 
     }
     val sentence = when (state) {
         ControlState.CantDownload -> CANT_DOWNLOAD_SENTENCE
-        is ControlState.StartFailed -> state.reason.sentence
-        is ControlState.OnPhone -> statusSentence(state.entry.status)
+        is ControlState.StartFailed -> state.reason.sentence(device)
+        is ControlState.OnPhone -> statusSentence(state.entry.status, device)
         else -> null
     }
     val failed = state is ControlState.StartFailed || status is DownloadStatus.Failed
+    val onPhone = status is DownloadStatus.Downloaded || status is DownloadStatus.CheckNeeded
     val icon = when {
         failed -> Lucide.TriangleAlert
+        status is DownloadStatus.CheckNeeded -> Lucide.Info
         status is DownloadStatus.Downloaded -> Lucide.Check
         else -> Lucide.Download
     }
     val tint = when {
         failed -> ChinoRed
+        status is DownloadStatus.CheckNeeded -> ChinoMuted
         status is DownloadStatus.Downloaded -> ChinoGreen
         state is ControlState.CantDownload -> ChinoDim
         status is DownloadStatus.Downloading -> ChinoCloudBlue
@@ -187,8 +192,7 @@ private fun ControlView(control: Control, compact: Boolean, modifier: Modifier) 
     }
     val percent = (status as? DownloadStatus.Downloading)?.percent
     val onLabel: (() -> Unit)? = if (state is ControlState.Offer) control.start else null
-    val cancellable = state is ControlState.OnPhone && status !is DownloadStatus.Downloaded &&
-        status !is DownloadStatus.Failed && status !is DownloadStatus.Removing
+    val cancellable = state is ControlState.OnPhone && !onPhone && status !is DownloadStatus.Failed
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp)) {
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -214,7 +218,7 @@ private fun ControlView(control: Control, compact: Boolean, modifier: Modifier) 
             }
             when {
                 cancellable -> IconAction(Lucide.X, "cancel download", compact, control.cancel, Modifier.align(Alignment.CenterVertically))
-                status is DownloadStatus.Downloaded || status is DownloadStatus.Failed ->
+                onPhone || status is DownloadStatus.Failed ->
                     IconAction(Lucide.Trash2, "delete download", compact, control.cancel, Modifier.align(Alignment.CenterVertically))
                 else -> Unit
             }
@@ -342,11 +346,14 @@ internal fun IconAction(icon: ImageVector, name: String, compact: Boolean, onCli
 
 /**
  * A season's control, under its heading: "download season 1 · 8 episodes ·
- * 9.6 GB" for the episodes not on the phone yet; how far the season is once
- * some are ("3 of 8 downloaded"). None where none of its episodes can be
- * downloaded, or where the server offers no downloads and none is on the
- * phone. [entries] are the season's files, one per thing that plays;
- * [expanded]: its episodes show below, and ask the planner first.
+ * 9.6 GB" while none of the season is on the phone or on its way, else
+ * "download 2 more episodes · 724 MB" for the rest; how far the season is
+ * once some are ("3 of 8 downloaded"). The offer is the open season's only:
+ * a closed one asks the server nothing, and shows how far it is on the
+ * phone. None where none of its episodes can be downloaded, or where the
+ * server offers no downloads and none is on the phone. [entries] are the
+ * season's files, one per thing that plays; [expanded]: its episodes show
+ * below.
  */
 @Composable
 fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expanded: Boolean, modifier: Modifier = Modifier) {
@@ -360,18 +367,19 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
     val ids = remember(entries) { entries.map { it.episode.id } }
     val durations = remember(entries) { entries.associate { it.episode.id to fileDurationMs(it) } }
     val byId = onPhone.associateBy { it.itemId }
-    val downloaded = ids.count { byId[it]?.status is DownloadStatus.Downloaded }
-    val onTheWay = ids.count { id -> (byId[id] != null && byId[id]?.status !is DownloadStatus.Downloaded) || (byId[id] == null && id in working) }
+    val downloaded = ids.count { byId[it]?.status.isOnThePhone() }
+    // On the phone, on its way, being worked out or stopped: handled.
+    val handled = ids.count { byId[it] != null || it in working }
+    val onTheWay = handled - downloaded
     // The server's word: none of it where it offers no downloads - not even
     // the questions - unless part of the season is on the phone already.
     val offering = features?.downloads != false
     if (!offering && downloaded + onTheWay == 0) return
-    // Every episode's offer at once: the planner asks the server three at a
-    // time and keeps the answers, which the rows below share. A closed
-    // season asks a moment later, after the open one's rows.
+    // The open season's episodes' offers at once: the planner asks the
+    // server three at a time and keeps the answers, which the rows below
+    // share. A closed season asks nothing.
     val offers by produceState<Map<String, DownloadOffer>?>(null, ids, prefs.quality, offering, expanded) {
-        if (!offering) return@produceState
-        if (!expanded) delay(CLOSED_SEASON_WAIT_MS)
+        if (!offering || !expanded) return@produceState
         value = coroutineScope {
             ids.map { id -> async { id to container.downloadPlanner.offer(id, prefs.quality, durations[id]) } }.awaitAll().toMap()
         }
@@ -401,9 +409,9 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
                 modifier = Modifier.align(Alignment.CenterVertically),
             )
         }
-        if (remaining.isNotEmpty() && offering) {
+        if (expanded && remaining.isNotEmpty() && offering) {
             StatusPill(
-                label = seasonOfferLabel(season, remaining.size, remainingBytes),
+                label = seasonOfferLabel(season, remaining.size, remainingBytes, noneHandled = handled == 0),
                 icon = Lucide.Download,
                 tint = Color.White,
                 percent = null,
@@ -421,8 +429,6 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
     }
 }
 
-/** How long a closed season waits before it asks for its episodes' sizes. */
-private const val CLOSED_SEASON_WAIT_MS = 800L
 
 /** How far a series is on the phone, where it is partly there: "3 of 8
  *  downloaded". [entries] are all its files, every season's. */
@@ -432,7 +438,7 @@ fun SeriesDownloadSummary(entries: List<FileEntry<Episode>>, modifier: Modifier 
     val downloads = container.downloads ?: return
     val onPhone by downloads.entries.collectAsState()
     val ids = entries.map { it.episode.id }.toSet()
-    val downloaded = onPhone.count { it.itemId in ids && it.status is DownloadStatus.Downloaded }
+    val downloaded = onPhone.count { it.itemId in ids && it.status.isOnThePhone() }
     if (downloaded == 0) return
     StatusPill(
         label = partLabel(downloaded, ids.size),
@@ -453,3 +459,7 @@ private fun fileDurationMs(entry: FileEntry<Episode>): Long? =
     } else {
         entry.episode.durationMs
     }
+
+/** Whether a status is a title on the phone: downloaded, or waiting for its
+ *  check with the server. */
+private fun DownloadStatus?.isOnThePhone(): Boolean = this is DownloadStatus.Downloaded || this is DownloadStatus.CheckNeeded

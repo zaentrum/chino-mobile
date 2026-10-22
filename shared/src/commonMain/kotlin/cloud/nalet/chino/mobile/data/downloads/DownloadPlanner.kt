@@ -26,7 +26,7 @@ sealed interface DownloadOffer {
      *  quality, null where the server's playlists do not say. */
     data class Available(val bytes: Long?) : DownloadOffer
 
-    /** It plays only as a stream for now. */
+    /** It plays only as a stream. */
     data object StreamOnly : DownloadOffer
 
     /** The server could not be asked: [reason]. */
@@ -97,11 +97,14 @@ class DownloadPlanner(
      *  viewer's [audioPref] and [subtitlePref]. */
     suspend fun plan(itemId: String, quality: Int, audioPref: String?, subtitlePref: String?): PlanResult = try {
         // Whether it can come along first: a title that only streams asks
-        // for nothing more. What the control's size was read from serves
-        // (the download reads the master again itself).
+        // for nothing more. Then its master as the server serves it now -
+        // not the one the control's size was read from, up to half an hour
+        // old: the download picks its renditions by their place in it, and a
+        // ladder changed since would fetch another one than the size said.
         val probe = probe(itemId)
-        val masterText = probe.masterText
-        val masterUrl = probe.masterUrl
+        val fresh = if (downloadability(probe.info) is Downloadability.Yes) freshMaster(itemId) else null
+        val masterText = fresh?.first
+        val masterUrl = fresh?.second
         when {
             downloadability(probe.info) !is Downloadability.Yes -> PlanResult.NotPossible(DownloadFailure.StreamOnly)
             masterText == null || masterUrl == null -> PlanResult.NotPossible(DownloadFailure.Stopped)
@@ -120,7 +123,9 @@ class DownloadPlanner(
                     }
                 val audios = pickAudios(master.audiosOf(variant), audioPref)
                 val item = itemAsk.await()
-                val seriesTitle = item.parentId?.let { runCatching { api.getItem(it).title }.getOrNull() }
+                // An episode's series by its title: the downloads screen's
+                // heading for it, read now - the phone has no other source.
+                val seriesTitle = item.parentId?.let { api.getItem(it).title }
                 val subtitles = pickSubtitles(subsAsk.await(), audios.map { it.language }, audioPref, subtitlePref)
                 PlanResult.Ready(
                     DownloadPlan(
@@ -148,25 +153,16 @@ class DownloadPlanner(
         PlanResult.NotPossible(failureOf(e))
     }
 
-    /** The bit rate an hour of each quality takes, from up to [SAMPLE] of
-     *  the server's packaged titles - the middle one of what their masters
-     *  say for each size class - tallest first. Empty where none answered. */
-    suspend fun qualities(): List<DownloadQuality> {
+    /** What an hour of each quality takes, from up to [SAMPLE] of the
+     *  server's packaged titles ([qualityFigures]), tallest first. Empty
+     *  where none answered. */
+    suspend fun qualities(audioPref: String?): List<DownloadQuality> {
         val ids = runCatching { api.packagedIds().ids }.getOrDefault(emptyList()).take(SAMPLE)
-        val byClass = HashMap<Int, MutableList<Long>>()
-        coroutineScope {
+        val masters = coroutineScope {
             ids.map { id -> async { runCatching { probe(id).masterText }.getOrNull() } }
-                .forEach { ask ->
-                    val text = ask.await() ?: return@forEach
-                    for (v in parseHlsMaster(text).variants) {
-                        val c = sizeClass(v.width, v.height) ?: continue
-                        if (v.sizeBitrate > 0) byClass.getOrPut(c) { ArrayList() } += v.sizeBitrate
-                    }
-                }
+                .mapNotNull { it.await()?.let(::parseHlsMaster) }
         }
-        return byClass.entries
-            .sortedByDescending { it.key }
-            .map { (c, rates) -> DownloadQuality(c, bytesPerHour(rates.sorted()[rates.size / 2])) }
+        return qualityFigures(masters, audioPref)
     }
 
     /** Forgets what was read of [itemId]: it is asked for again. */
@@ -187,6 +183,14 @@ class DownloadPlanner(
         } finally {
             lock.withLock { if (inFlight[itemId] === ask && !ask.isActive) inFlight.remove(itemId) }
         }
+    }
+
+    /** [itemId]'s master as the server serves this device now, at Auto:
+     *  its text, and its URL without the stream token. */
+    private suspend fun freshMaster(itemId: String): Pair<String, String> = gate.withPermit {
+        val caps = caps()
+        val signed = buildMasterUrl(apiBase(), itemId, streamToken(), AUTO_QUALITY, caps)
+        api.hlsMaster(signed) to withoutStreamToken(signed)
     }
 
     private suspend fun read(itemId: String): Probe {
@@ -214,7 +218,7 @@ class DownloadPlanner(
         const val CACHE_MS = 30L * 60 * 1000
 
         /** How many packaged titles' masters Settings reads for its sizes. */
-        const val SAMPLE = 6
+        const val SAMPLE = 12
 
         /** How long a title's play info is waited for. */
         const val PLAY_INFO_WAIT_MS = 30_000L

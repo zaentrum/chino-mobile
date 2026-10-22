@@ -1,23 +1,19 @@
 package cloud.nalet.chino.mobile.downloads
 
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.net.Uri
-import android.os.BatteryManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
-import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.database.DatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.NoOpCacheEvictor
@@ -27,14 +23,17 @@ import androidx.media3.exoplayer.offline.DefaultDownloadIndex
 import androidx.media3.exoplayer.offline.DefaultDownloaderFactory
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadManager
+import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.scheduler.Requirements
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.SharedConnections
+import cloud.nalet.chino.mobile.data.auth.withoutStreamToken
 import cloud.nalet.chino.mobile.data.downloads.DEFAULT_DOWNLOAD_QUALITY
 import cloud.nalet.chino.mobile.data.downloads.DownloadFailure
 import cloud.nalet.chino.mobile.data.downloads.DownloadPreferences
+import cloud.nalet.chino.mobile.data.downloads.downloadKey
 import cloud.nalet.chino.mobile.data.downloads.pieceKey
-import cloud.nalet.chino.mobile.data.downloads.signedNow
+import cloud.nalet.chino.mobile.data.downloads.withoutStreamTokens
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,6 +44,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Interceptor
+import okhttp3.OkHttpClient
+import okhttp3.Response
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.net.ConnectException
@@ -61,25 +66,26 @@ import java.util.concurrent.TimeUnit
  *
  *     files/downloads/media/        the renditions' playlists and segments
  *                                   (Media3's SimpleCache, never evicted)
- *     files/downloads/titles/<id>/  each title's metadata, artwork, subtitles
+ *     files/downloads/titles/<key>/ each title's metadata, artwork, subtitles
  *     databases/chino_downloads.db  the download manager's index and the
  *                                   cache's own (apart from the Zap cache's)
  *
- * Every piece is kept under its URL without the stream token ([pieceKey]),
- * and every request is signed with the token valid when it goes out
- * ([signedNow], from the app's graph [app]): chino-stream writes the token
- * it was asked with into each URI of its playlists, so a download resumed
- * after the token's 6 h asks with a fresh one, and playback finds each
- * piece by its key whatever token fetched it. A refusal of the token
- * (401/403) forgets it: the manager's next attempt mints another. The graph
- * is the Application's, read at each request - a process the system starts
- * for the service alone, with no screen open, has it as well.
+ * No stream token is ever on the disk. chino-stream writes the token it was
+ * asked with into every URI of its playlists; a download keeps each playlist
+ * without them ([withoutStreamTokens]), each piece under its URL without one
+ * ([pieceKey]), and the index holds the master's URL without one. Each
+ * request is signed as it goes out ([Signing]), with the token valid then -
+ * only a request to the connected server, for a title of the account signed
+ * in now: any other goes without one, and the downloads of other accounts
+ * and servers wait, stopped. A refusal of the token (401/403) forgets it: the
+ * manager's next attempt mints another. Playback reads the phone alone.
  *
- * Downloads run while their requirements hold: a connection - an unmetered
- * one where downloads are Wi-Fi only (the default) - and, while the battery
- * is low, the charger. Media3 keeps the service in the foreground while it
- * waits (Android 12 and later) and picks up as they come back; below 12 its
- * scheduler restarts it.
+ * Downloads run while there is a connection - an unmetered one where
+ * downloads are Wi-Fi only (the default) - and nothing keeps the service in
+ * the foreground while they wait for one: it stops, and they go on when the
+ * connection comes back, while the app runs (Media3 restarts the service
+ * where Android lets it, the app's network watch where Media3 does not),
+ * and below Android 12 by its scheduler with the app closed.
  */
 internal class DownloadEngine private constructor(context: Context) {
     val context: Context = context.applicationContext
@@ -90,26 +96,29 @@ internal class DownloadEngine private constructor(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** The app's graph as it is now - the Application's, rebuilt when the
-     *  server changes - or null before the Application has built it. */
+     *  server changes - or null before the Application has built it. Read
+     *  at each request: a process the system starts for the service alone
+     *  has it as well. */
     private val app: AppContainer?
         get() = runCatching { (context as? AppContainerHost)?.container }.getOrNull()
 
-    private val http = SharedConnections.client.newBuilder()
+    /** The client the downloads fetch with: the app's connection pool, and
+     *  every request signed as it goes out. */
+    private val http: OkHttpClient = SharedConnections.client.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
+        .addInterceptor(SigningInterceptor(::tokenFor))
         .build()
 
-    /** Signs each request with the token valid now (on the downloader's own
-     *  thread: minting one may ask the server). */
-    private val signing = ResolvingDataSource.Resolver { spec ->
-        val tokens = app?.streamTokenManager
-        val minted = tokens?.let { t -> runCatching { runBlocking { withTimeoutOrNull(TOKEN_WAIT_MS) { t.valid() } } }.getOrNull() }
-        if (minted == null) spec else spec.withUri(Uri.parse(signedNow(spec.uri.toString(), minted)))
-    }
+    /** The client the downloads' artwork and subtitles are fetched with -
+     *  signed by their caller ([AndroidDownloads]), which asks the same of
+     *  them: the connected server, the account signed in now. */
+    val extrasClient: OkHttpClient = SharedConnections.client.newBuilder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
 
-    private val upstream: DataSource.Factory = RefusalAware(
-        ResolvingDataSource.Factory(OkHttpDataSource.Factory(http).setUserAgent(USER_AGENT), signing),
-    ) { runCatching { app?.streamTokenManager?.invalidate() } }
+    private val upstream: DataSource.Factory = downloadUpstream(http) { runCatching { app?.streamTokenManager?.invalidate() } }
 
     /** A piece's key: its URL without the stream token. */
     val keys = CacheKeyFactory { spec -> spec.key ?: pieceKey(spec.uri.toString()) }
@@ -148,7 +157,7 @@ internal class DownloadEngine private constructor(context: Context) {
 
     private val _downloads = MutableStateFlow<Map<String, DownloadSnapshot>>(emptyMap())
 
-    /** Every download the manager has, by id - its state and progress, at
+    /** Every download the manager has, by key - its state and progress, at
      *  most a second old while one is on its way. Snapshots: Media3's
      *  Download objects change their progress in place, and a map of the
      *  same objects would never read as changed. */
@@ -159,7 +168,7 @@ internal class DownloadEngine private constructor(context: Context) {
     /** The requirements the manager waits for (Requirements flags). */
     val notMet: StateFlow<Int> = _notMet.asStateFlow()
 
-    /** Ids handed to the service, not in the manager yet. */
+    /** Keys handed to the manager, not in its index yet. */
     val starting = MutableStateFlow<Set<String>>(emptySet())
 
     private val _indexRead = MutableStateFlow(false)
@@ -168,7 +177,11 @@ internal class DownloadEngine private constructor(context: Context) {
      *  the phone, not only the ones that changed since the process began. */
     val indexRead: StateFlow<Boolean> = _indexRead.asStateFlow()
 
-    private var batteryLow = batteryLowNow()
+    /** Called while a download is on its way and the phone is about to run
+     *  out of room ([LOW_SPACE_BYTES]): [AndroidDownloads] stops them before
+     *  the disk is full. */
+    @Volatile
+    var onLowSpace: (() -> Unit)? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -181,13 +194,18 @@ internal class DownloadEngine private constructor(context: Context) {
             override fun onInitialized(downloadManager: DownloadManager) = readAll()
 
             override fun onDownloadChanged(downloadManager: DownloadManager, download: Download, finalException: Exception?) {
-                val id = download.request.id
-                starting.value = starting.value - id
-                _downloads.value = _downloads.value + (id to download.snapshot())
+                val key = download.request.id
+                starting.value = starting.value - key
+                _downloads.value = _downloads.value + (key to download.snapshot())
                 if (download.state == Download.STATE_FAILED) {
-                    titles.update(id) { it.copy(failure = failureOfDownload(finalException, freeBytes())) }
+                    // In memory at once, on the disk off the main thread
+                    // (TitleFiles): a full disk fails a write, never the app.
+                    titles.update(key) { it.copy(failure = failureOfDownload(finalException, freeBytes())) }
                 }
                 if (download.state == Download.STATE_DOWNLOADING) tick()
+                // One that stopped as the connection went: nothing runs, so
+                // nothing keeps the service in the foreground.
+                if (download.state == Download.STATE_QUEUED && manager.notMetRequirements != 0) stopServiceWhileWaiting()
                 // Subtitles and artwork as the media comes: the app graph's
                 // downloads, built here if this process has none yet.
                 runCatching { (app?.downloads as? AndroidDownloads)?.changed(download) }
@@ -203,9 +221,11 @@ internal class DownloadEngine private constructor(context: Context) {
                 notMetRequirements: Int,
             ) {
                 _notMet.value = notMetRequirements
+                // Waiting for a connection: no service in the foreground for
+                // it, and no notification for hours.
+                if (notMetRequirements != 0) stopServiceWhileWaiting()
             }
         })
-        watchBattery()
         if (manager.isInitialized) readAll()
     }
 
@@ -234,7 +254,7 @@ internal class DownloadEngine private constructor(context: Context) {
 
     /** Downloads that wait or were cut off carry on (the app came to the
      *  front): unpaused - after Android 15's daily limit stopped them - and
-     *  the service started for them. */
+     *  the service started for them, where they can run now. */
     fun resumeIfPending() = onMain {
         manager.resumeDownloads()
         resumeWanted = true
@@ -245,19 +265,46 @@ internal class DownloadEngine private constructor(context: Context) {
     @Volatile
     private var resumeWanted = false
 
-    /** The service, for downloads that wait or were cut off, once asked
-     *  ([resumeIfPending]) and the index is read. */
+    /** The service, for downloads that can run now (a connection there,
+     *  none stopped), once asked ([resumeIfPending]) and the index is read.
+     *  Not for downloads that wait: they need no service until they run. */
     private fun startServiceIfPending() {
         if (!resumeWanted) return
         resumeWanted = false
-        val pending = _downloads.value.values.any {
-            it.state == Download.STATE_QUEUED || it.state == Download.STATE_DOWNLOADING || it.state == Download.STATE_RESTARTING
+        if (manager.notMetRequirements != 0) return
+        val runnable = _downloads.value.values.any {
+            it.stopReason == Download.STOP_REASON_NONE &&
+                (it.state == Download.STATE_QUEUED || it.state == Download.STATE_DOWNLOADING || it.state == Download.STATE_RESTARTING)
         }
-        if (pending) {
+        if (runnable) {
             runCatching {
                 androidx.media3.exoplayer.offline.DownloadService.sendResumeDownloads(context, ChinoDownloadService::class.java, true)
             }
         }
+    }
+
+    /** No service in the foreground while the downloads wait for a
+     *  connection: it is stopped, and started again as they run. Only a
+     *  service that runs already (in the foreground) is stopped. */
+    fun stopServiceWhileWaiting() = onMain {
+        if (manager.notMetRequirements == 0) return@onMain
+        if (_downloads.value.values.any { it.state == Download.STATE_DOWNLOADING || it.state == Download.STATE_REMOVING }) return@onMain
+        if (ChinoDownloadService.running) {
+            runCatching { context.stopService(Intent(context, ChinoDownloadService::class.java)) }
+        }
+    }
+
+    /** Whether the downloads wait for a connection now. */
+    val waitingForConnection: Boolean get() = manager.notMetRequirements != 0
+
+    /** Hands [request] to the manager directly, with [stopReason]: for a
+     *  download that waits (no service for it), or where the service cannot
+     *  be started now. */
+    fun addDirectly(request: DownloadRequest, stopReason: Int): Boolean {
+        var ok = true
+        val add = { ok = runCatching { manager.addDownload(request, stopReason) }.isSuccess }
+        if (Looper.myLooper() == Looper.getMainLooper()) add() else runBlocking(Dispatchers.Main) { add() }
+        return ok
     }
 
     private fun readAll() {
@@ -274,7 +321,9 @@ internal class DownloadEngine private constructor(context: Context) {
         startServiceIfPending()
     }
 
-    /** While a download is on its way, its progress once a second. */
+    /** While a download is on its way, its progress once a second - and the
+     *  room left on the phone: below [LOW_SPACE_BYTES] the downloads stop
+     *  before the disk is full. */
     private fun tick() {
         if (ticking) return
         ticking = true
@@ -287,6 +336,8 @@ internal class DownloadEngine private constructor(context: Context) {
                         _downloads.value = _downloads.value + current.associate { it.request.id to it.snapshot() }
                     }
                     if (current.none { it.state == Download.STATE_DOWNLOADING }) break
+                    val free = kotlinx.coroutines.withContext(Dispatchers.IO) { freeBytes() }
+                    if (free < LOW_SPACE_BYTES) onLowSpace?.invoke()
                 }
             } finally {
                 ticking = false
@@ -294,60 +345,33 @@ internal class DownloadEngine private constructor(context: Context) {
         }
     }
 
-    /** Wi-Fi only, or any connection; while the battery is low, the charger
-     *  as well - the download goes on once the phone charges. */
+    /** Wi-Fi only, or any connection. */
     private fun applyRequirements() {
-        var flags = if (_preferences.value.wifiOnly) Requirements.NETWORK_UNMETERED else Requirements.NETWORK
-        if (batteryLow) flags = flags or Requirements.DEVICE_CHARGING
+        val flags = if (_preferences.value.wifiOnly) Requirements.NETWORK_UNMETERED else Requirements.NETWORK
         manager.requirements = Requirements(flags)
         _notMet.value = manager.notMetRequirements
     }
 
-    private fun watchBattery() {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                val low = when (intent.action) {
-                    Intent.ACTION_BATTERY_LOW -> true
-                    Intent.ACTION_BATTERY_OKAY -> false
-                    else -> return
-                }
-                if (low != batteryLow) {
-                    batteryLow = low
-                    applyRequirements()
-                }
-            }
+    /**
+     * The stream token a request gets: one only for the connected server's
+     * media of a title of the account signed in now - a request to another
+     * origin, or for a title of another account or server, goes without one.
+     */
+    private fun tokenFor(url: HttpUrl): String? {
+        val graph = app ?: return null
+        return streamTokenFor(url, graph.serverBase, graph.activeOwner.value, titles.titles.value) {
+            runCatching { runBlocking { withTimeoutOrNull(TOKEN_WAIT_MS) { graph.streamTokenManager.valid() } } }.getOrNull()
         }
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_BATTERY_LOW)
-            addAction(Intent.ACTION_BATTERY_OKAY)
-        }
-        runCatching { ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED) }
-    }
-
-    private fun batteryLowNow(): Boolean {
-        val status = runCatching {
-            context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        }.getOrNull() ?: return false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            return status.getBooleanExtra(BatteryManager.EXTRA_BATTERY_LOW, false)
-        }
-        val level = status.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-        val scale = status.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-        return level >= 0 && scale > 0 && level * 100 / scale <= LOW_BATTERY_PERCENT
     }
 
     companion object {
-        private const val USER_AGENT = "chino-mobile/0.1 (Android; downloads)"
-
-        /** How long a request waits for its token to be minted. */
-        private const val TOKEN_WAIT_MS = 15_000L
         private const val SEGMENT_THREADS = 3
         private const val PREFS = "chino_downloads"
         private const val KEY_QUALITY = "quality"
         private const val KEY_WIFI_ONLY = "wifi_only"
 
-        /** Below API 28 the platform says no "low": its own threshold. */
-        private const val LOW_BATTERY_PERCENT = 15
+        /** How long a request waits for its token to be minted. */
+        private const val TOKEN_WAIT_MS = 15_000L
 
         @Volatile
         private var instance: DownloadEngine? = null
@@ -357,16 +381,68 @@ internal class DownloadEngine private constructor(context: Context) {
     }
 }
 
+/**
+ * The stream token a download's request gets: one only for the connected
+ * server's media ([serverBase]'s origin) of a title of the account signed in
+ * now ([owner]) - its path names the item (/items/{id}/...) - minted by
+ * [mint] then. A request to another origin, or for a title of another
+ * account or server, gets none.
+ */
+internal fun streamTokenFor(
+    url: HttpUrl,
+    serverBase: String,
+    owner: cloud.nalet.chino.mobile.data.downloads.Owner?,
+    titles: Map<String, cloud.nalet.chino.mobile.data.downloads.DownloadedTitle>,
+    mint: () -> String?,
+): String? {
+    val base = serverBase.toHttpUrlOrNull() ?: return null
+    if (url.scheme != base.scheme || url.host != base.host || url.port != base.port) return null
+    if (owner == null || owner.server.trimEnd('/') != serverBase.trimEnd('/')) return null
+    val segments = url.pathSegments
+    val at = segments.indexOf("items")
+    if (at < 0) return null
+    val itemId = segments.getOrNull(at + 1) ?: return null
+    val title = titles[downloadKey(owner.server, itemId)] ?: return null
+    if (!title.ownedBy(owner)) return null
+    return mint()
+}
+
+/** Signs a download's request as it goes out ([tokenFor]), in place of any
+ *  token it carries; one that gets none goes without. */
+internal class SigningInterceptor(private val tokenFor: (HttpUrl) -> String?) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val bare = request.url.newBuilder().removeAllQueryParameters(STREAM_PARAM).build()
+        val token = tokenFor(bare)
+        val url = if (token != null) bare.newBuilder().addQueryParameter(STREAM_PARAM, token).build() else bare
+        return chain.proceed(request.newBuilder().url(url).build())
+    }
+
+    private companion object {
+        const val STREAM_PARAM = "stream"
+    }
+}
+
+/** What a download reads from the server: [http] (which signs each
+ *  request), its playlists without the tokens in them ([UnsignedPlaylists]),
+ *  and a refused token forgotten ([onRefused]). */
+internal fun downloadUpstream(http: OkHttpClient, onRefused: () -> Unit): DataSource.Factory = DataSource.Factory {
+    RefusalAware(UnsignedPlaylists(OkHttpDataSource.Factory(http).setUserAgent(USER_AGENT).createDataSource()), onRefused)
+}
+
+private const val USER_AGENT = "chino-mobile/0.1 (Android; downloads)"
+
 /** A download as it is at one moment: its state, how far, what it fetched,
- *  and its request. */
+ *  its stop reason, and its request. */
 internal data class DownloadSnapshot(
     val state: Int,
     val percent: Float,
     val bytes: Long,
-    val request: androidx.media3.exoplayer.offline.DownloadRequest,
+    val request: DownloadRequest,
+    val stopReason: Int = Download.STOP_REASON_NONE,
 )
 
-private fun Download.snapshot() = DownloadSnapshot(state, percentDownloaded, bytesDownloaded, request)
+private fun Download.snapshot() = DownloadSnapshot(state, percentDownloaded, bytesDownloaded, request, stopReason)
 
 /** Media3's download index and the cache's, in a database file of their
  *  own: the Zap cache keeps its own in Media3's default one. */
@@ -376,22 +452,80 @@ private class DownloadsDatabase(context: Context) :
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
 }
 
+/**
+ * Serves an HLS playlist without the stream tokens chino-stream wrote into
+ * it ([withoutStreamTokens]): read whole, and the range asked for served of
+ * that, so a playlist is kept on the phone, and played, without one. Any
+ * other piece passes as it is. The URI it reports is without its token
+ * either way: the cache keeps no URL that carries one.
+ */
+internal class UnsignedPlaylists(private val inner: DataSource) : DataSource {
+    private var data: ByteArray? = null
+    private var readAt = 0
+    private var uri: Uri? = null
+
+    override fun addTransferListener(transferListener: TransferListener) = inner.addTransferListener(transferListener)
+
+    override fun open(dataSpec: DataSpec): Long {
+        uri = unsigned(dataSpec.uri)
+        if (dataSpec.uri.path?.endsWith(".m3u8") != true) {
+            data = null
+            return inner.open(dataSpec)
+        }
+        val whole = dataSpec.buildUpon().setPosition(0).setLength(C.LENGTH_UNSET.toLong()).build()
+        val body = ByteArrayOutputStream()
+        try {
+            inner.open(whole)
+            val buf = ByteArray(16 * 1024)
+            while (true) {
+                val n = inner.read(buf, 0, buf.size)
+                if (n == C.RESULT_END_OF_INPUT) break
+                body.write(buf, 0, n)
+            }
+        } finally {
+            inner.close()
+        }
+        val clean = withoutStreamTokens(body.toByteArray().decodeToString()).encodeToByteArray()
+        val start = dataSpec.position.coerceIn(0L, clean.size.toLong()).toInt()
+        val end = if (dataSpec.length == C.LENGTH_UNSET.toLong()) clean.size else (start + dataSpec.length).coerceAtMost(clean.size.toLong()).toInt()
+        data = clean.copyOfRange(start, end)
+        readAt = 0
+        return (end - start).toLong()
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        val d = data ?: return inner.read(buffer, offset, length)
+        if (length == 0) return 0
+        if (readAt >= d.size) return C.RESULT_END_OF_INPUT
+        val n = minOf(length, d.size - readAt)
+        System.arraycopy(d, readAt, buffer, offset, n)
+        readAt += n
+        return n
+    }
+
+    override fun getUri(): Uri? = if (data != null) uri else inner.uri?.let(::unsigned) ?: uri
+
+    override fun getResponseHeaders(): Map<String, List<String>> = inner.responseHeaders
+
+    override fun close() {
+        if (data == null) inner.close()
+        data = null
+    }
+
+    private fun unsigned(u: Uri): Uri = Uri.parse(withoutStreamToken(u.toString()))
+}
+
 /** Forgets the stream token when the server refuses one (401/403): the
  *  manager tries the download again, and that asks for a new one. */
 private class RefusalAware(
-    private val inner: DataSource.Factory,
+    private val inner: DataSource,
     private val onRefused: () -> Unit,
-) : DataSource.Factory {
-    override fun createDataSource(): DataSource {
-        val source = inner.createDataSource()
-        return object : DataSource by source {
-            override fun open(dataSpec: DataSpec): Long = try {
-                source.open(dataSpec)
-            } catch (e: HttpDataSource.InvalidResponseCodeException) {
-                if (e.responseCode == 401 || e.responseCode == 403) onRefused()
-                throw e
-            }
-        }
+) : DataSource by inner {
+    override fun open(dataSpec: DataSpec): Long = try {
+        inner.open(dataSpec)
+    } catch (e: HttpDataSource.InvalidResponseCodeException) {
+        if (e.responseCode == 401 || e.responseCode == 403) onRefused()
+        throw e
     }
 }
 
@@ -416,5 +550,6 @@ internal fun failureOfDownload(e: Throwable?, freeBytes: Long): DownloadFailure 
     return DownloadFailure.Stopped
 }
 
-/** Below this, a download that fails is out of room. */
-internal const val LOW_SPACE_BYTES = 50L * 1_000_000
+/** Below this, the downloads stop before the disk is full, and a download
+ *  that fails is out of room. */
+internal const val LOW_SPACE_BYTES = 150L * 1_000_000

@@ -122,19 +122,66 @@ fun estimateBytes(variant: HlsVariant, audioCount: Int, durationMs: Long?): Long
 fun bytesPerHour(bitsPerSecond: Long): Long = bitsPerSecond * 3_600L / 8L
 
 /**
- * A size as the app writes it: GB with one decimal from 1 GB up ("1.4 GB"),
- * MB below it ("820 MB"), decimal units as a phone's storage counts them.
- * Never "0 MB" for something there is: "1 MB".
+ * A size as the app writes it: GB with one decimal from 1 GB up, without a
+ * trailing zero ("1.4 GB", "18 GB"), MB below it ("820 MB"), decimal units
+ * as a phone's storage counts them. Never "0 MB" for something there is:
+ * "1 MB".
  */
 fun formatSize(bytes: Long): String {
     val b = bytes.coerceAtLeast(0L)
     val mb = (b + MB / 2) / MB
-    // 999.6 MB rounds to a GB: "1.0 GB", not "1000 MB".
+    // 999.6 MB rounds to a GB: "1 GB", not "1000 MB".
     if (b >= GB || mb >= 1_000L) {
         val tenths = (b * 10 + GB / 2) / GB
-        return "${tenths / 10}.${tenths % 10} GB"
+        return if (tenths % 10 == 0L) "${tenths / 10} GB" else "${tenths / 10}.${tenths % 10} GB"
     }
     return "${mb.coerceAtLeast(if (b > 0) 1 else 0)} MB"
+}
+
+/**
+ * What an hour takes at each quality, for Settings, from the masters of a
+ * sample of the server's packaged titles: for every quality, every title's
+ * rendition a download at it would keep ([pickVariant]) and its audio
+ * ([pickAudios]: a second rendition adds [EXTRA_AUDIO_BPS]) - the same
+ * titles for every quality, the middle one of them - never less than a
+ * lower quality's, in two significant digits. Only the qualities some title
+ * has, tallest first; a quality fewer than [minTitles] titles have shows no
+ * figure: better none than one made of other qualities' renditions.
+ */
+fun qualityFigures(masters: List<HlsMaster>, audioPref: String?, minTitles: Int = MIN_QUALITY_TITLES): List<DownloadQuality> {
+    val withVariants = masters.filter { it.variants.isNotEmpty() }
+    val classes = withVariants
+        .flatMap { m -> m.variants.mapNotNull { sizeClass(it.width, it.height) } }
+        .distinct()
+        .sorted()
+    var floor = 0L
+    val ascending = classes.map { c ->
+        val perTitle = withVariants.mapNotNull { m ->
+            val v = pickVariant(m.variants, c) ?: return@mapNotNull null
+            val bps = v.sizeBitrate.takeIf { it > 0 } ?: return@mapNotNull null
+            val extra = if (pickAudios(m.audiosOf(v), audioPref).size > 1) EXTRA_AUDIO_BPS else 0L
+            bytesPerHour(bps + extra)
+        }.sorted()
+        val having = withVariants.count { m -> m.variants.any { sizeClass(it.width, it.height) == c } }
+        val median = perTitle.takeIf { it.isNotEmpty() }?.let { it[it.size / 2] }
+        val figure = median?.let { maxOf(it, floor) }
+        if (figure != null) floor = figure
+        DownloadQuality(c, figure?.takeIf { having >= minTitles }?.let(::twoSignificantDigits))
+    }
+    return ascending.reversed()
+}
+
+/** How many sampled titles must have a quality for Settings to show what an
+ *  hour of it takes. */
+const val MIN_QUALITY_TITLES = 3
+
+/** [n] in two significant digits: 932 MB is about 930 MB, 1.47 GB about
+ *  1.5 GB. */
+internal fun twoSignificantDigits(n: Long): Long {
+    if (n < 100) return n
+    var factor = 1L
+    while (n / factor >= 100) factor *= 10
+    return (n + factor / 2) / factor * factor
 }
 
 private const val MB = 1_000_000L

@@ -176,7 +176,10 @@ class DownloadChoiceTest {
     fun sizesReadInGigabytesWithOneDecimalAndInMegabytesBelow() {
         assertEquals("1.4 GB", formatSize(1_440_000_000))
         assertEquals("820 MB", formatSize(820_000_000))
-        assertEquals("1.0 GB", formatSize(999_600_000))
+        // One decimal without a trailing zero.
+        assertEquals("1 GB", formatSize(999_600_000))
+        assertEquals("18 GB", formatSize(18_000_000_000))
+        assertEquals("2 GB", formatSize(2_040_000_000))
         assertEquals("12.4 GB", formatSize(12_400_000_000))
         assertEquals("1 MB", formatSize(1_000))
         assertEquals("0 MB", formatSize(0))

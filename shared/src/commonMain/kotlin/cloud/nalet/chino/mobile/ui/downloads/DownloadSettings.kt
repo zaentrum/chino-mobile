@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,10 +52,13 @@ fun DownloadSettings() {
     if (features?.downloads == false) return
     val prefs by downloads.preferences.collectAsState()
     val scope = rememberCoroutineScope()
-    // The qualities the server's packaged titles come in, with their sizes;
-    // without an answer, the usual three, without sizes.
+    // The qualities the server's packaged titles come in, with what an hour
+    // takes where enough titles say (qualityFigures) - for the audio the
+    // viewer's language keeps; without an answer, the usual three, without
+    // sizes.
     val offered by produceState<List<DownloadQuality>?>(null) {
-        value = runCatching { container.downloadPlanner.qualities() }.getOrDefault(emptyList())
+        val audioPref = runCatching { container.settings.flow.first().preferredAudioLang }.getOrNull()
+        value = runCatching { container.downloadPlanner.qualities(audioPref) }.getOrDefault(emptyList())
     }
     val qualities = (offered?.takeIf { it.isNotEmpty() } ?: FALLBACK.map { DownloadQuality(it, null) })
         .let { list -> if (list.any { it.sizeClass == prefs.quality }) list else (list + DownloadQuality(prefs.quality, null)).sortedByDescending { it.sizeClass } }

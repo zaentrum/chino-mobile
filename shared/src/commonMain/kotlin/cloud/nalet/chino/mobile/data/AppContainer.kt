@@ -17,6 +17,7 @@ import cloud.nalet.chino.mobile.data.downloads.DownloadStarts
 import cloud.nalet.chino.mobile.data.downloads.Downloads
 import cloud.nalet.chino.mobile.data.downloads.DownloadsPlatform
 import cloud.nalet.chino.mobile.data.downloads.MemoryProgressBookStore
+import cloud.nalet.chino.mobile.data.downloads.Owner
 import cloud.nalet.chino.mobile.data.downloads.PlanResult
 import cloud.nalet.chino.mobile.data.downloads.ProgressQueue
 import cloud.nalet.chino.mobile.data.downloads.ProgressSync
@@ -33,7 +34,12 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -243,6 +249,8 @@ class AppContainer(
      * watchlist, likes and lists cached for it.
      */
     suspend fun forgetDeletedAccount(accountId: String) {
+        // Its downloads on this phone go too, as Delete Account said.
+        runCatching { downloads?.dropOwner(Owner(serverBase, accountId)) }
         accountStore.remove(accountId)
         http.forgetBearer()
         streamTokenManager.invalidate()
@@ -325,17 +333,62 @@ class AppContainer(
         )
     }
 
+    /** Who the downloads shown now are for: the account signed in now, by
+     *  its subject, on the connected server; null for nobody. */
+    val activeOwner: StateFlow<Owner?> by lazy {
+        accountStore.activeAccountId
+            .map { id -> id?.let { Owner(serverBase, it) } }
+            .stateIn(appScope, SharingStarted.Eagerly, accountStore.snapshotBlocking().activeAccount?.let { Owner(serverBase, it.id) })
+    }
+
+    /** Item ids the server's word took off the phone just now (POST
+     *  /me/available left them out): a player playing one of them from the
+     *  phone stops, and says why. */
+    val downloadsTaken = MutableSharedFlow<List<String>>(extraBufferCapacity = 8)
+
+    /**
+     * Whether playback goes to another screen now - a Cast session: Play on
+     * a downloaded title then plays from the server there, and nothing on
+     * the phone goes to it. Set by the platform that casts; false without.
+     */
+    var playsOnAnotherScreen: () -> Boolean = { false }
+
     /** The player's positions: sent at once, or kept and sent once the
-     *  server can be reached again. */
+     *  server can be reached again - with their age, and with the bearer of
+     *  the account that played them. */
     val progressSync: ProgressSync by lazy {
         ProgressSync(
             queue = ProgressQueue(downloadsPlatform?.progressBookStore ?: MemoryProgressBookStore()),
-            post = { id, body -> chinoApi.postProgress(id, body) },
+            post = { id, body, bearer -> chinoApi.postProgress(id, body, bearer) },
             account = { accountStore.snapshotBlocking().activeAccount?.id },
             server = { serverBase },
             scope = appScope,
+            postWatched = { id, bearer -> chinoApi.postWatched(id, bearer) },
+            bearerOf = { accountId ->
+                // The token of the account signed in now, renewed if it must
+                // be - and only while it is still the one asked about.
+                val token = tokenManager.validAccessToken()
+                token.takeIf { accountStore.snapshotBlocking().activeAccount?.id == accountId }
+            },
+            onPhone = { accountId, itemId ->
+                downloads?.isOnPhone(Owner(serverBase, accountId), itemId) ?: false
+            },
+            // A title's progress refused as not there (404, 410) for the
+            // account, of a title on the phone: the server is asked whether
+            // the account may still watch it - and the download goes if not.
+            onRefused = { accountId, itemId ->
+                val owner = Owner(serverBase, accountId)
+                if (downloads?.isOnPhone(owner, itemId) == true && activeOwner.value == owner) {
+                    appScope.launch { runCatching { downloads?.checkAvailability(listOf(itemId)) } }
+                }
+            },
             onQueued = { downloadsPlatform?.scheduleProgressFlush() },
-            onReach = { answered -> serverReach.report(answered) },
+            // A position the server answered is the server reached. One it
+            // did not answer is a reason to look, not a verdict: a single
+            // failed POST does not make the downloads ignore the server.
+            onReach = { answered ->
+                if (answered) serverReach.report(true) else appScope.launch { runCatching { serverReach.check() } }
+            },
         )
     }
 

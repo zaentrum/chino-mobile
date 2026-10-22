@@ -4,8 +4,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Downloads: the service they run in, in the foreground, with a
-         notification of how far they are (shared downloads/). -->
+    <!-- Downloads: the service they run in, in the foreground while one is
+         on its way (never while they wait), with a notification of how far
+         it is (shared downloads/). Its type is dataSync. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

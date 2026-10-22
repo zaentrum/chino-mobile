@@ -84,6 +84,7 @@ fun HomeSection(
                 sentence = s.message,
                 action = "try again",
                 onAction = { model.retry() },
+                details = s.details,
             )
         } else Center {
             Column(

@@ -5,19 +5,23 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** Where the app opens: on the downloads when the server cannot be reached,
- *  never on a sign-in that needs it; as before otherwise. */
+/** Where the app opens: on the account's downloads when the server cannot
+ *  be reached - after "Who's watching?" for several accounts - and nowhere
+ *  without an account; as before otherwise. */
 class StartScreenTest {
     private fun start(configured: Boolean = true, accounts: Int = 1, active: Boolean = true, reach: Reach, downloads: Boolean = true) =
         startScreen(configured, accounts, active, reach, downloads)
 
     @Test
-    fun aServerThatCannotBeReachedOpensTheDownloads() {
+    fun aServerThatCannotBeReachedOpensTheAccountsDownloads() {
         assertEquals(StartScreen.Downloads, start(reach = Reach.Unreachable))
-        // Several accounts: the active one's downloads, no picker.
-        assertEquals(StartScreen.Downloads, start(accounts = 3, reach = Reach.Unreachable))
-        // Nobody signed in: the downloads alone, no sign-in prompt.
-        assertEquals(StartScreen.DownloadsSignedOut, start(accounts = 0, active = false, reach = Reach.Unreachable))
+        // Several accounts: each sees its own downloads - who is watching
+        // first, which works without the server.
+        assertEquals(StartScreen.AccountPickerThenDownloads, start(accounts = 3, reach = Reach.Unreachable))
+        assertEquals(StartScreen.AccountPickerThenDownloads, start(accounts = 2, active = false, reach = Reach.Unreachable))
+        // Nobody signed in has no downloads: the sign-in, which waits for the
+        // server - no downloads screen of nobody's.
+        assertEquals(StartScreen.SignIn, start(accounts = 0, active = false, reach = Reach.Unreachable))
     }
 
     @Test

@@ -89,18 +89,20 @@ enum class StartScreen {
     /** The shell, on its downloads: the server cannot be reached. */
     Downloads,
 
-    /** The downloads alone, for nobody signed in: the server cannot be
-     *  reached, and a sign-in needs it. */
-    DownloadsSignedOut,
+    /** "Who's watching?", then the shell on its downloads: the server
+     *  cannot be reached and the phone has several accounts - each sees its
+     *  own downloads, and the picker needs no server. */
+    AccountPickerThenDownloads,
 }
 
 /**
  * Where the app opens: without a server, where one is added; with one that
- * cannot be reached, on the downloads - which play without it - and never
- * on a sign-in, which needs it; else as before: the sign-in, the account
- * picker for several accounts, the shell. [downloadsSupported]: the
- * platform keeps downloads (Android); without them the server's reach
- * changes nothing.
+ * cannot be reached, on the account's downloads - which play without it -
+ * after "Who's watching?" where the phone has several accounts. Downloads
+ * are an account's: nobody signed in sees none, and the sign-in waits for
+ * the server. Else as before: the sign-in, the account picker for several
+ * accounts, the shell. [downloadsSupported]: the platform keeps downloads
+ * (Android); without them the server's reach changes nothing.
  */
 fun startScreen(
     serverConfigured: Boolean,
@@ -108,11 +110,14 @@ fun startScreen(
     hasActiveAccount: Boolean,
     reach: Reach,
     downloadsSupported: Boolean,
-): StartScreen = when {
-    !serverConfigured -> StartScreen.AddServer
-    reach == Reach.Unreachable && downloadsSupported ->
-        if (hasActiveAccount) StartScreen.Downloads else StartScreen.DownloadsSignedOut
-    !hasActiveAccount -> StartScreen.SignIn
-    accounts >= 2 -> StartScreen.AccountPicker
-    else -> StartScreen.Home
+): StartScreen {
+    val offline = reach == Reach.Unreachable && downloadsSupported
+    return when {
+        !serverConfigured -> StartScreen.AddServer
+        offline && accounts >= 2 -> StartScreen.AccountPickerThenDownloads
+        offline && hasActiveAccount -> StartScreen.Downloads
+        !hasActiveAccount -> StartScreen.SignIn
+        accounts >= 2 -> StartScreen.AccountPicker
+        else -> StartScreen.Home
+    }
 }
