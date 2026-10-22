@@ -230,14 +230,16 @@ data class DownloadEntry(
 
     /** The size a row shows: the size its offer said, as the server
      *  reported it - the same number before and after (the status carries
-     *  it once it is on the phone); for one that failed, none - a failed
-     *  download keeps nothing. */
+     *  it once it is on the phone); on its way with none said, none - what
+     *  has come so far is not the title's size, and is left out rather than
+     *  guessed; for one that failed, none - a failed download keeps
+     *  nothing. */
     val size: Long?
         get() = when (status) {
             is DownloadStatus.Downloaded -> status.bytes
             is DownloadStatus.CheckNeeded -> status.bytes
             is DownloadStatus.Failed -> null
-            else -> title.estimatedBytes ?: onPhoneBytes.takeIf { it > 0 }
+            else -> title.estimatedBytes?.takeIf { it > 0 }
         }
 
     /** Whether some of it is on the phone: what the storage line, "delete

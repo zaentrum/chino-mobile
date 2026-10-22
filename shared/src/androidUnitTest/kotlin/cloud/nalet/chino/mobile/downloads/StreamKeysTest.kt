@@ -7,6 +7,8 @@ import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.hls.playlist.HlsMultivariantPlaylist
 import cloud.nalet.chino.mobile.data.api.PlayInfo
 import cloud.nalet.chino.mobile.data.downloads.DownloadPlan
+import cloud.nalet.chino.mobile.data.downloads.DownloadedTitle
+import cloud.nalet.chino.mobile.data.downloads.OwnerClaim
 import cloud.nalet.chino.mobile.data.downloads.parseHlsMaster
 import cloud.nalet.chino.mobile.data.model.Item
 import org.junit.Test
@@ -110,6 +112,33 @@ class StreamKeysTest {
         // Media and folder: what the row says, what the line and the
         // questions sum - partly fetched ones too, while they wait.
         assertEquals(mapOf("there" to 49_280_000L, "coming" to 10_250_000L, "waiting" to 3_000_000L), figures)
+    }
+
+    @Test
+    fun aDownloadLeftFailedInTheIndexHasItsMediaFreedAtTheStart() {
+        fun snapshot(state: Int) = DownloadSnapshot(
+            state = state,
+            percent = 0f,
+            bytes = 7_000_000,
+            request = DownloadRequest.Builder("k", Uri.parse(masterUrl)).build(),
+        )
+        fun title(id: String, owned: Boolean = true) = DownloadedTitle(
+            itemId = id,
+            item = Item(id = id, title = id, kind = "movie"),
+            quality = "Medium (720p)",
+            server = "s",
+            owners = if (owned) listOf(OwnerClaim("anna", addedAtMs = 1, checkedAtMs = 1)) else emptyList(),
+        )
+        val titles = listOf(title("failed"), title("fine"), title("nobodys", owned = false), title("odd")).associateBy { it.key }
+        val downloads = mapOf(
+            title("failed").key to snapshot(Download.STATE_FAILED),
+            title("fine").key to snapshot(Download.STATE_COMPLETED),
+            title("nobodys").key to snapshot(Download.STATE_STOPPED),
+            "gone~0" to snapshot(Download.STATE_QUEUED),
+            "new~0" to snapshot(Download.STATE_QUEUED),
+        )
+        val freed = mediaToFreeAtStart(titles, downloads, starting = setOf("new~0"), unreadable = listOf(title("odd").key))
+        assertEquals(setOf("gone~0", title("nobodys").key, title("odd").key, title("failed").key), freed.toSet())
     }
 
     @Test

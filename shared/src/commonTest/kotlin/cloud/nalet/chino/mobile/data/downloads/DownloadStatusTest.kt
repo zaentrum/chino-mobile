@@ -54,6 +54,15 @@ class DownloadStatusTest {
     }
 
     @Test
+    fun aFailedDownloadWhoseMediaIsFreedReadsFailedAllAlong() {
+        // Out of room, the server's switch, the manager's failure: its media
+        // goes, and it says why the whole time - never a moment of "queued".
+        assertEquals(DownloadStatus.Failed(DownloadFailure.NoSpace), status(ManagerState.Removing, failure = DownloadFailure.NoSpace))
+        assertEquals(DownloadStatus.Failed(DownloadFailure.ServerOff), status(ManagerState.Removing, failure = DownloadFailure.ServerOff))
+        assertEquals(DownloadStatus.Queued, status(ManagerState.Removing))
+    }
+
+    @Test
     fun aFailureSaysWhy() {
         assertEquals(DownloadStatus.Failed(DownloadFailure.NoSpace), status(ManagerState.Failed, failure = DownloadFailure.NoSpace))
         assertEquals(DownloadStatus.Failed(DownloadFailure.Stopped), status(ManagerState.Failed))
@@ -275,6 +284,28 @@ class SidecarMissTest {
     }
 
     @Test
+    fun aSizeTheServerDidNotSayIsLeftOutNotTheBytesSoFar() {
+        val claim = OwnerClaim("anna", addedAtMs = 1, checkedAtMs = 1)
+        fun entry(estimated: Long?) = DownloadEntry(
+            title = DownloadedTitle(
+                itemId = "film",
+                item = Item(id = "film", title = "A Film", kind = "movie"),
+                quality = "Medium (720p)",
+                estimatedBytes = estimated,
+                server = "s",
+                owners = listOf(claim),
+            ),
+            status = DownloadStatus.Downloading(40),
+            onPhoneBytes = 120_000_000,
+            claim = claim,
+            mediaBytes = 119_800_000,
+        )
+        assertNull(entry(null).size)
+        assertEquals("downloading 40%", rowLabel(entry(null).status, entry(null).size))
+        assertEquals("downloading 40% · 300\u00A0MB", rowLabel(entry(300_000_000).status, entry(300_000_000).size))
+    }
+
+    @Test
     fun aFailedTitleShowsNoSizeOnItsRow() {
         val claim = OwnerClaim("anna", addedAtMs = 1, checkedAtMs = 1)
         val entry = DownloadEntry(
@@ -330,10 +361,10 @@ class OnThePhoneTest {
         )
         val there = onThePhone(entries)
         assertEquals(DownloadsSummary(2, 519_000_000), there)
-        assertEquals("This removes 2 downloads, 519 MB, from this phone.", deleteAllSentence(there.titles, there.bytes, DeviceKind.Phone))
-        assertEquals("Your 2 downloads, 519 MB, are deleted from this phone.", yourDownloadsGoSentence(there, DeviceKind.Phone))
+        assertEquals("This removes 2 downloads, 519\u00A0MB, from this phone.", deleteAllSentence(there.titles, there.bytes, DeviceKind.Phone))
+        assertEquals("Your 2 downloads, 519\u00A0MB, are deleted from this phone.", yourDownloadsGoSentence(there, DeviceKind.Phone))
         assertEquals(
-            "519 MB used by downloads · 18 GB free on this phone",
+            "519\u00A0MB used by downloads · 18\u00A0GB free on this phone",
             storageLine(StorageUse(there.bytes, 18_000_000_000), DeviceKind.Phone, anythingOnThePhone = !there.isEmpty),
         )
     }
@@ -348,7 +379,7 @@ class OnThePhoneTest {
         val there = onThePhone(entries)
         assertTrue(there.isEmpty)
         assertEquals("This clears the list of downloads.", deleteAllSentence(there.titles, there.bytes, DeviceKind.Phone))
-        assertEquals("18 GB free on this phone", storageLine(StorageUse(there.bytes, 18_000_000_000), DeviceKind.Phone, anythingOnThePhone = !there.isEmpty))
+        assertEquals("18\u00A0GB free on this phone", storageLine(StorageUse(there.bytes, 18_000_000_000), DeviceKind.Phone, anythingOnThePhone = !there.isEmpty))
     }
 }
 

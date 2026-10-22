@@ -632,18 +632,19 @@ internal class AndroidDownloads(
      * the two) goes; a title no account claims goes; a title that does not
      * read any more goes with its media - nothing could show or play it; a
      * title whose download never reached the manager, and that did not say
-     * why, stopped.
+     * why, stopped. A download left failed in the index - the process ended
+     * between the manager's failure and the removal it sets off - has what
+     * it fetched freed, as a failed download does.
      */
     private fun reconcile() {
         val titles = engine.titles.titles.value
         val downloads = engine.downloads.value
         val starting = engine.starting.value
-        val orphanMedia = downloads.keys.filter { titles[it] == null && it !in starting }
         val unclaimed = titles.values.filter { it.owners.isEmpty() }.map { it.key }
         if (unclaimed.isNotEmpty()) engine.titles.change { BookChange(it - unclaimed.toSet(), unclaimed) }
         val unreadable = engine.titles.unreadable
         for (key in unreadable) engine.titles.removeUnreadable(key)
-        removeMedia((orphanMedia + unclaimed + unreadable).distinct())
+        removeMedia(mediaToFreeAtStart(titles, downloads, starting, unreadable))
         for (t in titles.values) {
             if (t.owners.isNotEmpty() && downloads[t.key] == null && t.failure == null && t.key !in starting) {
                 engine.titles.update(t.key) { it.copy(failure = DownloadFailure.Stopped) }
@@ -861,6 +862,26 @@ internal class AndroidDownloads(
 
         val NOTICES = MapSerializer(String.serializer(), ListSerializer(String.serializer()))
     }
+}
+
+/**
+ * The downloads whose media goes as the process starts ([AndroidDownloads]'
+ * reconcile): one whose title went (the process ended between the two) and
+ * is not being started, one whose title no account claims, one whose title
+ * does not read any more, and one left failed in the index - the process
+ * ended between the manager's failure and the removal it sets off; a failed
+ * download frees what it fetched.
+ */
+internal fun mediaToFreeAtStart(
+    titles: Map<String, DownloadedTitle>,
+    downloads: Map<String, DownloadSnapshot>,
+    starting: Set<String>,
+    unreadable: Collection<String>,
+): List<String> {
+    val orphanMedia = downloads.keys.filter { titles[it] == null && it !in starting }
+    val unclaimed = titles.values.filter { it.owners.isEmpty() }.map { it.key }
+    val leftFailed = downloads.filterValues { it.state == Download.STATE_FAILED }.keys
+    return (orphanMedia + unclaimed + unreadable + leftFailed).distinct()
 }
 
 /** Media3's download state as the shared mapping names it. */

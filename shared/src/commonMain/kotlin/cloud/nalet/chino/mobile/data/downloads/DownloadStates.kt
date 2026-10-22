@@ -39,7 +39,12 @@ fun downloadStatus(
         STOP_SERVER_OFF -> DownloadStatus.Failed(DownloadFailure.ServerOff)
         else -> waiting(waitsForNetwork, wifiOnly)
     }
-    ManagerState.Queued, ManagerState.Restarting, ManagerState.Removing -> waiting(waitsForNetwork, wifiOnly)
+    ManagerState.Queued, ManagerState.Restarting -> waiting(waitsForNetwork, wifiOnly)
+    // Its media being freed: one that failed - out of room, the server's
+    // switch, the manager's failure - says so all along, never a moment of
+    // "queued"; one going for another reason (deleted, its last claim gone)
+    // has left the list already.
+    ManagerState.Removing -> if (failure != null) DownloadStatus.Failed(failure) else waiting(waitsForNetwork, wifiOnly)
     ManagerState.Downloading -> DownloadStatus.Downloading(wholePercent(percent))
     ManagerState.Completed -> when {
         extrasDone -> if (checkNeeded) DownloadStatus.CheckNeeded(bytes) else DownloadStatus.Downloaded(bytes)

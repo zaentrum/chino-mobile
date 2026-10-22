@@ -36,16 +36,16 @@ class DownloadControlTest {
 
     @Test
     fun everyStateOnItsWayCarriesTheSizeItsOfferSaid() {
-        assertEquals("download · 1.4 GB", controlLabel(ControlState.Offer(1_400_000_000)))
+        assertEquals("download · 1.4\u00A0GB", controlLabel(ControlState.Offer(1_400_000_000)))
         // Asked for and worked out now: queued, with the offer's size.
-        assertEquals("queued · 1.4 GB", controlLabel(ControlState.Starting(1_400_000_000)))
-        assertEquals("queued · 1.4 GB", controlLabel(onPhone(DownloadStatus.Queued)))
-        assertEquals("waiting for Wi-Fi · 1.4 GB", controlLabel(onPhone(DownloadStatus.WaitingForWifi)))
-        assertEquals("waiting for a connection · 1.4 GB", controlLabel(onPhone(DownloadStatus.WaitingForConnection)))
-        assertEquals("downloading 42% · 1.4 GB", controlLabel(onPhone(DownloadStatus.Downloading(42))))
+        assertEquals("queued · 1.4\u00A0GB", controlLabel(ControlState.Starting(1_400_000_000)))
+        assertEquals("queued · 1.4\u00A0GB", controlLabel(onPhone(DownloadStatus.Queued)))
+        assertEquals("waiting for Wi-Fi · 1.4\u00A0GB", controlLabel(onPhone(DownloadStatus.WaitingForWifi)))
+        assertEquals("waiting for a connection · 1.4\u00A0GB", controlLabel(onPhone(DownloadStatus.WaitingForConnection)))
+        assertEquals("downloading 42% · 1.4\u00A0GB", controlLabel(onPhone(DownloadStatus.Downloading(42))))
         // There: the same number.
-        assertEquals("downloaded · 1.4 GB", controlLabel(onPhone(DownloadStatus.Downloaded(1_400_000_000))))
-        assertEquals("downloaded · check needed", controlLabel(onPhone(DownloadStatus.CheckNeeded(1_400_000_000))))
+        assertEquals("downloaded · 1.4\u00A0GB", controlLabel(onPhone(DownloadStatus.Downloaded(1_400_000_000))))
+        assertEquals("downloaded · check\u00A0needed", controlLabel(onPhone(DownloadStatus.CheckNeeded(1_400_000_000))))
     }
 
     @Test
