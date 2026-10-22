@@ -144,6 +144,10 @@ kotlin {
         getByName("androidUnitTest").dependencies {
             implementation(libs.robolectric)
             implementation(libs.okhttp.mockwebserver)
+            // The player's menus and the title actions, laid out on the JVM
+            // (Robolectric): what TalkBack is told, the sizes of what is pressed.
+            implementation(libs.compose.ui.test.junit4)
+            implementation(libs.compose.ui.test.manifest)
         }
     }
 }
@@ -165,5 +169,7 @@ android {
     // stubs answer defaults instead of throwing. (commonTest calls none.)
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // The test manifest's activity for the Compose tests (ui-test-manifest).
+        unitTests.isIncludeAndroidResources = true
     }
 }

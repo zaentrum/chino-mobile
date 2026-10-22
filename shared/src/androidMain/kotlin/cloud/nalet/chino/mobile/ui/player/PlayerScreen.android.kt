@@ -40,6 +40,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -2995,7 +2997,7 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup()) {
             MenuHeader(title = "audio", trailing = null)
             if (tracks.isEmpty()) {
                 Text(
@@ -3010,7 +3012,8 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = t.playable) { onSelect(t) }
+                            // One choice: TalkBack says which row is picked.
+                            .selectable(selected = t.selected, enabled = t.playable, role = androidx.compose.ui.semantics.Role.RadioButton) { onSelect(t) }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
@@ -3074,13 +3077,13 @@ private fun CaptionsMenuCard(
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup()) {
             // Lowercase, as its items (the design system's subtitles).
             MenuHeader(title = "subtitles", trailing = null)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(null) }
+                    .selectable(selected = !anySelected, role = androidx.compose.ui.semantics.Role.RadioButton) { onSelect(null) }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -3131,7 +3134,7 @@ private fun SubtitleRow(t: SubtitleTrack, onSelect: (SubtitleTrack?) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onSelect(t) }
+            .selectable(selected = t.selected, role = androidx.compose.ui.semantics.Role.RadioButton) { onSelect(t) }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -3198,7 +3201,7 @@ private fun MenuHeader(title: String, trailing: String?) {
  *  offers, defeating Arrangement.End and stretching the menu across
  *  the whole screen. */
 @Composable
-private fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
+internal fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
     val rates = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
     Box(
         modifier = Modifier
@@ -3208,14 +3211,14 @@ private fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup()) {
             MenuHeader(title = "speed", trailing = null)
             rates.forEach { r ->
                 val active = (r == currentSpeed)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSelect(r) }
+                        .selectable(selected = active, role = androidx.compose.ui.semantics.Role.RadioButton) { onSelect(r) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -3239,7 +3242,7 @@ private fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
  *  preserving the live position. Fixed width like SpeedMenuCard so
  *  Arrangement.End places it under the gear instead of stretching. */
 @Composable
-private fun QualityMenuCard(
+internal fun QualityMenuCard(
     qualities: List<QualityRung>,
     currentQuality: String,
     onSelect: (String) -> Unit,
@@ -3252,7 +3255,7 @@ private fun QualityMenuCard(
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup()) {
             MenuHeader(title = "quality", trailing = null)
             // The server's names as it gives them; the `q` it names alike
             // are one picture and one row - the first, the higher - on
@@ -3264,7 +3267,7 @@ private fun QualityMenuCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSelect(rung.name) }
+                        .selectable(selected = active, role = androidx.compose.ui.semantics.Role.RadioButton) { onSelect(rung.name) }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
