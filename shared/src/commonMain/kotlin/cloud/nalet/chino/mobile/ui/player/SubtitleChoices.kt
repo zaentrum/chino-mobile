@@ -135,9 +135,14 @@ fun <T> sidecarsThenOtherRenditions(
     forced: (T) -> Boolean,
 ): List<T> {
     val (sidecars, renditions) = tracks.partition(isSidecar)
-    val carried = sidecars.mapTo(HashSet()) { normalizeLang(lang(it)) to forced(it) }
-    return sidecars + renditions.filter { (normalizeLang(lang(it)) to forced(it)) !in carried }
+    val carried = sidecars.mapTo(HashSet()) { sameSubtitleKey(lang(it), forced(it)) }
+    return sidecars + renditions.filter { sameSubtitleKey(lang(it), forced(it)) !in carried }
 }
+
+/** What makes a rendition and a sidecar the same subtitle
+ *  ([sidecarsThenOtherRenditions]): its language ([normalizeLang]), and
+ *  whether it is forced. */
+fun sameSubtitleKey(lang: String?, forced: Boolean): Pair<String, Boolean> = normalizeLang(lang) to forced
 
 /** The subtitle that comes on by itself ([autoSubtitleTrack]) among the ones
  *  this player can show: the default rule's ([defaultSubtitleTrack]), else

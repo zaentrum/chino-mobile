@@ -85,6 +85,7 @@ import cafe.adriel.voyager.core.screen.uniqueScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
+import cloud.nalet.chino.mobile.cast.CastBar
 import cloud.nalet.chino.mobile.ui.components.Avatar
 import cloud.nalet.chino.mobile.ui.detail.DetailScreen
 import cloud.nalet.chino.mobile.ui.home.HomeSection
@@ -292,7 +293,7 @@ private fun ShellLayout(
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) { content() }
             // The bar while casting: above the bottom navigation, never over
             // it; wide, at the foot of the content.
-            cloud.nalet.chino.mobile.cast.CastBar(padNavigationBar = isWide)
+            CastBar(padNavigationBar = isWide)
             if (!isWide) BottomNav(active = section, onChange = onChange)
         }
     }

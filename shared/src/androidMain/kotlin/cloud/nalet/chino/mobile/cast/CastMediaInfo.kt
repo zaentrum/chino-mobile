@@ -1,6 +1,7 @@
 package cloud.nalet.chino.mobile.cast
 
 import android.net.Uri
+import cloud.nalet.chino.mobile.data.auth.withStreamToken
 import com.google.android.gms.cast.HlsSegmentFormat
 import com.google.android.gms.cast.HlsVideoSegmentFormat
 import com.google.android.gms.cast.MediaInfo
@@ -35,6 +36,10 @@ internal val CastMetadata.mediaType: Int
         CastMediaKind.Movie -> MediaMetadata.MEDIA_TYPE_MOVIE
         CastMediaKind.Episode -> MediaMetadata.MEDIA_TYPE_TV_SHOW
     }
+
+/** The string keys the phone writes ([writeTo]), and the number keys. */
+private val STRING_KEYS = listOf(MediaMetadata.KEY_TITLE, MediaMetadata.KEY_SUBTITLE, MediaMetadata.KEY_SERIES_TITLE)
+private val INT_KEYS = listOf(MediaMetadata.KEY_SEASON_NUMBER, MediaMetadata.KEY_EPISODE_NUMBER)
 
 /** Writes the title's line, the episode's own title, its series and numbers,
  *  and the artwork, backdrop first. */
@@ -88,7 +93,7 @@ internal fun CastMedia.toMediaInfo(owner: String, metadata: MediaMetadata = this
 internal val CastMedia.contentId: String get() = if (extraId == null) itemId else "$itemId/$extraId"
 
 /** The load request: the media, where the TV starts, whether it plays from
- *  there, and the subtitle that is on. */
+ *  there, and the side-loaded subtitle that is on. */
 internal fun CastMedia.toLoadRequest(owner: String, metadata: MediaMetadata = this.metadata.toSdkMetadata()): MediaLoadRequestData =
     MediaLoadRequestData.Builder()
         .setMediaInfo(toMediaInfo(owner, metadata))
@@ -97,7 +102,73 @@ internal fun CastMedia.toLoadRequest(owner: String, metadata: MediaMetadata = th
         .apply { activeTextTrackId?.let { setActiveTrackIds(longArrayOf(it)) } }
         .build()
 
-/** [tag] as the media's custom data: `{"chino": {item, extra, owner, progress}}`. */
+/**
+ * [info] - the media the TV plays, the phone's - loaded again as [again]
+ * says: its master, its side-loaded subtitles and its artwork signed with
+ * the new token, its marker that of the new load; where it was, playing or
+ * paused, with its tracks. Null for media that is not this app's.
+ */
+internal fun reloadRequest(info: MediaInfo, again: CastReload): MediaLoadRequestData? {
+    val tag = castTagOf(info.customData) ?: return null
+    val url = info.contentUrl?.takeIf { it.isNotEmpty() } ?: return null
+    val token = again.token.token
+    val media = MediaInfo.Builder(info.contentId)
+        .setContentUrl(withStreamToken(url, token))
+        .setContentType(info.contentType ?: CAST_CONTENT_TYPE)
+        .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+        .setHlsSegmentFormat(HlsSegmentFormat.FMP4)
+        .setHlsVideoSegmentFormat(HlsVideoSegmentFormat.FMP4)
+        .setStreamDuration(info.streamDuration)
+        .apply { info.metadata?.let { setMetadata(signedAgain(it, token)) } }
+        .setMediaTracks(info.mediaTracks.orEmpty().filter { it.id >= CAST_TEXT_TRACK_FIRST_ID }.map { signedAgain(it, token) })
+        .setCustomData(castTagJson(tag.copy(load = again.load, linksExpireAtMs = again.token.expiresAtMs)))
+        .build()
+    return MediaLoadRequestData.Builder()
+        .setMediaInfo(media)
+        .setAutoplay(again.autoplay)
+        .setCurrentTime(again.atMs.coerceAtLeast(0L))
+        .apply { if (again.activeTrackIds.isNotEmpty()) setActiveTrackIds(again.activeTrackIds.toLongArray()) }
+        .build()
+}
+
+/** The phone's metadata ([writeTo]'s keys), its artwork signed with [token]. */
+private fun signedAgain(metadata: MediaMetadata, token: String): MediaMetadata =
+    MediaMetadata(metadata.mediaType).also { out ->
+        STRING_KEYS.filter { metadata.containsKey(it) }.forEach { key -> metadata.getString(key)?.let { out.putString(key, it) } }
+        INT_KEYS.filter { metadata.containsKey(it) }.forEach { key -> out.putInt(key, metadata.getInt(key)) }
+        metadata.images.forEach { image ->
+            out.addImage(WebImage(Uri.parse(withStreamToken(image.url.toString(), token)), image.width, image.height))
+        }
+    }
+
+/** One of the phone's side-loaded subtitles, signed with [token]. */
+private fun signedAgain(track: MediaTrack, token: String): MediaTrack =
+    MediaTrack.Builder(track.id, track.type)
+        .setSubtype(track.subtype)
+        .setName(track.name)
+        .setLanguage(track.language)
+        .setContentId(track.contentId?.let { withStreamToken(it, token) })
+        .setContentType(track.contentType)
+        .setRoles(track.roles)
+        .build()
+
+/** A track of the TV's media in casting's terms ([TvTrack]): forced where it
+ *  says so in its role or its name. */
+internal fun MediaTrack.toTvTrack(): TvTrack = TvTrack(
+    id = id,
+    type = when (type) {
+        MediaTrack.TYPE_AUDIO -> TvTrackType.Audio
+        MediaTrack.TYPE_TEXT -> TvTrackType.Text
+        MediaTrack.TYPE_VIDEO -> TvTrackType.Video
+        else -> TvTrackType.Other
+    },
+    language = language,
+    name = name,
+    forced = roles.orEmpty().contains(MediaTrack.ROLE_FORCED_SUBTITLE) || name.orEmpty().contains("forced", ignoreCase = true),
+)
+
+/** [tag] as the media's custom data:
+ *  `{"chino": {item, extra, owner, progress, load, exp}}`. */
 internal fun castTagJson(tag: CastTag): JSONObject =
     JSONObject().put(
         CastTag.KEY,
@@ -105,7 +176,9 @@ internal fun castTagJson(tag: CastTag): JSONObject =
             .put(CastTag.ITEM, tag.itemId)
             .apply { tag.extraId?.let { put(CastTag.EXTRA, it) } }
             .put(CastTag.OWNER, tag.owner)
-            .put(CastTag.PROGRESS, tag.writesProgress),
+            .put(CastTag.PROGRESS, tag.writesProgress)
+            .put(CastTag.LOAD, tag.load)
+            .put(CastTag.LINKS_EXPIRE, tag.linksExpireAtMs),
     )
 
 /** The phone's marker in a media's custom data, or null where there is none
@@ -119,20 +192,7 @@ internal fun castTagOf(customData: JSONObject?): CastTag? {
         extraId = o.optString(CastTag.EXTRA).takeIf { o.has(CastTag.EXTRA) && it.isNotEmpty() },
         owner = owner,
         writesProgress = o.optBoolean(CastTag.PROGRESS, false),
+        load = o.optString(CastTag.LOAD),
+        linksExpireAtMs = o.optLong(CastTag.LINKS_EXPIRE, 0L),
     )
-}
-
-/** A receiver error's custom data as key and value, one level deep, for
- *  [httpStatusOf]. */
-internal fun flatCustomData(customData: JSONObject?): Map<String, String> {
-    if (customData == null) return emptyMap()
-    val out = LinkedHashMap<String, String>()
-    for (key in customData.keys()) {
-        when (val v = customData.opt(key)) {
-            is JSONObject -> for (inner in v.keys()) out[inner] = v.opt(inner)?.toString().orEmpty()
-            null -> Unit
-            else -> out[key] = v.toString()
-        }
-    }
-    return out
 }

@@ -35,15 +35,17 @@ class CastMediaInfoTest {
         durationMs = 2_640_000,
     )
 
+    /** The TV's own token. */
+    private val tv = CastToken("tv456", expiresAtMs = 1_800_000_000_000)
+
     private fun media(
         item: Item = sintel,
         seriesTitle: String? = null,
         extraId: String? = null,
-        start: CastSubtitleStart = CastSubtitleStart.Sidecar("s2"),
+        start: CastSubtitleStart = CastSubtitleStart.Sidecar("s2", "ger", forced = true),
     ) = castMediaFor(
         CastMediaInput(
             apiBase = base,
-            streamToken = token,
             itemId = item.id,
             extraId = extraId,
             phoneMasterUrl = "$base/v1/items/${item.id}/play/master.m3u8?stream=$token&caps=hvc:2160,aac,eac3&q=high",
@@ -60,6 +62,9 @@ class CastMediaInfoTest {
             subtitleStart = start,
             writesProgress = extraId == null,
         ),
+        tv,
+        null,
+        "L1",
     )
 
     private class Sink : CastMetadataSink {
@@ -75,7 +80,7 @@ class CastMediaInfoTest {
     fun theTvPlaysItsOwnMasterAsHlsInFmp4BufferedOfTheTitlesLength() {
         val info = media().toMediaInfo(owner = "k", metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE))
         assertEquals("m1", info.contentId)
-        assertEquals("$base/v1/items/m1/play/master.m3u8?stream=$token&caps=avc:1080,aac", info.contentUrl)
+        assertEquals("$base/v1/items/m1/play/master.m3u8?stream=tv456&caps=avc:1080,aac", info.contentUrl)
         assertEquals("application/x-mpegURL", info.contentType)
         assertEquals(MediaInfo.STREAM_TYPE_BUFFERED, info.streamType)
         assertEquals(HlsSegmentFormat.FMP4, info.hlsSegmentFormat)
@@ -92,7 +97,7 @@ class CastMediaInfoTest {
             assertEquals(MediaTrack.SUBTYPE_SUBTITLES, it.subtype)
             assertEquals("text/vtt", it.contentType)
         }
-        assertEquals(listOf("$base/v1/play/subs/s1.vtt?stream=$token", "$base/v1/play/subs/s2.vtt?stream=$token"), tracks.map { it.contentId })
+        assertEquals(listOf("$base/v1/play/subs/s1.vtt?stream=tv456", "$base/v1/play/subs/s2.vtt?stream=tv456"), tracks.map { it.contentId })
         assertEquals(listOf("en", "de"), tracks.map { it.language })
         assertEquals(listOf("English", "German (forced)"), tracks.map { it.name })
         assertEquals(listOf(listOf(MediaTrack.ROLE_SUBTITLE), listOf(MediaTrack.ROLE_FORCED_SUBTITLE)), tracks.map { it.roles })
@@ -110,10 +115,10 @@ class CastMediaInfoTest {
     @Test
     fun theMediaCarriesThePhonesMarker() {
         val info = media().toMediaInfo(owner = "k", metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE))
-        assertEquals(CastTag(itemId = "m1", extraId = null, owner = "k", writesProgress = true), castTagOf(info.customData))
+        assertEquals(CastTag("m1", null, "k", writesProgress = true, load = "L1", linksExpireAtMs = 1_800_000_000_000), castTagOf(info.customData))
         val trailer = media(extraId = "x1").toMediaInfo(owner = "k", metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE))
         assertEquals("m1/x1", trailer.contentId)
-        assertEquals(CastTag(itemId = "m1", extraId = "x1", owner = "k", writesProgress = false), castTagOf(trailer.customData))
+        assertEquals(CastTag("m1", "x1", "k", writesProgress = false, load = "L1", linksExpireAtMs = 1_800_000_000_000), castTagOf(trailer.customData))
     }
 
     @Test
@@ -121,6 +126,39 @@ class CastMediaInfoTest {
         assertNull(castTagOf(null))
         assertNull(castTagOf(JSONObject().put("other", JSONObject().put("item", "m1"))))
         assertNull(castTagOf(JSONObject().put("chino", JSONObject().put("item", "m1"))))
+        // An older marker, without a load or the links' life: read as such.
+        val older = castTagOf(JSONObject().put("chino", JSONObject().put("item", "m1").put("owner", "k").put("progress", true)))
+        assertEquals(CastTag("m1", null, "k", writesProgress = true, load = "", linksExpireAtMs = 0L), older)
+    }
+
+    @Test
+    fun theMediaTheTvPlaysIsLoadedAgainSignedAnewWhereItWas() {
+        val playing = media().toMediaInfo(owner = "k", metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE))
+        val again = CastReload(CastToken("tv789", 1_900_000_000_000), load = "L2", atMs = 2_345_000, autoplay = false, activeTrackIds = listOf(2, 1001))
+        val request = reloadRequest(playing, again)!!
+        val info = request.mediaInfo!!
+        assertEquals("$base/v1/items/m1/play/master.m3u8?stream=tv789&caps=avc:1080,aac", info.contentUrl)
+        assertEquals(listOf("$base/v1/play/subs/s1.vtt?stream=tv789", "$base/v1/play/subs/s2.vtt?stream=tv789"), info.mediaTracks.orEmpty().map { it.contentId })
+        assertEquals(listOf(listOf(MediaTrack.ROLE_SUBTITLE), listOf(MediaTrack.ROLE_FORCED_SUBTITLE)), info.mediaTracks.orEmpty().map { it.roles })
+        assertEquals(CastTag("m1", null, "k", writesProgress = true, load = "L2", linksExpireAtMs = 1_900_000_000_000), castTagOf(info.customData))
+        assertEquals(false, request.autoplay)
+        assertEquals(2_345_000, request.currentTime)
+        assertContentEquals(longArrayOf(2L, 1001L), request.activeTrackIds)
+        assertEquals(HlsSegmentFormat.FMP4, info.hlsSegmentFormat)
+        assertEquals(888_000, info.streamDuration)
+        // Not this app's media: nothing to load again.
+        assertNull(reloadRequest(MediaInfo.Builder("other").setContentUrl("https://example.org/x.m3u8").build(), again))
+    }
+
+    @Test
+    fun theTvsTracksInCastingsTerms() {
+        val forced = MediaTrack.Builder(6, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English").setRoles(listOf(MediaTrack.ROLE_FORCED_SUBTITLE)).build()
+        assertEquals(TvTrack(6, TvTrackType.Text, "en", "English", forced = true), forced.toTvTrack())
+        val named = MediaTrack.Builder(7, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English (Forced)").build()
+        assertEquals(true, named.toTvTrack().forced)
+        val audio = MediaTrack.Builder(2, MediaTrack.TYPE_AUDIO).setLanguage("ja").setName("Japanese").build()
+        assertEquals(TvTrack(2, TvTrackType.Audio, "ja", "Japanese"), audio.toTvTrack())
+        assertEquals(TvTrackType.Video, MediaTrack.Builder(1, MediaTrack.TYPE_VIDEO).build().toTvTrack().type)
     }
 
     @Test
@@ -131,8 +169,8 @@ class CastMediaInfoTest {
         assertEquals(mapOf(MediaMetadata.KEY_TITLE to "Sintel"), sink.strings)
         assertEquals(
             listOf(
-                Triple("https://media.example.com/api/v1/items/m1/backdrop?stream=tok123", 1280, 720),
-                Triple("https://media.example.com/api/v1/items/m1/poster?stream=tok123", 500, 750),
+                Triple("https://media.example.com/api/v1/items/m1/backdrop?stream=tv456", 1280, 720),
+                Triple("https://media.example.com/api/v1/items/m1/poster?stream=tv456", 500, 750),
             ),
             sink.images,
         )
@@ -153,13 +191,7 @@ class CastMediaInfoTest {
             sink.strings,
         )
         assertEquals(mapOf(MediaMetadata.KEY_SEASON_NUMBER to 1, MediaMetadata.KEY_EPISODE_NUMBER to 3), sink.ints)
-        assertEquals("https://media.example.com/api/v1/items/s1/poster?stream=tok123", sink.images[1].first)
+        assertEquals("https://media.example.com/api/v1/items/s1/poster?stream=tv456", sink.images[1].first)
     }
 
-    @Test
-    fun aReceiversErrorDataIsReadOneLevelDeep() {
-        val data = JSONObject().put("httpStatus", 503).put("detail", JSONObject().put("statusCode", "404"))
-        assertEquals(mapOf("httpStatus" to "503", "statusCode" to "404"), flatCustomData(data))
-        assertEquals(503, httpStatusOf(flatCustomData(data), null))
-    }
 }

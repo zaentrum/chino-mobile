@@ -109,7 +109,6 @@ import cloud.nalet.chino.mobile.cast.CastMediaInput
 import cloud.nalet.chino.mobile.cast.CastSubtitleStart
 import cloud.nalet.chino.mobile.cast.ChinoCast
 import cloud.nalet.chino.mobile.cast.LocalAgain
-import cloud.nalet.chino.mobile.cast.castMediaFor
 import cloud.nalet.chino.mobile.cast.handoffStartMs
 import cloud.nalet.chino.mobile.cast.handoffSubtitle
 import cloud.nalet.chino.mobile.cast.localAgainAfterCast
@@ -121,6 +120,7 @@ import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.feedback.BugReportDialog
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Captions
@@ -406,13 +406,17 @@ actual class PlayerScreen actual constructor(
                 )
                 // Opened while casting - Play on a title's page, an episode,
                 // Continue Watching: the title plays on the TV, from where it
-                // would have started here, and this player closes once it
-                // does. Before the player is built, so it never starts here.
+                // would have started here - or on, where the TV plays it for
+                // this phone already, unless it was Play from start - and
+                // this player closes once it does. Before the player is
+                // built, so it never starts here.
                 if (ChinoCast.connectedSession() != null) {
                     castStart = CastHandoff(
                         startMs = startMs,
                         playing = true,
-                        subtitle = CastSubtitleStart.Auto(firstAudio?.language, settings.preferredSubLang, settings.preferredAudioLang),
+                        audioLang = firstAudio?.language,
+                        subtitle = CastSubtitleStart.Auto(settings.preferredSubLang, settings.preferredAudioLang),
+                        restart = fromStart,
                     )
                 }
                 // The scrub previews once the player is up, not before it: a
@@ -445,6 +449,7 @@ actual class PlayerScreen actual constructor(
                 onBack = close,
                 onHome = { nav.replaceAll(MainShellScreen()) },
                 onPlaying = closeByItself,
+                // Back here, paused where it was: it never plays by itself.
                 onHereAgain = { again ->
                     ready = ready?.copy(resumeMs = again.startMs, autoPlay = again.autoplay)
                     castStart = null
@@ -1242,7 +1247,11 @@ private fun PlaybackSurface(
             val handoff = CastHandoff(
                 startMs = handoffStartMs(player.currentPosition, known, ended),
                 playing = player.playWhenReady && !ended,
-                subtitle = handoffSubtitle(subtitleKey, CastSubtitleStart.Auto(audioLang, state.subtitlePref, state.audioPref)),
+                audioLang = audioLang,
+                subtitle = handoffSubtitle(subtitleKey, state.sidecarSubtitles, CastSubtitleStart.Auto(state.subtitlePref, state.audioPref)),
+                // The phone says where: the TV continues from here, even
+                // where it played this title for this phone before.
+                restart = true,
             )
             player.pause()
             onCastStart(handoff)
@@ -1671,32 +1680,33 @@ private fun CastStarting(
     onHereAgain: (LocalAgain) -> Unit,
 ) {
     LaunchedEffect(handoff) {
-        val media = castMediaFor(
-            CastMediaInput(
-                apiBase = state.base,
-                streamToken = state.streamToken,
-                itemId = state.itemId,
-                extraId = state.extraId,
-                phoneMasterUrl = state.masterUrl(AUTO_QUALITY),
-                item = state.item,
-                seriesTitle = state.seriesTitle,
-                extraHeading = state.extra?.heading,
-                durationMs = state.info?.durationMs ?: state.item?.durationMs,
-                startMs = handoff.startMs,
-                autoplay = handoff.playing,
-                sidecars = state.sidecarSubtitles,
-                subtitleStart = handoff.subtitle,
-                writesProgress = state.writable,
-            ),
+        // Its links are signed for the TV as it loads (ChinoCast), with a
+        // token minted for it - not this player's.
+        val input = CastMediaInput(
+            apiBase = state.base,
+            itemId = state.itemId,
+            extraId = state.extraId,
+            phoneMasterUrl = state.masterUrl(AUTO_QUALITY),
+            item = state.item,
+            seriesTitle = state.seriesTitle,
+            extraHeading = state.extra?.heading,
+            durationMs = state.info?.durationMs ?: state.item?.durationMs,
+            startMs = handoff.startMs,
+            autoplay = handoff.playing,
+            sidecars = state.sidecarSubtitles,
+            audioLang = handoff.audioLang,
+            audioPref = state.audioPref,
+            subtitleStart = handoff.subtitle,
+            writesProgress = state.writable,
+            restart = handoff.restart,
         )
-        when (ChinoCast.load(media)) {
+        when (ChinoCast.load(input)) {
             CastLoadResult.Playing -> onPlaying()
-            is CastLoadResult.Failed -> onHereAgain(localAgainAfterCast(handoff, afterFailure = true))
-            CastLoadResult.Ended -> onHereAgain(localAgainAfterCast(handoff, afterFailure = false))
+            is CastLoadResult.Failed, CastLoadResult.Ended -> onHereAgain(localAgainAfterCast(handoff))
         }
     }
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        CircularProgressIndicator(color = Color(0xFF58A6FF), modifier = Modifier.align(Alignment.Center))
+        CircularProgressIndicator(color = ChinoCloudBlue, modifier = Modifier.align(Alignment.Center))
         TopBar(title = state.title, onBack = onBack, onHome = onHome)
     }
 }

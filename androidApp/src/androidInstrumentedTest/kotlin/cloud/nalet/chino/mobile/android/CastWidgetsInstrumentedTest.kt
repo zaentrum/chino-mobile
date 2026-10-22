@@ -1,6 +1,13 @@
 package cloud.nalet.chino.mobile.android
 
+import android.Manifest
 import android.app.Activity
+import android.app.ActivityManager
+import android.app.NotificationManager
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.Paint
 import android.os.Build
@@ -11,6 +18,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.app.NavUtils
+import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.Lifecycle
@@ -22,6 +30,7 @@ import androidx.test.runner.lifecycle.ActivityLifecycleCallback
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import cloud.nalet.chino.mobile.cast.CastExpandedControlsActivity
+import cloud.nalet.chino.mobile.cast.CastPlaybackService
 import cloud.nalet.chino.mobile.cast.ChinoMiniControllerFragment
 import cloud.nalet.chino.mobile.data.model.CatalogDate
 import cloud.nalet.chino.mobile.formatDeviceDate
@@ -42,8 +51,8 @@ import com.google.android.gms.cast.framework.R as CastR
  * an emulator, without a device to cast to: the Cast button and its device
  * chooser (an AppCompat dialog, which needs the activity's AppCompat theme),
  * the bar's fragment with its "playing on" line in place of Google's and
- * Inter from the theme, the full controls with their slots set up, and
- * Google's words kept English. None of the widgets
+ * Inter from the theme, the full controls with their slots set up, casting's
+ * foreground service, and Google's words kept English. None of the widgets
  * shows in the app without a Cast device on the network - this is what a
  * phone runs once one is there.
  */
@@ -154,6 +163,39 @@ class CastWidgetsInstrumentedTest {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) tooltipText else null
 
     @Test
+    fun castingsForegroundServiceIsOfTheMediaPlaybackKindAndStopsWithNothingPlaying() {
+        val info = context.packageManager.getServiceInfo(ComponentName(context, CastPlaybackService::class.java), 0)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            assertEquals(ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK, info.foregroundServiceType)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            assertEquals(
+                PackageManager.PERMISSION_GRANTED,
+                ContextCompat.checkSelfPermission(context, Manifest.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK),
+            )
+        }
+        // Nothing plays on a TV: in the foreground for a moment, as a started
+        // foreground service must be, then gone by itself, its notification
+        // with it.
+        val services = context.getSystemService(ActivityManager::class.java)
+        fun running(): Boolean =
+            @Suppress("DEPRECATION")
+            services.getRunningServices(Int.MAX_VALUE).any { it.service.className == CastPlaybackService::class.java.name }
+        ActivityScenario.launch(MainActivity::class.java).use {
+            ContextCompat.startForegroundService(context, Intent(context, CastPlaybackService::class.java))
+            assertTrue("started", running())
+            val start = SystemClock.uptimeMillis()
+            while (running() && SystemClock.uptimeMillis() - start < 5_000) {
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                SystemClock.sleep(100)
+            }
+            assertTrue("stopped by itself", !running())
+            val notifications = context.getSystemService(NotificationManager::class.java)
+            assertTrue(notifications.activeNotifications.none { it.id == CAST_SERVICE_NOTIFICATION })
+        }
+    }
+
+    @Test
     fun googlesCastWordsStayEnglishOnAPhoneInAnotherLanguageItsDatesDoNot() {
         val german = Configuration(context.resources.configuration).apply { setLocales(LocaleList.forLanguageTags("de-DE")) }
         val de = context.createConfigurationContext(german)
@@ -171,5 +213,10 @@ class CastWidgetsInstrumentedTest {
         } finally {
             Locale.setDefault(before)
         }
+    }
+
+    private companion object {
+        /** CastPlaybackService's notification. */
+        const val CAST_SERVICE_NOTIFICATION = 0x0ca57
     }
 }

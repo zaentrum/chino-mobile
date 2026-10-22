@@ -7,8 +7,8 @@ import org.json.JSONObject
 
 /*
  * The TV's player as the phone reads it: the Cast SDK's RemoteMediaClient,
- * behind the few things casting reads of it, so the JVM tests drive the same
- * code with a fake one.
+ * behind the few things casting reads of it and the callbacks it registers,
+ * so the JVM tests drive the same code with a fake one.
  */
 
 /** What casting reads of the TV's player. */
@@ -61,10 +61,43 @@ internal fun RemotePlayback.status(): RemoteMediaStatus = RemoteMediaStatus(
     durationMs = streamDurationMs,
 )
 
+/** What [RemoteMediaClientPlayback] reads of the SDK's RemoteMediaClient, and
+ *  the callbacks it registers there and takes off again. */
+internal interface MediaClientPort {
+    val playerState: Int
+    val idleReason: Int
+    val approximateStreamPosition: Long
+    val streamDuration: Long
+    val customData: JSONObject?
+    fun hasMediaSession(): Boolean
+    fun registerCallback(callback: RemoteMediaClient.Callback)
+    fun unregisterCallback(callback: RemoteMediaClient.Callback)
+    fun addProgressListener(listener: RemoteMediaClient.ProgressListener, periodMs: Long)
+    fun removeProgressListener(listener: RemoteMediaClient.ProgressListener)
+}
+
+/** The SDK's RemoteMediaClient itself. */
+internal class SdkMediaClient(private val client: RemoteMediaClient) : MediaClientPort {
+    override val playerState: Int get() = client.playerState
+    override val idleReason: Int get() = client.idleReason
+    override val approximateStreamPosition: Long get() = client.approximateStreamPosition
+    override val streamDuration: Long get() = client.streamDuration
+    override val customData: JSONObject? get() = client.mediaInfo?.customData
+    override fun hasMediaSession(): Boolean = client.hasMediaSession()
+    override fun registerCallback(callback: RemoteMediaClient.Callback) = client.registerCallback(callback)
+    override fun unregisterCallback(callback: RemoteMediaClient.Callback) = client.unregisterCallback(callback)
+    override fun addProgressListener(listener: RemoteMediaClient.ProgressListener, periodMs: Long) {
+        client.addProgressListener(listener, periodMs)
+    }
+
+    override fun removeProgressListener(listener: RemoteMediaClient.ProgressListener) = client.removeProgressListener(listener)
+}
+
 /** The SDK's RemoteMediaClient as [RemotePlayback]: its callback and a
- *  progress tick every [tickMs]. */
+ *  progress tick every [tickMs], each registered once per listener and taken
+ *  off with it. */
 internal class RemoteMediaClientPlayback(
-    private val client: RemoteMediaClient,
+    private val client: MediaClientPort,
     private val tickMs: Long = PROGRESS_TICK_MS,
 ) : RemotePlayback {
     private val callbacks = HashMap<RemotePlaybackListener, Pair<RemoteMediaClient.Callback, RemoteMediaClient.ProgressListener>>()
@@ -73,7 +106,7 @@ internal class RemoteMediaClientPlayback(
     override val idleReason: Int get() = client.idleReason
     override val approximatePositionMs: Long get() = client.approximateStreamPosition
     override val streamDurationMs: Long get() = client.streamDuration
-    override val customData: JSONObject? get() = client.mediaInfo?.customData
+    override val customData: JSONObject? get() = client.customData
     override val hasMediaSession: Boolean get() = client.hasMediaSession()
 
     override fun listen(listener: RemotePlaybackListener) {
@@ -126,12 +159,12 @@ internal class CastPlaybackBridge(
         playback = null
     }
 
-    /** The session ends: the last position the TV played is kept. */
-    fun sessionEnding() {
-        val remote = playback
-        val playing = remote?.playerState == MediaStatus.PLAYER_STATE_PLAYING
-        reporter.onSessionEnding(if (playing) remote?.approximatePositionMs else null)
-    }
+    /** The session ends: the last position the TV confirmed is kept. */
+    fun sessionEnding() = reporter.onSessionEnding()
+
+    /** The connection to the TV is lost for now: nothing counts until the TV
+     *  reports again. */
+    fun suspended() = reporter.onSuspended()
 
     override fun onStatus() {
         val remote = playback ?: return

@@ -224,8 +224,23 @@ internal data class MasterAudio(
     val default: Boolean,
 )
 
-/** A master's variants and audio renditions, in its order. */
-internal class HlsMaster(val variants: List<MasterVariant>, val audio: List<MasterAudio>) {
+/** One EXT-X-MEDIA TYPE=SUBTITLES line of a master: a subtitle the packager
+ *  wrote beside the sidecars (hls/sN), which the master names once it runs
+ *  with HLS_SUBTITLES. */
+internal data class MasterSubtitle(
+    val name: String?,
+    val language: String?,
+    val forced: Boolean,
+    val default: Boolean,
+    val autoselect: Boolean,
+)
+
+/** A master's variants, audio and subtitle renditions, in its order. */
+internal class HlsMaster(
+    val variants: List<MasterVariant>,
+    val audio: List<MasterAudio>,
+    val subtitles: List<MasterSubtitle> = emptyList(),
+) {
     /** Each video rung once, as its first variant lists it (the stereo
      *  group's — the packager writes it first), the top rung first. */
     fun rungs(): List<MasterVariant> = variants.filter { it.rung.isNotEmpty() }.distinctBy { it.rung }
@@ -239,6 +254,7 @@ private val VIDEO_CODEC_PREFIXES = listOf(
 internal fun parseHlsMaster(body: String): HlsMaster {
     val variants = ArrayList<MasterVariant>()
     val audio = ArrayList<MasterAudio>()
+    val subtitles = ArrayList<MasterSubtitle>()
     val lines = body.lines().map { it.trimEnd('\r') }
     for ((i, line) in lines.withIndex()) {
         when {
@@ -261,19 +277,26 @@ internal fun parseHlsMaster(body: String): HlsMaster {
             }
             line.startsWith("#EXT-X-MEDIA:") -> {
                 val a = hlsAttributes(line)
-                if (a["TYPE"] == "AUDIO") {
-                    audio += MasterAudio(
+                when (a["TYPE"]) {
+                    "AUDIO" -> audio += MasterAudio(
                         group = a["GROUP-ID"],
                         name = a["NAME"],
                         language = a["LANGUAGE"],
                         channels = a["CHANNELS"]?.substringBefore('/')?.toIntOrNull(),
                         default = a["DEFAULT"] == "YES",
                     )
+                    "SUBTITLES" -> subtitles += MasterSubtitle(
+                        name = a["NAME"],
+                        language = a["LANGUAGE"],
+                        forced = a["FORCED"] == "YES",
+                        default = a["DEFAULT"] == "YES",
+                        autoselect = a["AUTOSELECT"] == "YES",
+                    )
                 }
             }
         }
     }
-    return HlsMaster(variants, audio)
+    return HlsMaster(variants, audio, subtitles)
 }
 
 /** A tag line's attributes, KEY=value, a quoted value without its quotes

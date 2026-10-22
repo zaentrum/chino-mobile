@@ -2,12 +2,12 @@ package cloud.nalet.chino.mobile.cast
 
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.data.api.artworkUrl
+import cloud.nalet.chino.mobile.data.auth.withStreamToken
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.model.episodeCode
-import cloud.nalet.chino.mobile.sha256Hex
+import cloud.nalet.chino.mobile.ui.player.HlsMaster
 import cloud.nalet.chino.mobile.ui.player.SubtitleKind
 import cloud.nalet.chino.mobile.ui.player.SubtitleLabelInput
-import cloud.nalet.chino.mobile.ui.player.autoSubtitleTrack
 import cloud.nalet.chino.mobile.ui.player.languageTag
 import cloud.nalet.chino.mobile.ui.player.sidecarForced
 import cloud.nalet.chino.mobile.ui.player.subtitleKind
@@ -23,14 +23,15 @@ import cloud.nalet.chino.mobile.ui.player.subtitleLabels
  * fetches the master itself, with the stream token in the URL - the token is
  * accepted on the media and artwork routes without the OIDC header - and with
  * the caps of the TV, not of the phone: chino-stream decides what to serve
- * from them.
+ * from them. Every link the TV gets is signed with a token minted for it
+ * ([CastToken]), not with the one the phone's player started with.
  */
 
 /**
  * The caps a Cast receiver is served with: H.264 up to 1080 lines and AAC
- * stereo, what every Cast device plays. chino-stream serves them a title's
- * H.264 package where there is one, else an H.264 rung of the live encode,
- * so a title whose original the TV could not decode still plays.
+ * stereo, what every Cast device with a screen plays. chino-stream serves
+ * them a title's H.264 package where there is one, else an H.264 rung of the
+ * live encode, so a title whose original the TV could not decode still plays.
  */
 const val RECEIVER_CAPS: String = "avc:1080,aac"
 
@@ -86,16 +87,22 @@ data class CastTextTrack(
 /**
  * The marker the phone puts on what it casts (the media's custom data). Every
  * sender on the network sees the TV's media; this says which title it is and
- * whose: the [owner] key of the account and server that cast it. Only that
- * phone, signed in as that account, writes the position the TV plays
- * ([writesProgress]: a title whose saved position could be read, not an
- * extra).
+ * whose: the [owner] id of the phone and account that cast it (castOwnerId),
+ * which says nothing of the account itself. Only that phone, signed in as
+ * that account, writes the position the TV plays ([writesProgress]: a title
+ * whose saved position could be read, not an extra).
  */
 data class CastTag(
     val itemId: String,
     val extraId: String?,
     val owner: String,
     val writesProgress: Boolean,
+    /** This load's own id: the same title loaded again - from the start, or
+     *  its links signed anew - is new media to the position writes. */
+    val load: String,
+    /** The earliest the TV's links stop working, by the phone's clock
+     *  (epoch ms; [CastToken.expiresAtMs]); 0 where it is not known. */
+    val linksExpireAtMs: Long,
 ) {
     companion object {
         /** The custom data's key the tag sits under. */
@@ -104,19 +111,20 @@ data class CastTag(
         const val EXTRA = "extra"
         const val OWNER = "owner"
         const val PROGRESS = "progress"
+        const val LOAD = "load"
+        const val LINKS_EXPIRE = "exp"
     }
 }
 
-/** An account's owner key on a server: not the account's id itself, which
- *  every sender on the network would read. */
-fun castOwnerKey(apiBase: String, accountId: String): String =
-    sha256Hex(apiBase.trimEnd('/') + "|" + accountId).take(16)
+/** A stream token for the TV's links, and the earliest it stops working, by
+ *  the phone's clock (epoch ms). */
+data class CastToken(val token: String, val expiresAtMs: Long)
 
 /** Everything a load request carries. */
 data class CastMedia(
     val itemId: String,
     val extraId: String?,
-    /** The receiver's master ([receiverMasterUrl]). */
+    /** The receiver's master ([receiverMasterUrl]), signed for the TV. */
     val contentUrl: String,
     /** The title's length, null when it is not known. */
     val durationMs: Long?,
@@ -126,34 +134,38 @@ data class CastMedia(
     val autoplay: Boolean,
     val metadata: CastMetadata,
     val textTracks: List<CastTextTrack>,
-    /** The subtitle that is on as the TV starts; null for none. */
+    /** The side-loaded subtitle that is on as the TV starts; null for none,
+     *  or for one of the master's, turned on once the TV has loaded. */
     val activeTextTrackId: Long?,
     /** Whether the position the TV plays is written back ([CastTag]). */
     val writesProgress: Boolean,
+    /** This load's own id ([CastTag.load]). */
+    val load: String,
+    /** When its links stop working at the earliest ([CastToken.expiresAtMs]). */
+    val linksExpireAtMs: Long,
 ) {
-    /** The marker for this media, of the account [owner] ([castOwnerKey]). */
-    fun tag(owner: String): CastTag = CastTag(itemId, extraId, owner, writesProgress)
+    /** The marker for this media, cast by the phone and account [owner]. */
+    fun tag(owner: String): CastTag = CastTag(itemId, extraId, owner, writesProgress, load, linksExpireAtMs)
 }
 
 /** Which subtitle the TV starts with. */
 sealed interface CastSubtitleStart {
-    /** The default rule, as the app's player starts: [autoSubtitleTrack]. */
-    data class Auto(val audioLang: String?, val subtitlePref: String?, val audioPref: String?) : CastSubtitleStart
+    /** The default rule, as the app's player starts (autoSubtitleTrack), for
+     *  the audio the TV plays. */
+    data class Auto(val subtitlePref: String?, val audioPref: String?) : CastSubtitleStart
 
     /** The phone's player showed none. */
     data object Off : CastSubtitleStart
 
-    /** The phone's player showed this sidecar. */
-    data class Sidecar(val sidecarId: String) : CastSubtitleStart
+    /** The phone's player showed this sidecar - in [lang], forced or not, by
+     *  which the TV's rendition of it is found where the master carries it. */
+    data class Sidecar(val sidecarId: String, val lang: String?, val forced: Boolean) : CastSubtitleStart
 }
 
 /** What the title's player knows as it casts. */
 data class CastMediaInput(
     /** The API base, ".../api". */
     val apiBase: String,
-    /** The session's stream token, which signs the master, the sidecars and
-     *  the artwork. */
-    val streamToken: String,
     val itemId: String,
     /** The extra played instead of the title (its trailer); null: the title. */
     val extraId: String? = null,
@@ -168,36 +180,64 @@ data class CastMediaInput(
     val durationMs: Long?,
     val startMs: Long,
     val autoplay: Boolean,
-    /** The title's sidecars, signed. */
+    /** The title's sidecars, as the phone's player has them; the TV's are
+     *  signed anew. */
     val sidecars: List<SidecarSubtitle>,
+    /** The language of the audio the phone played, or starts the title with;
+     *  null when it is not known. */
+    val audioLang: String? = null,
+    /** Settings' audio language ("orig": the title's own). */
+    val audioPref: String? = null,
     val subtitleStart: CastSubtitleStart,
     val writesProgress: Boolean,
+    /** Load even where the TV plays this title already: Play from start, or
+     *  the phone's player handing over where it is. Without it, a title the
+     *  TV plays for this phone plays on. */
+    val restart: Boolean = false,
     val receiverCaps: String = RECEIVER_CAPS,
-)
+) {
+    /** What the TV is to play with. */
+    val tracks: CastTrackWish get() = CastTrackWish(audioLang, audioPref, subtitleStart)
+}
 
-/** The load request for [input]. */
-fun castMediaFor(input: CastMediaInput): CastMedia {
-    val tracks = castTextTracks(input.sidecars)
+/** The TV's master of [input], signed with [token]. */
+fun receiverMasterUrl(input: CastMediaInput, token: String): String =
+    withStreamToken(receiverMasterUrl(input.phoneMasterUrl, input.receiverCaps), token)
+
+/**
+ * The load request for [input] - load [load] - its links signed with
+ * [token]: the master, the sidecars the master does not carry itself
+ * ([sidecarsBesideTheMaster]; [master] as the phone read it, null where it
+ * could not), the artwork.
+ */
+internal fun castMediaFor(input: CastMediaInput, token: CastToken, master: HlsMaster?, load: String): CastMedia {
+    val sidecars = sidecarsBesideTheMaster(
+        input.sidecars.map { it.copy(url = withStreamToken(it.url, token.token)) },
+        master?.subtitles.orEmpty(),
+    )
+    val tracks = castTextTracks(sidecars)
     return CastMedia(
         itemId = input.itemId,
         extraId = input.extraId,
-        contentUrl = receiverMasterUrl(input.phoneMasterUrl, input.receiverCaps),
+        contentUrl = receiverMasterUrl(input, token.token),
         durationMs = input.durationMs?.takeIf { it > 0 },
         startMs = input.startMs.coerceAtLeast(0L),
         autoplay = input.autoplay,
-        metadata = castMetadata(input),
+        metadata = castMetadata(input, token.token),
         textTracks = tracks,
-        activeTextTrackId = activeTextTrack(tracks, input.subtitleStart)?.id,
+        activeTextTrackId = firstTextTrack(tracks, master, input.tracks),
         writesProgress = input.writesProgress,
+        load = load,
+        linksExpireAtMs = token.expiresAtMs,
     )
 }
 
 /**
- * The TV's master from the phone's: the same title, the same stream token,
- * with the receiver's [caps] in place of the phone's and no `q` - the master
- * then decides what the TV is served (chino-stream copies only without a `q`
- * or at "high"), as it does for the phone at Auto. Every other parameter stays
- * as it was, in its order.
+ * The TV's master from the phone's: the same title, with the receiver's
+ * [caps] in place of the phone's and no `q` - the master then decides what
+ * the TV is served (chino-stream copies only without a `q` or at "high"), as
+ * it does for the phone at Auto. Every other parameter stays as it was, in
+ * its order.
  */
 fun receiverMasterUrl(phoneMasterUrl: String, caps: String): String {
     val path = phoneMasterUrl.substringBefore('?')
@@ -215,10 +255,11 @@ private const val BACKDROP_HEIGHT = 720
 private const val POSTER_WIDTH = 500
 private const val POSTER_HEIGHT = 750
 
-/** What the title shows on the TV and in the controls ([CastMetadata]). */
-internal fun castMetadata(input: CastMediaInput): CastMetadata {
+/** What the title shows on the TV and in the controls ([CastMetadata]), its
+ *  artwork signed with [token]. */
+internal fun castMetadata(input: CastMediaInput, token: String): CastMetadata {
     val item = input.item
-    val images = castImages(input)
+    val images = castImages(input, token)
     val heading = input.extraHeading
     if (heading != null || item == null || !isEpisode(item)) {
         return CastMetadata(
@@ -262,10 +303,9 @@ private fun isEpisode(item: Item): Boolean =
  * answers for one it has no picture of with a 404, which the receiver and the
  * controls draw as no picture.
  */
-private fun castImages(input: CastMediaInput): List<CastImage> {
+private fun castImages(input: CastMediaInput, token: String): List<CastImage> {
     val item = input.item ?: return emptyList()
     val base = input.apiBase
-    val token = input.streamToken
     val backdrop = artworkUrl(base, item.backdropUrl ?: "/api/v1/items/${item.id}/backdrop", token)
     val seriesId = item.parentId?.takeIf { isEpisode(item) }
     val poster = if (seriesId != null) {
@@ -297,22 +337,6 @@ fun castTextTracks(sidecars: List<SidecarSubtitle>): List<CastTextTrack> {
             sidecarId = s.id,
         )
     }
-}
-
-/** The track that is on as the TV starts: the phone's sidecar, none, or the
- *  default rule's pick among the TV's tracks. */
-fun activeTextTrack(tracks: List<CastTextTrack>, start: CastSubtitleStart): CastTextTrack? = when (start) {
-    CastSubtitleStart.Off -> null
-    is CastSubtitleStart.Sidecar -> tracks.firstOrNull { it.sidecarId == start.sidecarId }
-    is CastSubtitleStart.Auto -> autoSubtitleTrack(
-        tracks = tracks,
-        lang = { it.language },
-        forced = { it.forced },
-        text = { true },
-        audioLang = start.audioLang,
-        subtitlePref = start.subtitlePref,
-        audioPref = start.audioPref,
-    )
 }
 
 /** What an image is for, in the Cast widgets. */

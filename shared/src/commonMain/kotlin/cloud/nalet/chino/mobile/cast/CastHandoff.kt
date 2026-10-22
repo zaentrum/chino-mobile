@@ -1,18 +1,23 @@
 package cloud.nalet.chino.mobile.cast
 
 import cloud.nalet.chino.mobile.data.api.ProgressResponse
+import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
+import cloud.nalet.chino.mobile.ui.player.SESSION_MARGIN_MS
+import cloud.nalet.chino.mobile.ui.player.sidecarForced
 
 /*
  * Where the TV starts, and where the phone's player stands again when casting
  * does not take over - the hand-over both ways. Pure, so commonTest pins it.
  *
  * Casting starts while the phone plays: the TV continues where the phone was,
- * playing or paused as it was, and the phone's player closes once the TV
- * plays. Casting starts from a title's page (Play, Resume, an episode): the
- * player starts on the TV where it would have started on the phone - the
- * resume point, the head for a finished title. Casting stops: the TV's last
- * position is written back (CastProgressReporter), so playing again continues
- * from there.
+ * playing or paused as it was, with its audio and subtitle, and the phone's
+ * player closes once the TV plays. Casting starts from a title's page (Play,
+ * Resume, an episode): the player starts on the TV where it would have
+ * started on the phone - the resume point, the head for a finished title -
+ * unless the TV plays that title for this phone already: then it plays on.
+ * Casting stops: the TV's last position is written back
+ * (CastProgressReporter), so playing again continues from there; the phone's
+ * player does not start by itself.
  */
 
 /** What the phone's player hands to the TV as casting starts. */
@@ -21,8 +26,14 @@ data class CastHandoff(
     val startMs: Long,
     /** Whether the phone was playing (the TV plays) or paused (it waits). */
     val playing: Boolean,
+    /** The language of the audio the phone played, or starts the title
+     *  with; null when it is not known. */
+    val audioLang: String?,
     /** The subtitle the phone showed. */
     val subtitle: CastSubtitleStart,
+    /** The phone says where the TV starts - its player hands over where it
+     *  is, or Play from start - even where the TV plays the title already. */
+    val restart: Boolean,
 )
 
 /**
@@ -43,20 +54,21 @@ private const val SIDECAR_TRACK_PREFIX = "sidecar:"
 /**
  * The subtitle the TV starts with, from the one the phone's player showed:
  * [phoneKey] is its track's id, "" for Off, null while the player had not
- * decided yet. A sidecar is shown on the TV too; Off stays off; a subtitle
- * the TV has no copy of - one of the master's own renditions - and an
- * undecided player leave it to the default rule ([auto]).
+ * decided yet. A sidecar of [sidecars] is shown on the TV too; Off stays off;
+ * a subtitle the phone knows no sidecar of - one of the master's own
+ * renditions - and an undecided player leave it to the default rule ([auto]).
  */
-fun handoffSubtitle(phoneKey: String?, auto: CastSubtitleStart.Auto): CastSubtitleStart {
+fun handoffSubtitle(phoneKey: String?, sidecars: List<SidecarSubtitle>, auto: CastSubtitleStart.Auto): CastSubtitleStart {
     if (phoneKey == null) return auto
     if (phoneKey.isEmpty()) return CastSubtitleStart.Off
-    val sidecar = when {
+    val id = when {
         phoneKey.startsWith(SIDECAR_TRACK_PREFIX) -> phoneKey.removePrefix(SIDECAR_TRACK_PREFIX)
         phoneKey.substringAfter(':', "").startsWith(SIDECAR_TRACK_PREFIX) ->
             phoneKey.substringAfter(':').removePrefix(SIDECAR_TRACK_PREFIX)
         else -> null
     }
-    return if (sidecar.isNullOrEmpty()) auto else CastSubtitleStart.Sidecar(sidecar)
+    val sidecar = id?.takeIf { it.isNotEmpty() }?.let { sid -> sidecars.firstOrNull { it.id == sid } } ?: return auto
+    return CastSubtitleStart.Sidecar(sidecar.id, sidecar.lang, sidecarForced(sidecar))
 }
 
 /**
@@ -68,32 +80,38 @@ fun handoffSubtitle(phoneKey: String?, auto: CastSubtitleStart.Auto): CastSubtit
 fun resumeSecOf(progress: ProgressResponse): Int =
     if (progress.finished) 0 else progress.positionSec
 
-/** How close to where it would start the TV may already be in the same title
- *  for a load to be left unsent: about a write's interval, and a few seconds. */
-const val ALREADY_ON_TV_MS: Long = 30_000L
-
 /**
- * Whether the TV already plays [media], as this phone's [owner] cast it, near
- * where it would start ([ALREADY_ON_TV_MS]) - Resume on the title's page while
- * it plays there. A load would only start it again a little earlier; the TV
- * plays on instead. Start over, or a position far from the TV's, loads anew.
+ * Whether the TV plays the title [itemId] (its extra [extraId]) as this
+ * phone and account [owner] cast it - playing, paused or buffering. Opened
+ * again on the phone (Resume on its page, the title from Continue Watching),
+ * it plays on there: the TV's position is the one the viewer watched to,
+ * whatever the server had been told last. Only the phone saying where to
+ * start ([CastHandoff.restart]) loads it anew.
  */
-fun alreadyOnTv(status: RemoteMediaStatus?, media: CastMedia, owner: String): Boolean {
+fun playsOnTv(status: RemoteMediaStatus?, itemId: String, extraId: String?, owner: String): Boolean {
     val tag = status?.tag ?: return false
-    if (tag.itemId != media.itemId || tag.extraId != media.extraId || tag.owner != owner) return false
-    val playing = status.state == RemotePlayerState.Playing ||
+    if (tag.itemId != itemId || tag.extraId != extraId || tag.owner != owner) return false
+    return status.state == RemotePlayerState.Playing ||
         status.state == RemotePlayerState.Paused ||
         status.state == RemotePlayerState.Buffering
-    if (!playing) return false
-    val off = status.positionMs - media.startMs
-    return off in -ALREADY_ON_TV_MS..ALREADY_ON_TV_MS
+}
+
+/**
+ * Whether the TV's links stop working before the title ends, at [nowMs]
+ * (epoch ms): what is left of it from [positionMs] ([durationMs], 0 when not
+ * known), and the player's half hour for pauses ([SESSION_MARGIN_MS]), is
+ * more than the links have left ([linksExpireAtMs]; 0, not known: they are
+ * left as they are). Then the phone signs them anew.
+ */
+fun linksRunOut(linksExpireAtMs: Long, nowMs: Long, positionMs: Long, durationMs: Long): Boolean {
+    if (linksExpireAtMs <= 0L) return false
+    val toPlay = if (durationMs > 0) (durationMs - positionMs).coerceAtLeast(0L) else 0L
+    return linksExpireAtMs - nowMs < toPlay + SESSION_MARGIN_MS
 }
 
 /** Where the phone's player stands again when a load on the TV ended without
- *  the TV playing: at the position it handed over. After a failure it waits
- *  paused, the title ready to play on the phone ([afterFailure]); when the
- *  session ended first - the viewer stopped casting - it plays on as it was. */
+ *  the TV playing - it couldn't, or the viewer stopped casting first: at the
+ *  position it handed over, and paused. It never plays by itself. */
 data class LocalAgain(val startMs: Long, val autoplay: Boolean)
 
-fun localAgainAfterCast(handoff: CastHandoff, afterFailure: Boolean): LocalAgain =
-    LocalAgain(startMs = handoff.startMs, autoplay = handoff.playing && !afterFailure)
+fun localAgainAfterCast(handoff: CastHandoff): LocalAgain = LocalAgain(startMs = handoff.startMs, autoplay = false)

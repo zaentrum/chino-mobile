@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 import cafe.adriel.voyager.navigator.CurrentScreen
 import cafe.adriel.voyager.navigator.Navigator
 import cloud.nalet.chino.mobile.cast.CastBar
-import cloud.nalet.chino.mobile.cast.CastHost
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.auth.AccountStore
 import cloud.nalet.chino.mobile.data.auth.LocalSignInLauncher
@@ -155,8 +154,6 @@ fun App(
                             }
                         }
                     }
-                    // Casting's sender, for this container's server and account.
-                    CastHost(container)
                     // What addons told the signed-in person, asked for beside
                     // the navigator — whichever screen it shows — while the
                     // app is in the foreground.

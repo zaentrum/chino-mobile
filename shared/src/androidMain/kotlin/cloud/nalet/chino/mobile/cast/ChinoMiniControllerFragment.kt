@@ -76,7 +76,7 @@ class ChinoMiniControllerFragment : MiniControllerFragment() {
 private class DeviceLine(private val line: TextView) : UIController() {
     override fun onSessionConnected(castSession: CastSession) {
         super.onSessionConnected(castSession)
-        line.text = castDeviceLine(castSession.castDevice?.friendlyName)
+        line.text = castDeviceLine(castDeviceName(castSession.castDevice?.friendlyName, castSession.castDevice?.modelName))
     }
 
     override fun onSessionEnded() {

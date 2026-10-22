@@ -2,7 +2,6 @@ package cloud.nalet.chino.mobile.cast
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import cloud.nalet.chino.mobile.data.AppContainer
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -33,11 +32,6 @@ expect fun CastButton(modifier: Modifier = Modifier)
  */
 @Composable
 expect fun CastBar(padNavigationBar: Boolean, modifier: Modifier = Modifier)
-
-/** Starts casting's sender for [container]'s server and account; again for
- *  each container the app builds (a change of server). */
-@Composable
-expect fun CastHost(container: AppContainer)
 
 /** What casting tells the screens. */
 object CastEvents {

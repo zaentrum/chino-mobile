@@ -13,20 +13,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.compose.AndroidFragment
 import androidx.mediarouter.app.MediaRouteButton
-import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import com.google.android.gms.cast.framework.CastButtonFactory
-
-@Composable
-actual fun CastHost(container: AppContainer) {
-    val context = LocalContext.current
-    LaunchedEffect(container) { ChinoCast.attach(context, container) }
-}
 
 /**
  * Google's MediaRouteButton - its icon and states, its device chooser - in
@@ -36,6 +28,9 @@ actual fun CastHost(container: AppContainer) {
  */
 @Composable
 actual fun CastButton(modifier: Modifier) {
+    // Casting starts with the app; where the framework failed to start so
+    // far, it is tried again as a screen with a Cast button opens.
+    LaunchedEffect(Unit) { ChinoCast.ensureStarted() }
     val cast by ChinoCast.state.collectAsState()
     if (!cast.available && !cast.connecting && !cast.connected) return
     Box(modifier = modifier, contentAlignment = Alignment.Center) {

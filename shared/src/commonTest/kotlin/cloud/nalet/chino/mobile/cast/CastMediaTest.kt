@@ -2,18 +2,23 @@ package cloud.nalet.chino.mobile.cast
 
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.data.model.Item
+import cloud.nalet.chino.mobile.ui.player.parseHlsMaster
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** What the TV is told to play: its own master, what it shows, its subtitles,
- *  where it starts. */
+ *  where it starts - every link signed with the token minted for the TV. */
 class CastMediaTest {
     private val base = "https://media.example.com/api"
+
+    /** The phone's player's token, which the phone's links carry. */
     private val token = "tok123"
+
+    /** The TV's own, and when its links stop working at the earliest. */
+    private val tv = CastToken("tv456", expiresAtMs = 1_800_000_000_000)
 
     /** The phone's master as the Android player asks for it: its own caps,
      *  the rung it starts on. */
@@ -62,9 +67,9 @@ class CastMediaTest {
         extraHeading: String? = null,
         master: String = phoneMaster,
         writes: Boolean = true,
+        audioLang: String? = null,
     ) = CastMediaInput(
         apiBase = base,
-        streamToken = token,
         itemId = item?.id ?: "m1",
         extraId = extraId,
         phoneMasterUrl = master,
@@ -75,9 +80,13 @@ class CastMediaTest {
         startMs = startMs,
         autoplay = autoplay,
         sidecars = subs,
+        audioLang = audioLang,
         subtitleStart = start,
         writesProgress = writes,
     )
+
+    private fun castMediaFor(input: CastMediaInput, master: String? = null, load: String = "L1") =
+        castMediaFor(input, tv, master?.let(::parseHlsMaster), load)
 
     @Test
     fun theReceiverIsServedH264At1080AndAac() {
@@ -85,12 +94,18 @@ class CastMediaTest {
     }
 
     @Test
-    fun theTvsMasterCarriesTheReceiversCapsTheTokenAndNoRung() {
+    fun theTvsMasterCarriesTheReceiversCapsTheTvsTokenAndNoRung() {
         val media = castMediaFor(input())
         assertEquals(
-            "https://media.example.com/api/v1/items/m1/play/master.m3u8?stream=tok123&caps=avc:1080,aac",
+            "https://media.example.com/api/v1/items/m1/play/master.m3u8?stream=tv456&caps=avc:1080,aac",
             media.contentUrl,
         )
+    }
+
+    @Test
+    fun theLoadIsMarkedWithItsOwnIdAndWhenItsLinksStopWorking() {
+        val media = castMediaFor(input(), load = "L7")
+        assertEquals(CastTag("m1", null, "owner-a", writesProgress = true, load = "L7", linksExpireAtMs = 1_800_000_000_000), media.tag("owner-a"))
     }
 
     @Test
@@ -123,8 +138,8 @@ class CastMediaTest {
         assertNull(meta.subtitle)
         assertEquals(
             listOf(
-                CastImage("https://media.example.com/api/v1/items/m1/backdrop?stream=tok123", 1280, 720, CastImageShape.Landscape),
-                CastImage("https://media.example.com/api/v1/items/m1/poster?stream=tok123", 500, 750, CastImageShape.Portrait),
+                CastImage("https://media.example.com/api/v1/items/m1/backdrop?stream=tv456", 1280, 720, CastImageShape.Landscape),
+                CastImage("https://media.example.com/api/v1/items/m1/poster?stream=tv456", 500, 750, CastImageShape.Portrait),
             ),
             meta.images,
         )
@@ -142,8 +157,8 @@ class CastMediaTest {
         // Its own still, and its series' poster.
         assertEquals(
             listOf(
-                "https://media.example.com/api/v1/items/e3/backdrop?stream=tok123",
-                "https://media.example.com/api/v1/items/s1/poster?stream=tok123",
+                "https://media.example.com/api/v1/items/e3/backdrop?stream=tv456",
+                "https://media.example.com/api/v1/items/s1/poster?stream=tv456",
             ),
             meta.images.map { it.url },
         )
@@ -173,7 +188,7 @@ class CastMediaTest {
         assertEquals("Sintel · Trailer", media.metadata.title)
         assertEquals("x1", media.extraId)
         assertFalse(media.writesProgress)
-        assertEquals(CastTag("m1", "x1", "k", false), media.tag("k"))
+        assertEquals(CastTag("m1", "x1", "k", false, "L1", 1_800_000_000_000), media.tag("k"))
     }
 
     @Test
@@ -184,7 +199,8 @@ class CastMediaTest {
         assertEquals(listOf("en", "de", "en"), tracks.map { it.language })
         assertEquals(listOf("English", "German", "English (forced)"), tracks.map { it.name })
         assertEquals(listOf(false, false, true), tracks.map { it.forced })
-        assertEquals("https://media.example.com/api/v1/play/subs/s2.vtt?stream=tok123", tracks[1].url)
+        // Signed for the TV, not with the phone's player's token.
+        assertEquals("https://media.example.com/api/v1/play/subs/s2.vtt?stream=tv456", tracks[1].url)
     }
 
     @Test
@@ -194,27 +210,52 @@ class CastMediaTest {
 
     @Test
     fun theTvStartsWithThePhonesSidecarOffOrTheDefaultRule() {
-        fun active(start: CastSubtitleStart) = castMediaFor(input(subs = sidecars, start = start)).activeTextTrackId
-        assertEquals(1001L, active(CastSubtitleStart.Sidecar("s2")))
+        fun active(start: CastSubtitleStart, audioLang: String? = null) =
+            castMediaFor(input(subs = sidecars, start = start, audioLang = audioLang)).activeTextTrackId
+        assertEquals(1001L, active(CastSubtitleStart.Sidecar("s2", "ger", forced = false)))
         assertNull(active(CastSubtitleStart.Off))
         // A picture sidecar has no track on the TV: none comes on.
-        assertNull(active(CastSubtitleStart.Sidecar("s3")))
+        assertNull(active(CastSubtitleStart.Sidecar("s3", "fre", forced = false)))
+        val auto = CastSubtitleStart.Auto(subtitlePref = "en", audioPref = "orig")
         // Japanese audio, English subtitles in Settings: the full English track.
-        assertEquals(1000L, active(CastSubtitleStart.Auto(audioLang = "jpn", subtitlePref = "en", audioPref = "orig")))
+        assertEquals(1000L, active(auto, audioLang = "jpn"))
         // English audio: the forced English track - the lines in another language.
-        assertEquals(1002L, active(CastSubtitleStart.Auto(audioLang = "eng", subtitlePref = "en", audioPref = "orig")))
+        assertEquals(1002L, active(auto, audioLang = "eng"))
         // The audio's language unknown: none.
-        assertNull(active(CastSubtitleStart.Auto(audioLang = null, subtitlePref = "en", audioPref = "orig")))
+        assertNull(active(auto, audioLang = null))
+    }
+
+    /** A packaged title's master once the packager writes HLS subtitles:
+     *  English twice (full and forced), German, and the audio. */
+    private val masterWithSubtitles = """
+        #EXTM3U
+        #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="a0/index.m3u8"
+        #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Japanese",LANGUAGE="ja",DEFAULT=NO,AUTOSELECT=YES,URI="a1/index.m3u8"
+        #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",DEFAULT=NO,AUTOSELECT=NO,URI="s0/index.m3u8"
+        #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English (forced)",LANGUAGE="en",FORCED=YES,AUTOSELECT=YES,URI="s1/index.m3u8"
+        #EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2",AUDIO="a",SUBTITLES="subs"
+        v0/index.m3u8
+    """.trimIndent()
+
+    @Test
+    fun theSidecarsTheMasterCarriesAgainAreNotSideLoaded() {
+        val tracks = castMediaFor(input(subs = sidecars), master = masterWithSubtitles).textTracks
+        // The master has English and forced English: only German is the phone's to add.
+        assertEquals(listOf("s2"), tracks.map { it.sidecarId })
+        // Without a master read, all of them.
+        assertEquals(listOf("s1", "s2", "s4"), castMediaFor(input(subs = sidecars)).textTracks.map { it.sidecarId })
     }
 
     @Test
-    fun theOwnerKeyNamesNoAccountAndDiffersPerServer() {
-        val key = castOwnerKey(base, "3f2a-sub")
-        assertEquals(16, key.length)
-        assertFalse(key.contains("3f2a"))
-        assertEquals(key, castOwnerKey("$base/", "3f2a-sub"))
-        assertNotEquals(key, castOwnerKey("https://other.example.org/api", "3f2a-sub"))
-        assertNotEquals(key, castOwnerKey(base, "another-sub"))
+    fun aSubtitleTheMasterCarriesComesOnOnceTheTvHasLoaded() {
+        fun active(start: CastSubtitleStart, audioLang: String?) =
+            castMediaFor(input(subs = sidecars, start = start, audioLang = audioLang), master = masterWithSubtitles).activeTextTrackId
+        // The phone showed the English sidecar; the TV has it as the master's: none in the request.
+        assertNull(active(CastSubtitleStart.Sidecar("s1", "eng", forced = false), "eng"))
+        // German is the phone's own: on from the start.
+        assertEquals(1000L, active(CastSubtitleStart.Sidecar("s2", "ger", forced = false), "eng"))
+        // The default rule for Japanese audio picks the master's English: after the load.
+        assertNull(active(CastSubtitleStart.Auto(subtitlePref = "en", audioPref = "orig"), "jpn"))
     }
 
     @Test
