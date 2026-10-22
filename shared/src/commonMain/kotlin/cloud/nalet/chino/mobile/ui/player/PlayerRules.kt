@@ -137,3 +137,14 @@ fun formatTime(totalSec: Long): String {
     val ss = s.toString().padStart(2, '0')
     return if (h > 0) "$h:${m.toString().padStart(2, '0')}:$ss" else "$m:$ss"
 }
+
+/** The speeds the speed menu offers, slowest first. */
+val PLAYBACK_SPEEDS: List<Float> = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+
+/** A speed as the speed menu names it: "normal" for 1, else the rate with no
+ *  trailing zero, "0.75x", "1.5x", "2x" - never "2.0x". */
+fun speedLabel(rate: Float): String = when {
+    rate == 1.0f -> "normal"
+    rate == rate.toInt().toFloat() -> "${rate.toInt()}x"
+    else -> "${rate}x"
+}

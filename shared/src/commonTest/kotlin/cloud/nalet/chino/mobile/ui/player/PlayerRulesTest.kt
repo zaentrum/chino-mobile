@@ -178,4 +178,9 @@ class PlayerRulesTest {
             buildMasterUrl("https://media.example.org/api", "e1", "tok", "v1", "avc"),
         )
     }
+
+    @Test
+    fun theSpeedMenuSaysNormalAndRatesWithoutATrailingZero() {
+        assertEquals(listOf("0.5x", "0.75x", "normal", "1.25x", "1.5x", "1.75x", "2x"), PLAYBACK_SPEEDS.map(::speedLabel))
+    }
 }

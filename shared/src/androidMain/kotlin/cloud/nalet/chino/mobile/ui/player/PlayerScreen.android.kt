@@ -81,6 +81,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -3152,20 +3153,23 @@ private fun SubtitleRow(t: SubtitleTrack, onSelect: (SubtitleTrack?) -> Unit) {
 }
 
 /** The mark of a single-choice menu's picked row (subtitles, audio,
- *  quality, speed): a small filled dot before it, in the accent blue its
- *  text takes - no checkbox square, no check. The other rows keep its room,
- *  so every name starts in one line. */
+ *  quality, speed): a small filled square before it - square like every
+ *  shape of the design system (docs/chino playback) - in the accent blue
+ *  its text takes; no checkbox, no check. The other rows keep its room, so
+ *  every name starts in one line. */
 @Composable
 private fun PickedDot(selected: Boolean, modifier: Modifier = Modifier) {
     Box(modifier = modifier.width(16.dp).height(18.dp), contentAlignment = Alignment.CenterStart) {
         if (selected) {
-            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF58A6FF)))
+            Box(modifier = Modifier.size(6.dp).background(Color(0xFF58A6FF)))
         }
     }
 }
 
-/** Shared menu header — lowercase as its items, gray, optional
- *  right-aligned count. */
+/** Shared menu header — "subtitles", "audio", "speed", "quality": in the
+ *  mono face and lowercase, as the design system's voice writes a menu's
+ *  heading; gray, optional right-aligned count. The rows stay in the body
+ *  face. */
 @Composable
 private fun MenuHeader(title: String, trailing: String?) {
     Row(
@@ -3177,9 +3181,10 @@ private fun MenuHeader(title: String, trailing: String?) {
         Text(
             text = title,
             color = Color(0xFF8B949E),
+            style = cloud.nalet.chino.mobile.ui.theme.ChinoMono,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).semantics { heading() },
         )
         if (trailing != null) {
             Text(
@@ -3202,7 +3207,7 @@ private fun MenuHeader(title: String, trailing: String?) {
  *  the whole screen. */
 @Composable
 internal fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
-    val rates = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+    val rates = PLAYBACK_SPEEDS
     Box(
         modifier = Modifier
             .width(180.dp)
@@ -3224,7 +3229,7 @@ internal fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
                 ) {
                     PickedDot(selected = active)
                     Text(
-                        text = if (r == 1.0f) "Normal" else "${r}x",
+                        text = speedLabel(r),
                         color = if (active) Color(0xFF58A6FF) else Color.White,
                         fontSize = 14.sp,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,

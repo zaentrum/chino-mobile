@@ -757,7 +757,7 @@ private fun MenuCard(width: Dp, content: @Composable ColumnScope.() -> Unit) {
 @Composable
 private fun MenuHeader(title: String, trailing: String? = null) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = MutedText, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Text(title, color = MutedText, style = cloud.nalet.chino.mobile.ui.theme.ChinoMono, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
         if (trailing != null) Text(trailing, color = MutedText.copy(alpha = 0.7f), fontSize = 10.sp)
     }
 }
@@ -844,8 +844,8 @@ private fun CaptionsMenuCard(
 private fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
     MenuCard(width = 180.dp) {
         MenuHeader("speed")
-        listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f).forEach { r ->
-            MenuRow(text = if (r == 1.0f) "Normal" else "${r}x", active = r == currentSpeed, onClick = { onSelect(r) })
+        PLAYBACK_SPEEDS.forEach { r ->
+            MenuRow(text = speedLabel(r), active = r == currentSpeed, onClick = { onSelect(r) })
         }
     }
 }

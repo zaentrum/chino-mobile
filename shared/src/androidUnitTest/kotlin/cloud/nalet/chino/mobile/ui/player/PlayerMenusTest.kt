@@ -30,6 +30,11 @@ class PlayerMenusTest {
         compose.setContent { SpeedMenuCard(currentSpeed = 1.5f, onSelect = {}) }
         compose.onNodeWithText("1.5x").assertIsSelected().assert(radio)
         compose.onNodeWithText("0.5x").assertIsNotSelected().assert(radio)
+        // "normal", lowercase; "2x", never "2.0x".
+        compose.onNodeWithText("normal").assertIsNotSelected()
+        compose.onNodeWithText("2x").assertExists()
+        // The header in the mono face, a heading.
+        compose.onNodeWithText("speed").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
     }
 
     @Test
