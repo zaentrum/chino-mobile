@@ -297,8 +297,9 @@ class ProgressSync(
     /** The connected server's API base. */
     private val server: () -> String,
     private val scope: CoroutineScope,
-    /** POSTs a watched mark, with [bearer] where given. */
-    private val postWatched: suspend (itemId: String, bearer: String?) -> Unit = { _, _ -> },
+    /** POSTs a watched mark, with [bearer] where given, and - one sent from
+     *  the queue - its age ([playedMsAgo]). */
+    private val postWatched: suspend (itemId: String, bearer: String?, playedMsAgo: Long?) -> Unit = { _, _, _ -> },
     /** The bearer of [accountId] while it is the account signed in now; null
      *  once another is (a flush for it then stops). */
     private val bearerOf: suspend (accountId: String) -> String? = { null },
@@ -345,7 +346,7 @@ class ProgressSync(
     suspend fun markWatchedNow(itemId: String): SendOutcome? {
         val accountId = account() ?: return null
         val m = WatchedMark(server(), accountId, itemId, now())
-        val outcome = sendWatched(m, bearer = null)
+        val outcome = sendWatched(m, bearer = null, queued = false)
         if (outcome == SendOutcome.Retry || outcome == SendOutcome.Wait) {
             if (queue.enqueueWatched(m)) onQueued()
         }
@@ -362,7 +363,7 @@ class ProgressSync(
             server(),
             accountId,
             send = { send(it, bearer, queued = true) },
-            sendWatched = { sendWatched(it, bearer) },
+            sendWatched = { sendWatched(it, bearer, queued = true) },
         )
     }
 
@@ -419,8 +420,10 @@ class ProgressSync(
         sendOutcomeOf(e)
     }
 
-    private suspend fun sendWatched(m: WatchedMark, bearer: String?): SendOutcome = try {
-        postWatched(m.itemId, bearer)
+    private suspend fun sendWatched(m: WatchedMark, bearer: String?, queued: Boolean): SendOutcome = try {
+        // A queued mark goes with its age, as a queued position does: the
+        // server marks it watched when it was finished.
+        postWatched(m.itemId, bearer, if (queued) (now() - m.atMs).coerceAtLeast(0L) else null)
         onReach(true)
         SendOutcome.Sent
     } catch (e: CancellationException) {

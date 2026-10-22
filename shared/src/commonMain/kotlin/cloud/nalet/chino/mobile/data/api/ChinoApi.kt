@@ -209,8 +209,17 @@ class ChinoApi(private val http: HttpClient) {
     /** Marks the item as fully watched — drives the green "watched" badge on
      *  posters + lets continue-watching substitute the next episode. Mirrors
      *  chino-web's useWatchedToggle POST branch. */
-    suspend fun postWatched(id: String, bearer: String? = null) {
-        http.post("v1/me/items/$id/watched") { bearer?.let { asAccount(it) } }
+    suspend fun postWatched(id: String, bearer: String? = null, playedMsAgo: Long? = null) {
+        http.post("v1/me/items/$id/watched") {
+            bearer?.let { asAccount(it) }
+            // A mark the phone kept while it had no connection: with its age,
+            // so the server writes it as finished then (chino-api's
+            // played_ms_ago), never over a later watch.
+            playedMsAgo?.let {
+                contentType(ContentType.Application.Json)
+                setBody(WatchedBody(it))
+            }
+        }
     }
 
     /** Clears the fully-watched flag (un-watch). Mirrors chino-web's
@@ -315,6 +324,13 @@ class ChinoApi(private val http: HttpClient) {
 
     suspend fun itemSubtitles(id: String): SubtitlesResponse =
         http.get("v1/items/$id/subtitles").body()
+
+    /** The subtitle languages the server is set up for (BCP 47 tags, in its
+     *  setting's order; empty where none is set) - the subtitles menu's top
+     *  level after the viewer's own. A server from before the route answers
+     *  404: an [ApiStatusException]. */
+    suspend fun subtitleLanguages(): SubtitleLanguagesResponse =
+        http.get("v1/subtitles/languages").body()
 
     /** Pre-playback probe: chino-stream's transcode decision + container/codec
      *  metadata + the ladder of qualities the server can serve. */
@@ -542,6 +558,16 @@ data class SidecarSubtitle(
 @Serializable
 data class SubtitlesResponse(
     val subtitles: List<SidecarSubtitle> = emptyList(),
+)
+
+/** POST /me/items/{id}/watched's body, for a mark sent late: its age. */
+@Serializable
+data class WatchedBody(@SerialName("played_ms_ago") val playedMsAgo: Long)
+
+/** GET /subtitles/languages: the server's subtitle languages. */
+@Serializable
+data class SubtitleLanguagesResponse(
+    val languages: List<String> = emptyList(),
 )
 
 @Serializable

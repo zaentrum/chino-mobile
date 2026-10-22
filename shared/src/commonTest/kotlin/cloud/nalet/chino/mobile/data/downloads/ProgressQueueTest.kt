@@ -183,6 +183,8 @@ class ProgressSyncTest {
     private var account: String? = "anna"
     private val posted = mutableListOf<Pair<String, ProgressBody>>()
     private val watchedPosts = mutableListOf<String>()
+    /** Each watched mark's body as it went out ("" for none). */
+    private val watchedBodies = mutableListOf<String>()
     private val bearers = mutableListOf<String?>()
     private val refused = mutableListOf<String>()
     private var switchToBenAfterFirstPost = false
@@ -193,6 +195,7 @@ class ProgressSyncTest {
         val path = request.url.encodedPath
         if (path.endsWith("/watched")) {
             watchedPosts += path.substringAfter("/v1/me/items/").substringBefore("/watched")
+            watchedBodies += (request.body as? io.ktor.http.content.TextContent)?.text.orEmpty()
             return@FakeServer respondJson("{}")
         }
         val id = path.substringAfter("/v1/items/").substringBefore("/progress")
@@ -224,7 +227,7 @@ class ProgressSyncTest {
         account = { account },
         server = { SERVER },
         scope = this,
-        postWatched = { id, bearer -> server.api.postWatched(id, bearer) },
+        postWatched = { id, bearer, playedMsAgo -> server.api.postWatched(id, bearer, playedMsAgo) },
         // The bearer of the account asked about, while it is signed in.
         bearerOf = { id -> "token-of-$id".takeIf { account == id } },
         onPhone = { _, itemId -> onPhone(itemId) },
@@ -316,17 +319,30 @@ class ProgressSyncTest {
     }
 
     @Test
-    fun aWatchedMarkWithoutTheServerIsKeptAndSentAfterThePositions() = runTest {
+    fun aWatchedMarkWithoutTheServerIsKeptAndSentAfterThePositionsWithItsAge() = runTest {
         val store = JsonBookStore()
         val s = sync(store)
+        clock = 10_000
         s.saveNow("film", 5_000, 5_400)
         assertEquals(SendOutcome.Wait, s.markWatchedNow("film"))
         assertEquals(1, queuedSignals)
         assertTrue(s.hasPending())
+        // The server answers 50 s later: the mark goes with how long ago the
+        // film was finished, as its position does.
         serverUp = true
+        clock = 60_000
         assertEquals(FlushResult(sent = 2, dropped = 0, left = 0), sync(store).flush())
         assertEquals(listOf("film"), posted.map { it.first })
         assertEquals(listOf("film"), watchedPosts)
+        assertEquals(listOf("""{"played_ms_ago":50000}"""), watchedBodies)
+    }
+
+    @Test
+    fun aWatchedMarkSentAtOnceHasNoAge() = runTest {
+        serverUp = true
+        assertEquals(SendOutcome.Sent, sync(JsonBookStore()).markWatchedNow("film"))
+        assertEquals(listOf("film"), watchedPosts)
+        assertEquals(listOf(""), watchedBodies)
     }
 
     @Test

@@ -26,6 +26,7 @@ import cloud.nalet.chino.mobile.data.notices.NoticesRepository
 import cloud.nalet.chino.mobile.data.telemetry.Telemetry
 import cloud.nalet.chino.mobile.feedback.BugReporter
 import cloud.nalet.chino.mobile.feedback.PendingReportStore
+import cloud.nalet.chino.mobile.ui.components.Toast
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
@@ -34,6 +35,7 @@ import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -78,6 +80,18 @@ class AppContainer(
      *  watched, telemetry) that must outlive a screen-model's onCleared —
      *  terminal saves race against view-model cancellation otherwise. */
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * The graph's end: the app built another one for another server (Change
+     * server). Everything it still runs in [appScope] stops - the downloads'
+     * watch of the manager and of the server, its checks, its sends - so that
+     * only the new graph acts: two of them would each set the manager's stop
+     * reasons for their own server and account, each change setting off the
+     * other's.
+     */
+    fun close() {
+        appScope.cancel()
+    }
 
     /** Persisted connected-server config (URL + OIDC issuer/client +
      *  discovered endpoints). Plaintext-but-sandboxed — not secret; tokens
@@ -233,6 +247,11 @@ class AppContainer(
      *  signed-in account changes. */
     val notices: NoticesRepository by lazy { NoticesRepository(chinoApi, appScope) }
 
+    /** The subtitle languages the server is set up for, asked once for the
+     *  graph's life - a server, a session - and kept: the subtitles menu's
+     *  top level after the viewer's own language. */
+    val subtitleLanguages: ServerSubtitleLanguages by lazy { ServerSubtitleLanguages { chinoApi.subtitleLanguages().languages } }
+
     val telemetry: Telemetry by lazy {
         Telemetry(
             api = chinoApi,
@@ -249,6 +268,11 @@ class AppContainer(
      * watchlist, likes and lists cached for it.
      */
     suspend fun forgetDeletedAccount(accountId: String) {
+        // Casting stops - the TV plays nothing on for whoever comes next -
+        // and a toast says so: the question did not.
+        runCatching { leaveCasting(accountId) }.getOrNull()?.let { device ->
+            toasts.tryEmit(Toast(cloud.nalet.chino.mobile.data.downloads.stoppedCastingToast(device)))
+        }
         // Its downloads on this phone go too, as Delete Account said.
         runCatching { downloads?.dropOwner(Owner(serverBase, accountId)) }
         accountStore.remove(accountId)
@@ -304,7 +328,6 @@ class AppContainer(
                     itemId = itemId,
                     quality = d.preferences.value.quality,
                     audioPref = prefs.preferredAudioLang,
-                    subtitlePref = prefs.preferredSubLang,
                 )
             ) {
                 is PlanResult.Ready -> {
@@ -353,6 +376,21 @@ class AppContainer(
      */
     var playsOnAnotherScreen: () -> Boolean = { false }
 
+    /** The device [accountId] casts to now - a session connected while it is
+     *  the account signed in - by its name; null where it casts nothing, or
+     *  the platform casts nothing. Set by the platform that casts. */
+    var castingDeviceOf: (accountId: String) -> String? = { null }
+
+    /** [accountId] leaves the phone while it casts - signed out, removed,
+     *  another account in its place: what the TV plays of it is written as
+     *  it, then casting stops. The device it stopped casting on; null where
+     *  it cast nothing. Set by the platform that casts. */
+    var leaveCasting: suspend (accountId: String) -> String? = { null }
+
+    /** Short confirmations shown over any screen, the design system's
+     *  toasts (ui/components/Toast.kt). */
+    val toasts = MutableSharedFlow<Toast>(extraBufferCapacity = 4)
+
     /** The player's positions: sent at once, or kept and sent once the
      *  server can be reached again - with their age, and with the bearer of
      *  the account that played them. */
@@ -363,7 +401,7 @@ class AppContainer(
             account = { accountStore.snapshotBlocking().activeAccount?.id },
             server = { serverBase },
             scope = appScope,
-            postWatched = { id, bearer -> chinoApi.postWatched(id, bearer) },
+            postWatched = { id, bearer, playedMsAgo -> chinoApi.postWatched(id, bearer, playedMsAgo) },
             bearerOf = { accountId ->
                 // The token of the account signed in now, renewed if it must
                 // be - and only while it is still the one asked about.

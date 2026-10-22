@@ -16,6 +16,7 @@ import cloud.nalet.chino.mobile.downloads.AppContainerHost
 import cloud.nalet.chino.mobile.feedback.CurrentActivity
 import cloud.nalet.chino.mobile.feedback.FilePendingReportStore
 import cloud.nalet.chino.mobile.feedback.bugFingerprint
+import kotlinx.coroutines.launch
 import java.io.File
 
 class ChinoMobileApplication : Application(), AppContainerHost {
@@ -65,8 +66,15 @@ class ChinoMobileApplication : Application(), AppContainerHost {
      *  sees. Mirrors chino-androidtv's process-restart-on-connect intent without
      *  killing the process. */
     fun rebuildContainer(): AppContainer {
+        val old = container
         container = buildContainer()
         attachCasting(this, container)
+        // The old graph's work stops (AppContainer.close), and the new one's
+        // downloads are built at once, off the main thread: the manager's
+        // stop reasons are theirs to set now, and theirs alone.
+        old.close()
+        val next = container
+        next.appScope.launch { runCatching { next.downloads } }
         return container
     }
 
