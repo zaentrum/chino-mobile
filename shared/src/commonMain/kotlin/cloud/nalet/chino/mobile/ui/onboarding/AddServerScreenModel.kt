@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.ui.onboarding
 
+import cloud.nalet.chino.mobile.ui.downloads.leaveCastingOf
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
@@ -72,8 +73,10 @@ class AddServerScreenModel(
                     val oldServer = container.serverBase
                     val another = clearAccountsOnConnect && r.config.baseUrl.trimEnd('/') != oldServer
                     val summary = if (another) container.downloads?.summaryOfServer(oldServer) else null
-                    if (summary != null && !summary.isEmpty) {
-                        _state.value = AddServerState.AskDropDownloads(summary, r.config, rawUrl)
+                    // Asked, too, while the account casts: that stops.
+                    val casting = another && activeAccountId()?.let { container.castingDeviceOf(it) } != null
+                    if ((summary != null && !summary.isEmpty) || casting) {
+                        _state.value = AddServerState.AskDropDownloads(summary ?: DownloadsSummary(0, 0L), r.config, rawUrl)
                     } else {
                         finish(r.config, rawUrl, dropDownloadsOf = oldServer.takeIf { another })
                     }
@@ -96,7 +99,12 @@ class AddServerScreenModel(
         if (_state.value is AddServerState.AskDropDownloads) _state.value = AddServerState.Idle
     }
 
+    private fun activeAccountId(): String? = runCatching { container.accountStore.snapshotBlocking().activeAccount?.id }.getOrNull()
+
     private suspend fun finish(config: ServerConfig, rawUrl: String, dropDownloadsOf: String?) {
+        // Another server: whoever casts now stops - its last position
+        // written first - as the question said.
+        if (dropDownloadsOf != null) activeAccountId()?.let { leaveCastingOf(container, it, castingSaid = true) }
         if (dropDownloadsOf != null) runCatching { container.downloads?.dropServer(dropDownloadsOf) }
         if (clearAccountsOnConnect) {
             runCatching {

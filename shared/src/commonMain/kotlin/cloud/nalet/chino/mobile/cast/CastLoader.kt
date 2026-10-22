@@ -135,6 +135,8 @@ internal class CastLoader(
     private val loading: (load: String, itemId: String, startMs: Long, floorMs: Long?) -> Unit,
     /** A newer load is asked for: the one the TV is answering gives way. */
     private val superseded: () -> Unit = {},
+    /** What the phone is called in a failure's reason: "phone", "tablet". */
+    private val thisDevice: () -> String = { "phone" },
 ) {
     /** One load at a time: the viewer's, a reload for the links, a retry. */
     private val mutex = Mutex()
@@ -351,5 +353,5 @@ internal class CastLoader(
     }
 
     private fun failure(tv: CastTv, itemId: String, report: CastErrorReport): CastFailure =
-        CastFailure(tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(report, serverHost(), tv.device), itemId)
+        CastFailure(tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(report, serverHost(), tv.device, thisDevice()), itemId, report.serverUnreachable)
 }

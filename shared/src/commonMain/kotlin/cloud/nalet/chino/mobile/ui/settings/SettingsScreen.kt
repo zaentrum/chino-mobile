@@ -64,6 +64,8 @@ import cloud.nalet.chino.mobile.ui.downloads.DownloadsGoQuestion
 import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
 import cloud.nalet.chino.mobile.ui.downloads.downloadsOf
 import cloud.nalet.chino.mobile.ui.downloads.signOutOfThisPhone
+import cloud.nalet.chino.mobile.ui.downloads.asksBeforeLeaving
+import cloud.nalet.chino.mobile.ui.downloads.withCastingSentence
 import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
 import cloud.nalet.chino.mobile.data.downloads.SIGN_OUT_TITLE
 import cloud.nalet.chino.mobile.data.downloads.yourDownloadsGoSentence
@@ -106,10 +108,12 @@ fun SettingsSection() {
     // what goes, non-null while it is open.
     var signOutDownloads by remember { mutableStateOf<DownloadsSummary?>(null) }
     val device = LocalDeviceKind.current
-    val signOut: () -> Unit = {
+    // What the server offers: a bug report goes only where it takes them.
+    val features by container.serverReach.features.collectAsState()
+    val signOut: (castingSaid: Boolean) -> Unit = { castingSaid ->
         val id = activeAccount?.id
         if (id != null) scope.launch {
-            signOutOfThisPhone(container, id)
+            signOutOfThisPhone(container, id, castingSaid)
             val remaining = container.accountStore.snapshotBlocking().accounts
             if (remaining.isEmpty()) nav.replaceAll(AuthScreen())
             else nav.replaceAll(AccountPickerScreen())
@@ -142,9 +146,10 @@ fun SettingsSection() {
             SectionHeading("Account")
             // Profile entry — name/email + watch history, mirrors the TopBar avatar.
             ActionRow(
-                label = "Profile",
+                // "account", the word for who is watching (docs/chino words).
+                label = "Your account",
                 subtitle = activeAccount?.let { it.email.ifBlank { it.displayName } }
-                    ?: "View your profile and watch history",
+                    ?: "Your account and watch history",
                 onClick = { nav.push(ProfileScreen()) },
             )
             // Switch account — the "Who's watching?" picker (also used to add a
@@ -163,7 +168,7 @@ fun SettingsSection() {
                 onClick = {
                     // Its downloads go with it: asked first. None: as before.
                     val summary = activeAccount?.id?.let { downloadsOf(container, it) }
-                    if (summary == null || summary.isEmpty) signOut() else signOutDownloads = summary
+                    if (asksBeforeLeaving(summary, container, activeAccount?.id)) signOutDownloads = summary ?: DownloadsSummary(0, 0L) else signOut(false)
                 },
             )
             // Delete the active account on the server — asked first, in a
@@ -211,21 +216,25 @@ fun SettingsSection() {
                 onClick = { nav.push(AddServerScreen(changeServer = true)) },
             )
 
-            Box(modifier = Modifier.padding(top = 12.dp))
-            SectionHeading("Support")
-            // Report a bug — capture the screenshot FIRST (the dialog would
-            // only ever photograph itself), then mount the dialog with the
-            // bytes. captureScreenshot is best-effort; null just means no
-            // preview row + a text-only report.
-            ActionRow(
-                label = "Report a bug",
-                subtitle = "Send a description and a screenshot to the people who run this server",
-                onClick = {
-                    scope.launch {
-                        bugReportDraft = BugReportDraft(screenshot = captureScreenshot())
-                    }
-                },
-            )
+            // Only where the server takes reports (its features.feedback, as
+            // chino-web reads it): the row promises a recipient.
+            if (features?.feedback == true) {
+                Box(modifier = Modifier.padding(top = 12.dp))
+                SectionHeading("Support")
+                // Report a bug — capture the screenshot FIRST (the dialog would
+                // only ever photograph itself), then mount the dialog with the
+                // bytes. captureScreenshot is best-effort; null just means no
+                // preview row + a text-only report.
+                ActionRow(
+                    label = "Report a bug",
+                    subtitle = "Tell the people who run this server. The app's and the device's details go with your report.",
+                    onClick = {
+                        scope.launch {
+                            bugReportDraft = BugReportDraft(screenshot = captureScreenshot())
+                        }
+                    },
+                )
+            }
 
             Box(modifier = Modifier.padding(top = 12.dp))
             // Audio sits ABOVE Subtitles (web SettingsPage order). Default
@@ -251,8 +260,10 @@ fun SettingsSection() {
             Box(modifier = Modifier.padding(top = 12.dp))
             SectionHeading("Subtitles")
             Text(
-                text = "Default subtitle language. Picks the closest matching track on each item. " +
-                    "Choose Off to keep subtitles disabled by default.",
+                // docs/chino subtitles, "The setting": the same in every app.
+                text = "Subtitles in the language you pick here come on when a title's audio is in another language. " +
+                    "Otherwise, only the foreign-language parts get subtitles, where a title has them. " +
+                    "A choice in the player applies only to what's playing now.",
                 color = ChinoMuted,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 4.dp),
@@ -273,12 +284,15 @@ fun SettingsSection() {
         }
 
         signOutDownloads?.let { summary ->
+            // While it casts: casting stops too, the question says.
+            val id = activeAccount?.id.orEmpty()
+            val casting = container.castingDeviceOf(id) != null
             DownloadsGoQuestion(
                 title = SIGN_OUT_TITLE,
-                sentence = yourDownloadsGoSentence(summary, device),
+                sentence = withCastingSentence(if (summary.isEmpty) "" else yourDownloadsGoSentence(summary, device), container, id),
                 onConfirm = {
                     signOutDownloads = null
-                    signOut()
+                    signOut(casting)
                 },
                 onDismiss = { signOutDownloads = null },
             )

@@ -186,6 +186,8 @@ fun App(
                     // the navigator — whichever screen it shows — while the
                     // app is in the foreground.
                     NoticesPolling()
+                    // Short confirmations, over whichever screen shows.
+                    cloud.nalet.chino.mobile.ui.components.ToastHost(container.toasts)
                 }
                 // M3 status-bar accent strip — scrims the system-status-
                 // bar inset zone with #161B22 (one step lighter than the

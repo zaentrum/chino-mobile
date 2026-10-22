@@ -55,11 +55,32 @@ class CastFailureTest {
     @Test
     fun noTokenForTheTvIsThePhonesSignInOrTheServer() {
         fun mint(probe: CastProbe) = castFailureDetails(CastErrorReport(mint = probe), host, device = "Living Room TV")
-        // POST /me/stream-token refused: this phone's sign-in, not the TV's link.
+        // POST /me/stream-token refused: this phone's sign-in, not the TV's
+        // link (401); the account not let play it (403).
         assertEquals("the server no longer accepts this phone's sign-in (HTTP 401)", mint(CastProbe.Answered(401)))
-        assertEquals("the server no longer accepts this phone's sign-in (HTTP 403)", mint(CastProbe.Answered(403)))
+        assertEquals("the server doesn't let this account play it (HTTP 403)", mint(CastProbe.Answered(403)))
         assertEquals("the server ran into a problem (HTTP 503)", mint(CastProbe.Answered(503)))
         assertEquals("no answer from media.example.com", mint(CastProbe.NoAnswer))
+        // A tablet is "this tablet", never "this device" - the TV is that.
+        assertEquals(
+            "the server no longer accepts this tablet's sign-in (HTTP 401)",
+            castFailureDetails(CastErrorReport(mint = CastProbe.Answered(401)), host, device = "Living Room TV", thisDevice = "tablet"),
+        )
+        // No answer is the server unreachable: a title on the phone plays there.
+        assertTrue(CastErrorReport(mint = CastProbe.NoAnswer).serverUnreachable)
+        assertTrue(CastErrorReport(detailedCode = 905, probe = CastProbe.NoAnswer).serverUnreachable)
+        assertFalse(CastErrorReport(mint = CastProbe.Answered(403)).serverUnreachable)
+    }
+
+    @Test
+    fun thePhonesOwnFailureIsThePhonesNotTheTvs() {
+        val line = castFailureDetails(CastErrorReport(onThePhone = true), host, device = "Living Room TV")
+        assertEquals("this phone ran into a problem sending the title", line)
+        assertFalse(line.contains("Living Room TV reported"), line)
+        assertEquals(
+            "this tablet ran into a problem sending the title",
+            castFailureDetails(CastErrorReport(onThePhone = true), host, device = null, thisDevice = "tablet"),
+        )
     }
 
     @Test

@@ -128,9 +128,16 @@ class AddServerScreen(private val changeServer: Boolean = false) : Screen {
         // Changing to another server deletes the downloads of this one:
         // asked once the new server answered.
         (state as? AddServerState.AskDropDownloads)?.let { ask ->
+            // While the account casts: casting stops too, the question says.
+            val device = LocalDeviceKind.current
+            val accountId = remember { container.accountStore.snapshotBlocking().activeAccount?.id.orEmpty() }
             DownloadsGoQuestion(
                 title = CHANGE_SERVER_TITLE,
-                sentence = yourDownloadsGoSentence(ask.summary, LocalDeviceKind.current),
+                sentence = cloud.nalet.chino.mobile.ui.downloads.withCastingSentence(
+                    if (ask.summary.isEmpty) "" else yourDownloadsGoSentence(ask.summary, device),
+                    container,
+                    accountId,
+                ),
                 onConfirm = { model.confirm() },
                 onDismiss = { model.cancel() },
             )

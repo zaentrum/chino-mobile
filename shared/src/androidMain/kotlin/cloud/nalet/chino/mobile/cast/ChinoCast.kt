@@ -34,6 +34,7 @@ import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.async
@@ -46,6 +47,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** What the screens read of casting. */
@@ -166,6 +168,7 @@ internal object ChinoCast {
         serverHost = ::serverHost,
         loading = { load, itemId, startMs, floorMs -> loading(load, itemId, startMs, floorMs) },
         superseded = { pending?.result?.complete(CastAnswer.Ended) },
+        thisDevice = ::thisDevice,
     )
 
     /** The TV's master fetched as the TV fetches it: no sign-in, no shared
@@ -194,6 +197,11 @@ internal object ChinoCast {
         // links - and nothing of the phone's download goes to it
         // (downloads/DownloadedPlayback.kt).
         container.playsOnAnotherScreen = ::castingNow
+        // The account signed in leaves - signed out, removed, another one in
+        // its place - while it casts: the questions say casting stops, and
+        // it does, its last position written first (leave).
+        container.castingDeviceOf = ::castingDeviceOf
+        container.leaveCasting = ::leave
         if (this.container !== container) {
             this.container = container
             ownerWatch?.cancel()
@@ -404,10 +412,8 @@ internal object ChinoCast {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                CastLoadResult.Failed(
-                    CastFailure(Tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(CastErrorReport(), serverHost(), Tv.device), input.itemId),
-                    endsCasting = false,
-                )
+                // The phone's own code: not the TV's error, nor the server's.
+                CastLoadResult.Failed(failureOf(CastErrorReport(onThePhone = true), input.itemId), endsCasting = false)
             }
         }
         if (result is CastLoadResult.Failed) {
@@ -522,7 +528,39 @@ internal object ChinoCast {
     }
 
     private fun failureOf(report: CastErrorReport, itemId: String): CastFailure =
-        CastFailure(Tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(report, serverHost(), Tv.device), itemId)
+        CastFailure(Tv.device ?: UNNAMED_CAST_DEVICE, castFailureDetails(report, serverHost(), Tv.device, thisDevice()), itemId, report.serverUnreachable)
+
+    /** What the phone is called in a failure's reason: "tablet" from 600 dp
+     *  of its shorter side up, as everywhere in the app, else "phone". */
+    private fun thisDevice(): String =
+        if ((appContext?.resources?.configuration?.smallestScreenWidthDp ?: 0) >= 600) "tablet" else "phone"
+
+    /** The device [accountId] casts to now - a session connected while it
+     *  is the account signed in - by the name it goes by ("the device" for
+     *  none); null where it casts nothing. */
+    fun castingDeviceOf(accountId: String): String? {
+        val s = _state.value
+        if (!s.connected || activeAccountId != accountId) return null
+        return castDeviceInLine(s.device)
+    }
+
+    /**
+     * [accountId] leaves the phone - signed out, removed, another account
+     * signed in instead - while it casts: what the TV plays of it is written
+     * as that account first - the last position the TV confirmed, the one
+     * the phone keeps - and casting stops, so that the TV does not play on
+     * for whoever comes next. Waits for the write, at most
+     * [LEAVE_WRITE_WAIT_MS]. The device it stopped casting on; null where
+     * the account cast nothing.
+     */
+    suspend fun leave(accountId: String): String? = withContext(Dispatchers.Main) {
+        if (connectedSession() == null || activeAccountId != accountId) return@withContext null
+        val device = castDeviceInLine(_state.value.device)
+        bridge.sessionEnding()
+        withTimeoutOrNull(LEAVE_WRITE_WAIT_MS) { _writing.first { it == 0 } }
+        stopCasting()
+        device
+    }
 
     private fun reportOf(error: MediaError?, senderStatus: Int?): CastErrorReport =
         CastErrorReport(detailedCode = error?.detailedErrorCode, reason = error?.reason, senderStatus = senderStatus)
@@ -575,12 +613,19 @@ internal object ChinoCast {
                 // Once more as it goes out: the request carries the bearer of
                 // whoever is signed in then.
                 if (w.accountId == activeAccountId) {
+                    // With the account's own bearer, and only while it is
+                    // the one signed in - never the shared client's, which
+                    // may be the next account's by the time it goes out.
+                    val bearer = runCatching { c.tokenManager.validAccessToken() }.getOrNull()
+                        ?.takeIf { c.accountStore.snapshotBlocking().activeAccount?.id == w.accountId }
                     // Newer than any position of the title the phone still
                     // keeps from playing it without the server: that one
                     // goes, and a download of it resumes here where the TV
                     // is.
-                    val sent = writeCastProgress(w, { id, body -> c.chinoApi.postProgress(id, body) }, c.progressSync)
-                    if (sent && w.final) CastEvents.keptPositionOf(w.itemId)
+                    if (bearer != null) {
+                        val sent = writeCastProgress(w, { id, body -> c.chinoApi.postProgress(id, body, bearer) }, c.progressSync)
+                        if (sent && w.final) CastEvents.keptPositionOf(w.itemId)
+                    }
                 }
             } finally {
                 _writing.update { it - 1 }
@@ -747,6 +792,10 @@ internal object ChinoCast {
 
     /** How long a load waits for the account to be known. */
     private const val WRITER_WAIT_MS = 10_000L
+
+    /** How long an account leaving waits for its last position to be
+     *  written before casting stops. */
+    private const val LEAVE_WRITE_WAIT_MS = 5_000L
 
     /** How long the TV may take to switch its tracks. */
     private const val TRACKS_TIMEOUT_MS = 10_000L

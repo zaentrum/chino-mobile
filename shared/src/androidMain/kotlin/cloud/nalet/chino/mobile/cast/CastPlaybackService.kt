@@ -116,11 +116,15 @@ class CastPlaybackService : Service() {
             .build()
     }
 
+    /** The Cast framework's channel - the one casting's notifications are
+     *  in, the framework's and this one - made as the framework makes it,
+     *  should this notification come first; named "Casting" for both
+     *  (media_notification_channel_name). The earlier builds' own channels
+     *  go. */
     private fun channel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = notificationManager()
-        // The first builds' channel, of the minimum importance.
-        manager.getNotificationChannel(OLD_CHANNEL_ID)?.let { manager.deleteNotificationChannel(OLD_CHANNEL_ID) }
+        for (old in OLD_CHANNEL_IDS) manager.getNotificationChannel(old)?.let { manager.deleteNotificationChannel(old) }
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
         val channel = NotificationChannel(CHANNEL_ID, getString(R.string.chino_cast_channel), NotificationManager.IMPORTANCE_LOW).apply {
             setShowBadge(false)
@@ -135,8 +139,9 @@ class CastPlaybackService : Service() {
     private fun notificationManager(): NotificationManager = getSystemService(NotificationManager::class.java)
 
     private companion object {
-        const val CHANNEL_ID = "chino_cast_keeping_place"
-        const val OLD_CHANNEL_ID = "chino_cast_place"
+        /** The Cast framework's own channel id. */
+        const val CHANNEL_ID = "cast_media_notification"
+        val OLD_CHANNEL_IDS = listOf("chino_cast_keeping_place", "chino_cast_place")
         const val NOTIFICATION_ID = 0x0ca57
 
         /** How long the service waits, once nothing needs it, before it

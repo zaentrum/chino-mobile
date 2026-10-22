@@ -70,6 +70,8 @@ import cloud.nalet.chino.mobile.ui.downloads.DownloadsGoQuestion
 import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
 import cloud.nalet.chino.mobile.ui.downloads.downloadsOf
 import cloud.nalet.chino.mobile.ui.downloads.signOutOfThisPhone
+import cloud.nalet.chino.mobile.ui.downloads.asksBeforeLeaving
+import cloud.nalet.chino.mobile.ui.downloads.withCastingSentence
 import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
 import cloud.nalet.chino.mobile.data.downloads.SIGN_OUT_TITLE
 import cloud.nalet.chino.mobile.data.downloads.yourDownloadsGoSentence
@@ -130,10 +132,10 @@ class ProfileScreen : Screen {
         // downloads: what goes, non-null while it is open.
         var signOutDownloads by remember { mutableStateOf<DownloadsSummary?>(null) }
         val device = LocalDeviceKind.current
-        val signOut: () -> Unit = {
+        val signOut: (castingSaid: Boolean) -> Unit = { castingSaid ->
             val id = activeAccount?.id
             if (id != null) scope.launch {
-                signOutOfThisPhone(container, id)
+                signOutOfThisPhone(container, id, castingSaid)
                 val remaining = container.accountStore.snapshotBlocking().accounts
                 if (remaining.isEmpty()) nav.replaceAll(AuthScreen()) else nav.replaceAll(AccountPickerScreen())
             }
@@ -205,16 +207,19 @@ class ProfileScreen : Screen {
                             onSignOut = {
                                 // Its downloads go with it: asked first. None: as before.
                                 val summary = activeAccount?.id?.let { downloadsOf(container, it) }
-                                if (summary != null && !summary.isEmpty) signOutDownloads = summary else signOut()
+                                if (asksBeforeLeaving(summary, container, activeAccount?.id)) signOutDownloads = summary ?: DownloadsSummary(0, 0L) else signOut(false)
                             },
                         )
                         signOutDownloads?.let { summary ->
+                            // While it casts: casting stops too, the question says.
+                            val id = activeAccount?.id.orEmpty()
+                            val casting = container.castingDeviceOf(id) != null
                             DownloadsGoQuestion(
                                 title = SIGN_OUT_TITLE,
-                                sentence = yourDownloadsGoSentence(summary, device),
+                                sentence = withCastingSentence(if (summary.isEmpty) "" else yourDownloadsGoSentence(summary, device), container, id),
                                 onConfirm = {
                                     signOutDownloads = null
-                                    signOut()
+                                    signOut(casting)
                                 },
                                 onDismiss = { signOutDownloads = null },
                             )
@@ -311,7 +316,7 @@ private fun ProfileHeader(onBack: () -> Unit) {
             modifier = Modifier
                 .size(40.dp)
                 .clip(RectangleShape)
-                .background(Color(0x80000000))
+                .background(ChinoSurfaceHi)
                 .clickable(onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {
@@ -324,7 +329,7 @@ private fun ProfileHeader(onBack: () -> Unit) {
         }
         // The web's h1, in the heading face.
         Text(
-            text = "Profile",
+            text = "Account",
             color = Color.White,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
