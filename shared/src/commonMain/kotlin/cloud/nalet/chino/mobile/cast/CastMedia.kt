@@ -158,7 +158,7 @@ data class CastMedia(
 sealed interface CastSubtitleStart {
     /** The default rule, as the app's player starts (autoSubtitleTrack), for
      *  the audio the TV plays. */
-    data class Auto(val subtitlePref: String?, val audioPref: String?) : CastSubtitleStart
+    data class Auto(val subtitlePref: String?) : CastSubtitleStart
 
     /** The phone's player showed none. */
     data object Off : CastSubtitleStart

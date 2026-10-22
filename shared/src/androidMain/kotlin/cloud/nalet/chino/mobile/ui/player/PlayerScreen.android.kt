@@ -3,6 +3,14 @@ package cloud.nalet.chino.mobile.ui.player
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -71,7 +79,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Popup
@@ -105,6 +115,9 @@ import cloud.nalet.chino.mobile.cast.CastButton
 import cloud.nalet.chino.mobile.cast.CastFailureStrip
 import cloud.nalet.chino.mobile.cast.CastHandoff
 import cloud.nalet.chino.mobile.cast.CastLoadResult
+import cloud.nalet.chino.mobile.data.downloads.playingHereToast
+import cloud.nalet.chino.mobile.ui.components.Toast
+import cloud.nalet.chino.mobile.ui.components.ToastKind
 import cloud.nalet.chino.mobile.cast.CastMediaInput
 import cloud.nalet.chino.mobile.cast.CastSubtitleStart
 import cloud.nalet.chino.mobile.cast.ChinoCast
@@ -123,8 +136,11 @@ import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
+import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Captions
+import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronLeft
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Gauge
@@ -188,6 +204,7 @@ actual class PlayerScreen actual constructor(
         val nav = LocalNavigator.currentOrThrow
         val closeGuard = LocalAutoCloseGuard.current
         val playerMode = PlayerMode.of(extraId)
+        val scope = rememberCoroutineScope()
 
         // Own the system-back explicitly: pop exactly once and CONSUME the
         // event. Voyager 1.1.0-beta03's implicit Navigator BackHandler can
@@ -251,7 +268,10 @@ actual class PlayerScreen actual constructor(
                 if (extraId == null) {
                     when (val local = cloud.nalet.chino.mobile.downloads.downloadedSession(appContext, container, itemId, fromStart, resumeSec)) {
                         is cloud.nalet.chino.mobile.downloads.LocalPlay.Ready -> {
-                            ready = downloadedPlayState(local.session, itemId, base, caps, container.settings.flow.first())
+                            ready = downloadedPlayState(local.session, itemId, base, caps, container.settings.flow.first(), container.subtitleLanguages.current)
+                            // A device is connected, and the server can't be
+                            // reached: here, from the phone, and it says so.
+                            if (local.session.castAside) container.toasts.tryEmit(Toast(playingHereToast(device), ToastKind.Information))
                             return@LaunchedEffect
                         }
                         cloud.nalet.chino.mobile.downloads.LocalPlay.NoLongerAvailable -> {
@@ -318,6 +338,8 @@ actual class PlayerScreen actual constructor(
                 val subsAsk = async {
                     if (playerMode.sidecarSubtitles) runCatching { container.chinoApi.itemSubtitles(itemId).subtitles }.getOrNull() else null
                 }
+                // The server's subtitle languages, asked once a session.
+                val languagesAsk = async { container.subtitleLanguages.get() }
                 val saved = savedAsk.await()
                 val info = infoAsk.await()
                 val item = itemAsk.await()
@@ -398,6 +420,13 @@ actual class PlayerScreen actual constructor(
                         }
                         val sep = if ('?' in absUrl) '&' else '?'
                         s.copy(url = "$absUrl${sep}stream=$token")
+                    } +
+                    // An unpackaged title's own tracks, from its file: the
+                    // stream lists none of them (SubtitleChoices.kt).
+                    if (playerMode.sidecarSubtitles && info != null && !info.mode.equals("packaged", ignoreCase = true)) {
+                        embeddedSidecars(itemId, info.subtitleTracks, base, token)
+                    } else {
+                        emptyList()
                     }
                 // The Settings languages as playback starts, and the audio
                 // /play/info says plays first with them (chino-web's pick):
@@ -428,6 +457,7 @@ actual class PlayerScreen actual constructor(
                     extra = extra,
                     item = extra?.item ?: item,
                     seriesTitle = seriesTitle,
+                    serverSubtitleLanguages = languagesAsk.await(),
                 )
                 // Opened while casting - Play on a title's page, an episode,
                 // Continue Watching: the title plays on the TV, from where it
@@ -440,7 +470,7 @@ actual class PlayerScreen actual constructor(
                         startMs = startMs,
                         playing = true,
                         audioLang = firstAudio?.language,
-                        subtitle = CastSubtitleStart.Auto(settings.preferredSubLang, settings.preferredAudioLang),
+                        subtitle = CastSubtitleStart.Auto(settings.preferredSubLang),
                         restart = fromStart,
                     )
                 }
@@ -455,7 +485,22 @@ actual class PlayerScreen actual constructor(
                     if (cues.isNotEmpty()) ready = ready?.copy(trickplayCues = cues)
                 }
             } catch (e: Exception) {
-                error = "Playback failed: ${e.message ?: e::class.simpleName.orEmpty()}"
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // A title on the phone, a device connected to cast to, and
+                // the server doesn't answer - its token, its details: it
+                // plays here, from its download, and says why.
+                val here = if (extraId == null && ChinoCast.connectedSession() != null && e !is cloud.nalet.chino.mobile.data.api.ApiStatusException) {
+                    cloud.nalet.chino.mobile.downloads.downloadedSession(appContext, container, itemId, fromStart, resumeSec, castFailed = true)
+                        as? cloud.nalet.chino.mobile.downloads.LocalPlay.Ready
+                } else {
+                    null
+                }
+                if (here != null) {
+                    ready = downloadedPlayState(here.session, itemId, container.config.apiBaseUrl.trimEnd('/'), CodecCaps.queryParam(appContext), container.settings.flow.first(), container.subtitleLanguages.current)
+                    container.toasts.tryEmit(Toast(playingHereToast(device), ToastKind.Information))
+                } else {
+                    error = "Playback failed: ${e.message ?: e::class.simpleName.orEmpty()}"
+                }
             }
         }
 
@@ -488,9 +533,29 @@ actual class PlayerScreen actual constructor(
                 onHome = { nav.replaceAll(MainShellScreen()) },
                 onPlaying = closeByItself,
                 // Back here, paused where it was: it never plays by itself.
-                onHereAgain = { again ->
-                    ready = ready?.copy(resumeMs = again.startMs, autoPlay = again.autoplay)
-                    castStart = null
+                // A title on the phone whose cast failed before the TV was
+                // asked plays from its download - and, where the server
+                // didn't answer, says why.
+                onHereAgain = { again, fromThePhone, unreachable ->
+                    val streamed = ready
+                    if (fromThePhone && streamed != null && streamed.local == null) {
+                        scope.launch {
+                            val here = cloud.nalet.chino.mobile.downloads.downloadedSession(
+                                appContext, container, itemId, fromStart = false, resumeSec = (again.startMs / 1000L).toInt(), castFailed = true,
+                            ) as? cloud.nalet.chino.mobile.downloads.LocalPlay.Ready
+                            ready = if (here != null) {
+                                if (unreachable) container.toasts.tryEmit(Toast(playingHereToast(device), ToastKind.Information))
+                                downloadedPlayState(here.session, itemId, streamed.base, streamed.caps, container.settings.flow.first(), streamed.serverSubtitleLanguages)
+                                    .copy(resumeMs = again.startMs, autoPlay = again.autoplay)
+                            } else {
+                                streamed.copy(resumeMs = again.startMs, autoPlay = again.autoplay)
+                            }
+                            castStart = null
+                        }
+                    } else {
+                        ready = streamed?.copy(resumeMs = again.startMs, autoPlay = again.autoplay)
+                        castStart = null
+                    }
                 },
             )
             else -> PlaybackSurface(
@@ -578,6 +643,9 @@ private data class PlayState(
     /** Whether playback starts playing, or waits paused at [resumeMs] - the
      *  title back here after the TV couldn't play it. */
     val autoPlay: Boolean = true,
+    /** The subtitle languages the server is set up for: the subtitles
+     *  menu's top level after the viewer's own ([subtitleMenu]). */
+    val serverSubtitleLanguages: List<String> = emptyList(),
 ) {
     /** The master at [quality]: a title's ([buildMasterUrl]), else the
      *  extra's — `q` for a rung the viewer picked ([withQuality]). */
@@ -596,6 +664,7 @@ private fun downloadedPlayState(
     base: String,
     caps: String,
     settings: cloud.nalet.chino.mobile.data.AppSettings,
+    serverLanguages: List<String>,
 ): PlayState = PlayState(
     itemId = itemId,
     base = base,
@@ -624,6 +693,7 @@ private fun downloadedPlayState(
     item = local.title.item,
     seriesTitle = local.title.seriesTitle,
     local = local,
+    serverSubtitleLanguages = serverLanguages,
 )
 
 private enum class OpenPopover { NONE, SPEED, AUDIO, CAPTIONS, INFO, VOLUME, QUALITY }
@@ -633,6 +703,9 @@ private data class SubtitleTrack(
     /** What the menu shows ([withMenuLabels]). */
     val label: String,
     val language: String?,
+    /** Its language as a BCP 47 tag, with the script or region its own
+     *  title gives ([subtitleLanguage]): what the menu lists it by. */
+    val tag: String = "",
     /** The track's own label: the sidecar's, or the rendition's NAME. */
     val title: String?,
     /** Names the track across rebuilt players (a quality switch): its
@@ -693,14 +766,36 @@ private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
             }
         }
 
-/** The captions menu's labels ([subtitleLabels]): each track by its language
+/** The captions menu's labels ([subtitleLabel]): each track by its language
  *  ("German", "No dialogue" for zxx), with what its own label says beyond
  *  that ("English · Commentary"), then its kind ("English · for deaf and hard
- *  of hearing"); a track in no language by its own label, else "Unknown". */
-private fun withMenuLabels(tracks: List<SubtitleTrack>): List<SubtitleTrack> {
-    val labels = subtitleLabels(tracks.map { SubtitleLabelInput(it.language, it.title, it.forced, it.sdh) })
-    return tracks.mapIndexed { i, t -> t.copy(label = labels[i]) }
-}
+ *  of hearing"); a track in no language by its own label, else "Unknown".
+ *  Never numbered: the menu shows two that read the same once. */
+private fun withMenuLabels(tracks: List<SubtitleTrack>): List<SubtitleTrack> =
+    tracks.map { t ->
+        t.copy(
+            label = subtitleLabel(SubtitleLabelInput(t.language, t.title, t.forced, t.sdh)),
+            tag = subtitleLanguage(t.language, t.title),
+        )
+    }
+
+/** The subtitles menu of [tracks] ([subtitleMenu]): what the menu lists and
+ *  what the subtitle rule picks among, in its order. */
+private fun subtitleMenuOf(tracks: List<SubtitleTrack>, subtitlePref: String, serverLanguages: List<String>): SubtitleMenu<SubtitleTrack> =
+    subtitleMenu(
+        tracks = tracks,
+        tag = { it.tag },
+        forced = { it.forced },
+        sdh = { it.sdh },
+        label = { it.label },
+        preferred = subtitlePref,
+        serverLanguages = serverLanguages,
+        on = { it.selected },
+        // An original's own track, side-loaded as "emb-<index>".
+        own = { it.key.contains(SIDECAR_ID_PREFIX + EMBEDDED_SUBTITLE_PREFIX) },
+        ai = { isAiSubtitle(it.title) },
+        picture = { it.image },
+    )
 
 private fun applyAudioSelection(player: ExoPlayer, track: AudioTrack) {
     val params = player.trackSelectionParameters
@@ -787,8 +882,10 @@ private fun ErrorState(message: String, itemId: String, extraId: String?, onBack
             modifier = Modifier.padding(horizontal = 24.dp),
         ) {
             Text(text = message, color = MaterialTheme.colorScheme.error)
-            // Secondary action styled like web's bg-white/10 pill.
-            Box(
+            // Secondary action styled like web's bg-white/10 pill - where the
+            // server takes reports (features.feedback), as in Settings.
+            val features by LocalAppContainer.current.serverReach.features.collectAsState()
+            if (features?.feedback == true) Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
                     .background(Color(0x1AFFFFFF))
@@ -929,7 +1026,7 @@ private fun PlaybackSurface(
     }
     val player = remember(activeMasterUrl) {
         val httpFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(streamClient)
-            .setUserAgent("chino-mobile/0.1 (Android)")
+            .setUserAgent("chino-mobile/0.2 (Android)")
         // Sidecar subs from /v1/items/{id}/subtitles attached as
         // side-loaded text tracks (TV pattern). ExoPlayer merges them
         // with any embedded text tracks from the HLS manifest, so
@@ -1193,20 +1290,22 @@ private fun PlaybackSurface(
                 // The player's subtitle for the audio playing (Languages.kt
                 // autoSubtitleTrack), at the start and again whenever the
                 // audio's language changes, until the viewer picks one
-                // (SubtitleSession): off unless the audio is in a language
-                // the viewer does not follow — then a full track in the
-                // Settings language — and where none comes on that way, the
+                // (SubtitleSession): off unless the audio playing is in
+                // another language than Settings' subtitle language — then a
+                // full track in it — and where none comes on that way, the
                 // forced track in the audio's language, text before PGS.
                 val audioLang = audioTracks.firstOrNull { it.selected }?.language ?: state.firstAudioLang
                 if (subtitleSession.playerDecides(audioLang)) {
+                    // Among the menu's tracks, in its order: a language's
+                    // plain track first, the file's own before a sidecar.
+                    val listed = subtitleMenuOf(subtitleTracks, state.subtitlePref, state.serverSubtitleLanguages).let { it.top + it.more }
                     subtitleKey = autoSubtitleTrack(
-                        tracks = subtitleTracks,
+                        tracks = listed,
                         lang = { it.language },
                         forced = { it.forced },
                         text = { !it.image },
                         audioLang = audioLang,
                         subtitlePref = state.subtitlePref,
-                        audioPref = state.audioPref,
                     )?.key ?: SUBTITLES_OFF
                     subtitlesSet = false
                 }
@@ -1235,7 +1334,7 @@ private fun PlaybackSurface(
                 if (!manifestMissing) {
                     val atMs = player.currentPosition.coerceAtLeast(0L)
                     // An extra is packaged (its info says so): retried in place.
-                    when (val recovery = recoveries.next(state.info?.mode, currentQuality, atMs)) {
+                    when (val recovery = recoveries.next(state.info?.mode, currentQuality, atMs, state.qualities)) {
                         PlaybackRecovery.RetryInPlace -> {
                             playbackEvent(
                                 "retry",
@@ -1363,7 +1462,7 @@ private fun PlaybackSurface(
                 startMs = handoffStartMs(player.currentPosition, known, ended),
                 playing = player.playWhenReady && !ended,
                 audioLang = audioLang,
-                subtitle = handoffSubtitle(subtitleKey, state.sidecarSubtitles, CastSubtitleStart.Auto(state.subtitlePref, state.audioPref)),
+                subtitle = handoffSubtitle(subtitleKey, state.sidecarSubtitles, CastSubtitleStart.Auto(state.subtitlePref)),
                 // The phone says where: the TV continues from here, even
                 // where it played this title for this phone before.
                 restart = true,
@@ -1562,6 +1661,21 @@ private fun PlaybackSurface(
                 })
             },
     ) {
+        // The subtitles in the one look (SubtitleLook.kt), over the picture.
+        val subtitles = remember { arrayOfNulls<LookSubtitles>(1) }
+        DisposableEffect(player) {
+            subtitles[0]?.bind(player)
+            onDispose { subtitles[0]?.bind(null) }
+        }
+        // The line rises above the controls while they show and comes back
+        // down as they hide, at their pace: the chrome's fade's spring.
+        var subtitleClearancePx by remember { mutableFloatStateOf(0f) }
+        val subtitleLift by animateFloatAsState(
+            targetValue = if (chromeVisible) subtitleClearancePx else 0f,
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            label = "subtitle lift",
+        )
+        LaunchedEffect(Unit) { snapshotFlow { subtitleLift }.collect { subtitles[0]?.lift(it) } }
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -1570,13 +1684,17 @@ private fun PlaybackSurface(
                     useController = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     keepScreenOn = true
+                    subtitles[0] = LookSubtitles(this).also { it.bind(player) }
                 }
             },
             // A quality switch rebuilds the ExoPlayer instance (player is
             // remember(activeMasterUrl)); the factory only runs once, so without
             // this the view keeps the old, released player and the surface goes
             // black after switching. Re-bind whenever the player instance changes.
-            update = { view -> if (view.player !== player) view.player = player },
+            update = { view ->
+                if (view.player !== player) view.player = player
+                subtitles[0]?.bind(player)
+            },
         )
         AnimatedVisibility(visible = chromeVisible, enter = fadeIn(), exit = fadeOut()) {
             Chrome(
@@ -1694,6 +1812,7 @@ private fun PlaybackSurface(
                 onNextEpisode = state.nextEpisodeId?.let { id -> { onSwitchItem(id) } },
                 onBack = onBack,
                 onHome = onHome,
+                onControlsTop = { top -> subtitleClearancePx = subtitles[0]?.clearance(top) ?: 0f },
             )
         }
         // Auto-play-next affordance — rendered OUTSIDE
@@ -1792,7 +1911,10 @@ private fun CastStarting(
     onBack: () -> Unit,
     onHome: () -> Unit,
     onPlaying: () -> Unit,
-    onHereAgain: (LocalAgain) -> Unit,
+    /** Back on the phone: where, whether from its download (the cast
+     *  failed before the TV was asked), and whether the server didn't
+     *  answer. */
+    onHereAgain: (again: LocalAgain, fromThePhone: Boolean, unreachable: Boolean) -> Unit,
 ) {
     val container = LocalAppContainer.current
     LaunchedEffect(handoff) {
@@ -1828,9 +1950,14 @@ private fun CastStarting(
         } else {
             asPlayedHere
         }
-        when (ChinoCast.load(input)) {
+        when (val r = ChinoCast.load(input)) {
             CastLoadResult.Playing -> onPlaying()
-            is CastLoadResult.Failed, CastLoadResult.Ended -> onHereAgain(localAgainAfterCast(handoff))
+            is CastLoadResult.Failed -> onHereAgain(
+                localAgainAfterCast(handoff),
+                !r.endsCasting && state.extraId == null,
+                r.failure.serverUnreachable,
+            )
+            CastLoadResult.Ended -> onHereAgain(localAgainAfterCast(handoff), false, false)
         }
     }
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -1912,6 +2039,9 @@ private fun Chrome(
     onNextEpisode: (() -> Unit)?,
     onBack: () -> Unit,
     onHome: () -> Unit,
+    /** Where the controls start, in window pixels, each time they are laid
+     *  out: the subtitle line rises above them while they show. */
+    onControlsTop: (Float) -> Unit = {},
 ) {
     // System bar insets are applied to TopBar (statusBars) and the
     // bottom-strip wrapper (navigationBars) individually — NOT to the
@@ -1977,9 +2107,9 @@ private fun Chrome(
                     openPopover == OpenPopover.CAPTIONS ||
                     openPopover == OpenPopover.QUALITY
                 ) {
-                    Row(
+                    BoxWithConstraints(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        contentAlignment = Alignment.BottomEnd,
                     ) {
                         // Pad-right so the menu lands roughly under its
                         // anchor button. Each right-cluster slot is ~40dp
@@ -1987,14 +2117,26 @@ private fun Chrome(
                         // Fullscreen edge by the anchor's index. Quality is
                         // the new 3rd-from-right (Settings gear), pushing
                         // Speed/Captions/Audio one slot further left.
-                        val endPad = when (openPopover) {
+                        val anchorPad = when (openPopover) {
                             OpenPopover.QUALITY -> 120.dp   // Quality gear = 3rd from right
                             OpenPopover.SPEED -> 160.dp      // Speed = 4th from right
                             OpenPopover.CAPTIONS -> 200.dp   // Captions = 5th from right
                             OpenPopover.AUDIO -> 240.dp      // JAP chip = 6th from right
                             else -> 0.dp
                         }
-                        Box(modifier = Modifier.padding(end = endPad)) {
+                        val cardWidth = when (openPopover) {
+                            OpenPopover.CAPTIONS, OpenPopover.AUDIO -> 320.dp
+                            else -> 180.dp
+                        }
+                        // Where the anchor sits too far left for the card
+                        // (a phone held upright), the card moves right and
+                        // keeps its width: its names stay whole.
+                        val endPad = minOf(anchorPad, (maxWidth - cardWidth).coerceAtLeast(0.dp))
+                        // No taller than leaves the top bar and the controls
+                        // on screen (a phone held sideways is ~410 dp tall):
+                        // a long menu scrolls instead.
+                        val menuMaxHeight = (LocalConfiguration.current.screenHeightDp.dp - 190.dp).coerceIn(160.dp, 420.dp)
+                        Box(modifier = Modifier.padding(end = endPad).heightIn(max = menuMaxHeight)) {
                             when (openPopover) {
                                 OpenPopover.SPEED -> SpeedMenuCard(
                                     currentSpeed = playbackSpeed,
@@ -2006,6 +2148,8 @@ private fun Chrome(
                                 )
                                 OpenPopover.CAPTIONS -> CaptionsMenuCard(
                                     tracks = subtitleTracks,
+                                    subtitlePref = state.subtitlePref,
+                                    serverLanguages = state.serverSubtitleLanguages,
                                     onSelect = onSelectSubtitle,
                                 )
                                 OpenPopover.QUALITY -> QualityMenuCard(
@@ -2018,18 +2162,20 @@ private fun Chrome(
                         }
                     }
                 }
-                Scrubber(
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    bufferedMs = bufferedMs,
-                    segments = state.segments,
-                    trickplayCues = state.trickplayCues,
-                    trickplayBaseUrl = "${state.base}/v1/items/${state.itemId}/play/trickplay",
-                    streamToken = state.streamToken,
-                    onScrubStart = onScrubStart,
-                    onScrubUpdate = onScrubUpdate,
-                    onScrubCommit = onScrubCommit,
-                )
+                Box(modifier = Modifier.fillMaxWidth().onGloballyPositioned { onControlsTop(it.positionInWindow().y) }) {
+                    Scrubber(
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        bufferedMs = bufferedMs,
+                        segments = state.segments,
+                        trickplayCues = state.trickplayCues,
+                        trickplayBaseUrl = "${state.base}/v1/items/${state.itemId}/play/trickplay",
+                        streamToken = state.streamToken,
+                        onScrubStart = onScrubStart,
+                        onScrubUpdate = onScrubUpdate,
+                        onScrubCommit = onScrubCommit,
+                    )
+                }
                 BottomControls(
                     isPlaying = isPlaying,
                     muted = muted,
@@ -2136,7 +2282,7 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.1f)),
+                    .background(ChinoSurfaceHi),
             )
         }
     }
@@ -2425,7 +2571,7 @@ private fun TrickplayPreview(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(4.dp))
-                .background(Color(0xCC000000))
+                .background(ChinoSurfaceHi)
                 .padding(horizontal = 8.dp, vertical = 2.dp),
         ) {
             Text(
@@ -2671,17 +2817,20 @@ private fun ChromeButton(
     variant: ChromeBtnVariant = ChromeBtnVariant.Neutral,
     enabled: Boolean = true,
 ) {
-    val bg = when (variant) {
-        ChromeBtnVariant.Primary -> Color(0xFF58A6FF)
-        ChromeBtnVariant.Accent -> Color(0xFF58A6FF).copy(alpha = 0.3f)
-        ChromeBtnVariant.Neutral -> Color.White.copy(alpha = 0.1f)
+    // Nothing translucent over a picture: the surface colour, solid, with
+    // a light icon; on (a menu open), the accent with a dark one.
+    val onFill = enabled && variant != ChromeBtnVariant.Neutral
+    val bg = if (onFill) ChinoCloudBlue else ChinoSurfaceHi
+    val tint = when {
+        !enabled -> ChinoDim
+        onFill -> ChinoOnFill
+        else -> Color.White
     }
-    val tint = if (enabled) Color.White else Color.White.copy(alpha = 0.35f)
     Box(
         modifier = Modifier
             .size(36.dp)
             .clip(CircleShape)
-            .background(if (enabled) bg else Color.White.copy(alpha = 0.05f))
+            .background(bg)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -2715,8 +2864,9 @@ private fun AudioLangChip(
 ) {
     val label = audioChipLabel(language)
     val description = "Audio: ${languageName(language)}"
-    val bg = if (accent) Color(0xFF58A6FF).copy(alpha = 0.3f)
-    else Color.White.copy(alpha = 0.1f)
+    // Solid over the picture: the surface colour, the accent while its menu
+    // is open (with a dark label).
+    val bg = if (accent) ChinoCloudBlue else ChinoSurfaceHi
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
@@ -2732,7 +2882,7 @@ private fun AudioLangChip(
     ) {
         Text(
             text = label,
-            color = Color.White,
+            color = if (accent) ChinoOnFill else Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.semantics { contentDescription = description },
@@ -2741,7 +2891,8 @@ private fun AudioLangChip(
 }
 
 /** Inline audio-track selector — mirrors chino-web's audio menu at
- *  PlayerPage.tsx L2946-2962. Header is uppercase "AUDIO"; each row
+ *  PlayerPage.tsx L2946-2962. Header "audio", lowercase as its items; the
+ *  picked row blue behind a small filled dot ([PickedDot]); each row
  *  renders the track's label and a dimmed format line (`E-AC-3 · 5.1`).
  *  Labels wrap freely so long titles like "Original Japanese theatrical
  *  mono (unfiltered)" stay legible. A track Media3 cannot play here is
@@ -2756,8 +2907,8 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            MenuHeader(title = "AUDIO", trailing = null)
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            MenuHeader(title = "audio", trailing = null)
             if (tracks.isEmpty()) {
                 Text(
                     text = "No audio tracks",
@@ -2775,6 +2926,7 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
+                        PickedDot(selected = t.selected, modifier = Modifier.padding(top = 1.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = t.label,
@@ -2804,31 +2956,39 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
     }
 }
 
-/** Inline subtitle-track selector — mirrors chino-web's captions menu
- *  at PlayerPage.tsx L2975-3050. Layout:
- *    - Header: "SUBTITLES" + "0/1" count on the right
- *    - First row: "None / Off" — blue when no track is active
- *    - Each track row: checkbox indicator + track label
- *  Web supports up to 2 simultaneous subs; Media3 natively renders only
- *  one, so the count is hard-capped at /1 and selecting a track always
- *  replaces the previous one. Web's TIMING OFFSET section is deferred
- *  (needs per-cue retiming). */
+/**
+ * The subtitles menu (the design system's subtitles pattern): "off" first,
+ * then the languages that matter here - the viewer's subtitle language, then
+ * the other subtitle languages the server is set up for - and "more
+ * languages" with the rest of a title's tracks, which opens below it; a
+ * server set up for no subtitle languages has none of those ([subtitleMenu]).
+ * Each language's tracks together, plain, for deaf and hard of hearing,
+ * foreign-language parts only, AI; two that read the same show once. One subtitle at a time: picking one replaces the
+ * one on. "more languages" starts open where the one on is among them. A
+ * title with no subtitles lists "off" alone. Scrolls where it is long.
+ */
 @Composable
-private fun CaptionsMenuCard(tracks: List<SubtitleTrack>, onSelect: (SubtitleTrack?) -> Unit) {
+private fun CaptionsMenuCard(
+    tracks: List<SubtitleTrack>,
+    subtitlePref: String,
+    serverLanguages: List<String>,
+    onSelect: (SubtitleTrack?) -> Unit,
+) {
     val anySelected = tracks.any { it.selected }
-    val activeCount = if (anySelected) 1 else 0
+    val menu = remember(tracks, subtitlePref, serverLanguages) { subtitleMenuOf(tracks, subtitlePref, serverLanguages) }
+    var moreOpen by remember(menu) { mutableStateOf(menu.more.any { it.selected }) }
     Box(
         modifier = Modifier
             .width(320.dp)
+            .heightIn(max = 420.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF161B22))
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            MenuHeader(title = "SUBTITLES", trailing = "$activeCount/1")
-            // None / Off entry — always present; clears the override and
-            // disables the TEXT track type.
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            // Lowercase, as its items (the design system's subtitles).
+            MenuHeader(title = "subtitles", trailing = null)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2836,70 +2996,85 @@ private fun CaptionsMenuCard(tracks: List<SubtitleTrack>, onSelect: (SubtitleTra
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                PickedDot(selected = !anySelected)
                 Text(
-                    text = "None / Off",
+                    text = "off",
                     color = if (!anySelected) Color(0xFF58A6FF) else Color.White,
                     fontSize = 14.sp,
                     fontWeight = if (!anySelected) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
-            if (tracks.isEmpty()) {
-                Text(
-                    text = "No subtitles available",
-                    color = Color(0xFF8B949E),
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            } else {
-                tracks.forEach { t ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(t) }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        CheckboxIndicator(selected = t.selected)
-                        Text(
-                            text = t.label,
-                            color = if (t.selected) Color(0xFF58A6FF) else Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = if (t.selected) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+            menu.top.forEach { t -> SubtitleRow(t, onSelect) }
+            if (menu.more.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { moreOpen = !moreOpen }
+                        .semantics {
+                            role = androidx.compose.ui.semantics.Role.Button
+                            stateDescription = if (moreOpen) "open" else "closed"
+                        }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PickedDot(selected = false)
+                    Text(
+                        text = "more languages",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        imageVector = if (moreOpen) Lucide.ChevronDown else Lucide.ChevronRight,
+                        contentDescription = null,
+                        tint = Color(0xFF8B949E),
+                        modifier = Modifier.size(16.dp),
+                    )
                 }
+                if (moreOpen) menu.more.forEach { t -> SubtitleRow(t, onSelect) }
             }
         }
     }
 }
 
-/** Small square checkbox indicator — checked = blue filled, unchecked =
- *  hollow with thin white-30% border. Matches web's
- *  `inline-flex items-center justify-center w-4 h-4 rounded-sm border`. */
+/** One track of the subtitles menu: its box and its name. */
 @Composable
-private fun CheckboxIndicator(selected: Boolean) {
-    Box(
+private fun SubtitleRow(t: SubtitleTrack, onSelect: (SubtitleTrack?) -> Unit) {
+    Row(
         modifier = Modifier
-            .size(16.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(if (selected) Color(0xFF58A6FF) else Color.Transparent)
-            .border(
-                BorderStroke(1.dp, if (selected) Color(0xFF58A6FF) else Color.White.copy(alpha = 0.3f)),
-                RoundedCornerShape(2.dp),
-            ),
-        contentAlignment = Alignment.Center,
+            .fillMaxWidth()
+            .clickable { onSelect(t) }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        PickedDot(selected = t.selected)
+        Text(
+            text = t.label,
+            color = if (t.selected) Color(0xFF58A6FF) else Color.White,
+            fontSize = 14.sp,
+            fontWeight = if (t.selected) FontWeight.SemiBold else FontWeight.Normal,
+            // A long name ("English · for deaf and hard of hearing") wraps,
+            // whole, rather than losing what tells the tracks apart.
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** The mark of a single-choice menu's picked row (subtitles, audio,
+ *  quality, speed): a small filled dot before it, in the accent blue its
+ *  text takes - no checkbox square, no check. The other rows keep its room,
+ *  so every name starts in one line. */
+@Composable
+private fun PickedDot(selected: Boolean, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.width(16.dp).height(18.dp), contentAlignment = Alignment.CenterStart) {
         if (selected) {
-            Text(text = "1", color = ChinoOnFill, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF58A6FF)))
         }
     }
 }
 
-/** Shared menu header — uppercase, gray, optional right-aligned count. */
+/** Shared menu header — lowercase as its items, gray, optional
+ *  right-aligned count. */
 @Composable
 private fun MenuHeader(title: String, trailing: String?) {
     Row(
@@ -2945,8 +3120,8 @@ private fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            MenuHeader(title = "SPEED", trailing = null)
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            MenuHeader(title = "speed", trailing = null)
             rates.forEach { r ->
                 val active = (r == currentSpeed)
                 Row(
@@ -2956,6 +3131,7 @@ private fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    PickedDot(selected = active)
                     Text(
                         text = if (r == 1.0f) "Normal" else "${r}x",
                         color = if (active) Color(0xFF58A6FF) else Color.White,
@@ -2988,10 +3164,15 @@ private fun QualityMenuCard(
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
             .padding(vertical = 4.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            MenuHeader(title = "QUALITY", trailing = null)
-            qualities.forEach { rung ->
-                val active = rung.name.equals(currentQuality, ignoreCase = true)
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            MenuHeader(title = "quality", trailing = null)
+            // The server's names as it gives them; the `q` it names alike
+            // are one picture and one row - the first, the higher - on
+            // while any of them plays.
+            val named = qualities.map { rung -> rung to (rung.label.takeIf { it.isNotBlank() }?.let(::namedQuality) ?: labelForQuality(rung.name)) }
+            named.groupBy { it.second.lowercase() }.values.forEach { same ->
+                val (rung, label) = same.first()
+                val active = same.any { it.first.name.equals(currentQuality, ignoreCase = true) }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2999,11 +3180,9 @@ private fun QualityMenuCard(
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    PickedDot(selected = active)
                     Text(
-                        // Prefer the server's label; fall back to the
-                        // name→resolution map so a bare "high" still reads
-                        // "1080p" like web/TV.
-                        text = rung.label.takeIf { it.isNotBlank() } ?: labelForQuality(rung.name),
+                        text = label,
                         color = if (active) Color(0xFF58A6FF) else Color.White,
                         fontSize = 14.sp,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
@@ -3035,7 +3214,7 @@ private fun AutoNextOverlay(
                 .padding(bottom = 96.dp, start = 16.dp, end = 16.dp)
                 .widthIn(max = 420.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xF2161B22))
+                .background(Color(0xFF161B22))
                 .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(12.dp))
                 .padding(16.dp),
         ) {

@@ -51,11 +51,11 @@ class MasterSubtitleChoicesTest {
     fun theDefaultRulePicksAFullOneInTheLanguageTheViewerFollows() {
         val choices = masterSubtitleChoices(renditions)
         // German audio, English subtitles wanted: English on.
-        assertEquals("English", autoSubtitleChoice(choices, audioLang = "de", subtitlePref = "en", audioPref = "orig")?.label)
+        assertEquals("English", autoSubtitleChoice(choices, audioLang = "de", subtitlePref = "en")?.label)
         // English audio, German subtitles wanted: the full German one, not the forced.
-        assertEquals("German", autoSubtitleChoice(choices, audioLang = "en", subtitlePref = "de", audioPref = "orig")?.label)
+        assertEquals("German", autoSubtitleChoice(choices, audioLang = "en", subtitlePref = "de")?.label)
         // Audio in the language wanted: none, there is no forced English.
-        assertNull(autoSubtitleChoice(choices, audioLang = "en", subtitlePref = "en", audioPref = "orig"))
+        assertNull(autoSubtitleChoice(choices, audioLang = "en", subtitlePref = "en"))
     }
 
     @Test
@@ -63,7 +63,7 @@ class MasterSubtitleChoicesTest {
         val choices = masterSubtitleChoices(renditions)
         // German audio, subtitles off in Settings: the forced German one.
         val forced = "German · foreign-language parts only"
-        assertEquals(forced, autoSubtitleChoice(choices, audioLang = "de", subtitlePref = "off", audioPref = "orig")?.label)
-        assertEquals(forced, autoSubtitleChoice(choices, audioLang = "ger", subtitlePref = "de", audioPref = "orig")?.label)
+        assertEquals(forced, autoSubtitleChoice(choices, audioLang = "de", subtitlePref = "off")?.label)
+        assertEquals(forced, autoSubtitleChoice(choices, audioLang = "ger", subtitlePref = "de")?.label)
     }
 }

@@ -56,7 +56,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -64,6 +65,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -77,6 +79,8 @@ import androidx.compose.ui.interop.LocalUIViewController
 import cloud.nalet.chino.mobile.data.api.PlayInfo
 import cloud.nalet.chino.mobile.data.api.Segment
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
 import coil3.compose.AsyncImage
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Captions
@@ -444,7 +448,7 @@ private fun AirPlayButton(alpha: Float) {
         modifier = Modifier
             .size(36.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.1f))
+            .background(ChinoSurfaceHi)
             .onGloballyPositioned { coordinates ->
                 // The picker draws its glyph to its bounds: inset so it
                 // matches the 20 dp icons of the buttons beside it.
@@ -640,7 +644,7 @@ private fun TrickplayPreview(cue: TrickplayCue, spriteUrl: String, caption: Stri
                     .offset(x = with(density) { -cue.x.toDp() }, y = with(density) { -cue.y.toDp() }),
             )
         }
-        Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(Color(0xCC000000)).padding(horizontal = 8.dp, vertical = 2.dp)) {
+        Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(ChinoSurfaceHi).padding(horizontal = 8.dp, vertical = 2.dp)) {
             Text(text = caption, color = Color.White, fontSize = 11.sp)
         }
     }
@@ -687,17 +691,21 @@ private fun VolumeSlider(volume: Float, onVolumeChange: (Float) -> Unit, onDragS
 
 internal enum class ChromeBtnVariant { Neutral, Accent }
 
+/** A button of the chrome over the picture: nothing translucent over it -
+ *  the surface colour, solid, with a light icon; on (a menu open), the
+ *  accent with a dark one. */
 @Composable
 internal fun ChromeButton(icon: ImageVector, onClick: () -> Unit, variant: ChromeBtnVariant = ChromeBtnVariant.Neutral) {
+    val on = variant == ChromeBtnVariant.Accent
     Box(
         modifier = Modifier
             .size(36.dp)
             .clip(CircleShape)
-            .background(if (variant == ChromeBtnVariant.Accent) Accent.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.1f))
+            .background(if (on) Accent else ChinoSurfaceHi)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(imageVector = icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+        Icon(imageVector = icon, contentDescription = null, tint = if (on) ChinoOnFill else Color.White, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -715,7 +723,7 @@ private fun AudioLangChip(language: String, enabled: Boolean, accent: Boolean, o
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(if (accent) Accent.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.1f))
+            .background(if (accent) Accent else ChinoSurfaceHi)
             .let {
                 if (enabled) it.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick) else it
             }
@@ -723,7 +731,7 @@ private fun AudioLangChip(language: String, enabled: Boolean, accent: Boolean, o
     ) {
         Text(
             text = audioChipLabel(language),
-            color = Color.White,
+            color = if (accent) ChinoOnFill else Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.semantics { contentDescription = description },
@@ -754,13 +762,16 @@ private fun MenuHeader(title: String, trailing: String? = null) {
     }
 }
 
+/** One row of a single-choice menu (subtitles, audio, quality, speed): the
+ *  picked one accent blue behind a small filled dot - no checkbox square,
+ *  no check; the others keep the dot's room, so every name starts in one
+ *  line. */
 @Composable
 private fun MenuRow(
     text: String,
     active: Boolean,
     detail: String? = null,
     enabled: Boolean = true,
-    leading: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Row(
@@ -768,10 +779,11 @@ private fun MenuRow(
             .fillMaxWidth()
             .let { if (enabled) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        leading?.invoke()
+        Box(modifier = Modifier.width(16.dp).height(18.dp), contentAlignment = Alignment.CenterStart) {
+            if (active) Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(Accent))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = text,
@@ -794,7 +806,7 @@ private fun MenuRow(
 @Composable
 private fun AudioMenuCard(tracks: List<AudioChoice>, onSelect: (AudioChoice) -> Unit) {
     MenuCard(width = 300.dp) {
-        MenuHeader("AUDIO")
+        MenuHeader("audio")
         if (tracks.isEmpty()) {
             Text("No audio tracks", color = MutedText, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
@@ -802,8 +814,9 @@ private fun AudioMenuCard(tracks: List<AudioChoice>, onSelect: (AudioChoice) -> 
     }
 }
 
-/** The captions menu: Off, then every track by language. A track this
- *  player cannot draw (a picture format) is listed, greyed, with why. */
+/** The captions menu: "off", then every track by language - one subtitle
+ *  at a time; a title with none lists "off" alone. A track this player
+ *  cannot draw (a picture format) is listed, greyed, with why. */
 @Composable
 private fun CaptionsMenuCard(
     tracks: List<SubtitleChoice>,
@@ -812,11 +825,8 @@ private fun CaptionsMenuCard(
     onSelect: (SubtitleChoice?) -> Unit,
 ) {
     MenuCard(width = 300.dp) {
-        MenuHeader("SUBTITLES", trailing = "${if (activeId != null) 1 else 0}/1")
-        MenuRow(text = "None / Off", active = activeId == null, onClick = { onSelect(null) })
-        if (tracks.isEmpty()) {
-            Text("No subtitles available", color = MutedText, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-        }
+        MenuHeader("subtitles")
+        MenuRow(text = "off", active = activeId == null, onClick = { onSelect(null) })
         tracks.forEach { t ->
             val selected = t.id == activeId
             MenuRow(
@@ -824,7 +834,6 @@ private fun CaptionsMenuCard(
                 active = selected,
                 enabled = t.available,
                 detail = if (t.available) null else unavailableNote,
-                leading = { CheckboxIndicator(selected = selected, enabled = t.available) },
                 onClick = { onSelect(t) },
             )
         }
@@ -832,26 +841,9 @@ private fun CaptionsMenuCard(
 }
 
 @Composable
-private fun CheckboxIndicator(selected: Boolean, enabled: Boolean) {
-    Box(
-        modifier = Modifier
-            .size(16.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(if (selected) Accent else Color.Transparent)
-            .border(
-                BorderStroke(1.dp, if (selected) Accent else Color.White.copy(alpha = if (enabled) 0.3f else 0.12f)),
-                RoundedCornerShape(2.dp),
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (selected) Text("1", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
 private fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
     MenuCard(width = 180.dp) {
-        MenuHeader("SPEED")
+        MenuHeader("speed")
         listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f).forEach { r ->
             MenuRow(text = if (r == 1.0f) "Normal" else "${r}x", active = r == currentSpeed, onClick = { onSelect(r) })
         }
@@ -861,7 +853,7 @@ private fun SpeedMenuCard(currentSpeed: Float, onSelect: (Float) -> Unit) {
 @Composable
 private fun QualityMenuCard(options: List<QualityOption>, current: String, onSelect: (String) -> Unit) {
     MenuCard(width = 200.dp) {
-        MenuHeader("QUALITY")
+        MenuHeader("quality")
         options.forEach { o -> MenuRow(text = o.label, active = o.id.equals(current, ignoreCase = true), onClick = { onSelect(o.id) }) }
     }
 }
@@ -908,23 +900,31 @@ internal fun BottomOverlays(
     }
 }
 
-/** The subtitle on screen: white on a dark box, sized to the picture. */
+/** The subtitle on screen (docs/chino subtitles): white text with a black
+ *  outline and no box behind it - nothing translucent over the picture -
+ *  sized to the picture. The outline is the same text drawn as a stroke
+ *  under the fill. */
 @Composable
 private fun SubtitleText(text: String, size: TextUnit) {
-    Text(
-        text = text,
-        color = Color.White,
-        fontSize = size,
-        lineHeight = size * 1.25f,
-        textAlign = TextAlign.Center,
-        style = TextStyle(shadow = Shadow(color = Color.Black, blurRadius = 4f)),
-        modifier = Modifier
-            .padding(horizontal = 24.dp)
-            .widthIn(max = 900.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(Color(0x99000000))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-    )
+    val outline = with(LocalDensity.current) { size.toPx() } * 0.12f
+    Box(modifier = Modifier.padding(horizontal = 24.dp).widthIn(max = 900.dp), contentAlignment = Alignment.Center) {
+        Text(
+            text = text,
+            color = Color.Black,
+            fontSize = size,
+            lineHeight = size * 1.25f,
+            textAlign = TextAlign.Center,
+            style = TextStyle(drawStyle = Stroke(width = outline, join = StrokeJoin.Round)),
+            modifier = Modifier.clearAndSetSemantics { },
+        )
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = size,
+            lineHeight = size * 1.25f,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 /** chino-web's manual skip ("Skip Intro"), a white pill. */

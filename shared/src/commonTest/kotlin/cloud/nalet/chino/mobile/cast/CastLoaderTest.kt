@@ -277,7 +277,7 @@ class CastLoaderTest {
             )
             t.active = listOf(1, 2)
         }
-        loader.load(tv, input(audioLang = "jpn", subtitle = CastSubtitleStart.Auto(subtitlePref = "en", audioPref = "orig")))
+        loader.load(tv, input(audioLang = "jpn", subtitle = CastSubtitleStart.Auto(subtitlePref = "en")))
         assertEquals(listOf(listOf(1L, 3L, 4L)), tv.trackSets)
     }
 

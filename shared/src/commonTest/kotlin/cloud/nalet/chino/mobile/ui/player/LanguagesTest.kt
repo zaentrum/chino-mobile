@@ -156,6 +156,19 @@ class LanguagesTest {
     }
 
     @Test
+    fun aTitleThatIsOnlyTheLanguagesOwnNameSaysNothingMore() {
+        // The word list's name, never "German · Deutsch".
+        assertEquals("German", subtitleLabel(SubtitleLabelInput("de", "Deutsch")))
+        assertEquals("Chinese (Simplified)", subtitleLabel(SubtitleLabelInput("zh-hans", "中文")))
+        assertEquals("Portuguese (Brazil)", subtitleLabel(SubtitleLabelInput("pt-br", "Português")))
+        assertEquals("Spanish", subtitleLabel(SubtitleLabelInput("spa", "Español")))
+        assertEquals("Japanese", subtitleLabel(SubtitleLabelInput("ja", "日本語")))
+        assertEquals("German · foreign-language parts only", subtitleLabel(SubtitleLabelInput("de", "Deutsch (Forced)")))
+        // Another language's own name is something else.
+        assertEquals("German · Español", subtitleLabel(SubtitleLabelInput("de", "Español")))
+    }
+
+    @Test
     fun whatElseATitleSaysStaysBeforeTheKind() {
         assertEquals(
             listOf(
@@ -377,7 +390,7 @@ class LanguagesTest {
 
     @Test
     fun subtitlesDefaultOffWhenTheAudioIsInTheViewersLanguage() {
-        assertNull(defaultSubtitleLang(audioLang = "eng", subtitlePref = "eng", audioPref = "eng"))
+        assertNull(defaultSubtitleLang(audioLang = "eng", subtitlePref = "eng"))
         assertNull(defaultSubtitleLang(audioLang = "en", subtitlePref = "eng"))
         // Tagged the other way round: still the same language.
         assertNull(defaultSubtitleLang(audioLang = "ger", subtitlePref = "deu"))
@@ -385,15 +398,23 @@ class LanguagesTest {
 
     @Test
     fun subtitlesComeOnInTheChosenLanguageWhenTheAudioIsInAnother() {
-        assertEquals("en", defaultSubtitleLang(audioLang = "fre", subtitlePref = "eng", audioPref = "eng"))
-        assertEquals("de", defaultSubtitleLang(audioLang = "jpn", subtitlePref = "deu", audioPref = "orig"))
+        assertEquals("en", defaultSubtitleLang(audioLang = "fre", subtitlePref = "eng"))
+        assertEquals("de", defaultSubtitleLang(audioLang = "jpn", subtitlePref = "deu"))
     }
 
     @Test
-    fun theAudioInTheLanguageTheViewerPrefersToListenToNeedsNoSubtitlesEither() {
-        // German dubs preferred, English subtitles: a German track is followed.
-        assertNull(defaultSubtitleLang(audioLang = "ger", subtitlePref = "eng", audioPref = "deu"))
-        assertEquals("en", defaultSubtitleLang(audioLang = "jpn", subtitlePref = "eng", audioPref = "deu"))
+    fun onlyThePlayingAudioCountsNeverTheAudioPreference() {
+        // docs/chino subtitles: the preferred subtitle language comes on when
+        // the audio PLAYING is in another language. Audio preferred "en", an
+        // English film playing in English, German subtitles preferred:
+        // German comes on.
+        val tracks = listOf(Sub("en", "eng"), Sub("de", "ger"))
+        assertEquals("de", defaultSubtitleLang(audioLang = "en", subtitlePref = "de"))
+        assertEquals("de", auto(tracks, audio = "en", pref = "de"))
+        // German audio playing, English subtitles preferred: English, whatever
+        // audio the viewer prefers.
+        assertEquals("en", defaultSubtitleLang(audioLang = "ger", subtitlePref = "eng"))
+        assertEquals("en", defaultSubtitleLang(audioLang = "jpn", subtitlePref = "eng"))
     }
 
     @Test
@@ -429,8 +450,8 @@ class LanguagesTest {
     /** A subtitle track with its format: PGS is drawn as pictures. */
     private data class Sub(val id: String, val lang: String, val forced: Boolean = false, val pgs: Boolean = false)
 
-    private fun auto(tracks: List<Sub>, audio: String?, pref: String, audioPref: String? = null) =
-        autoSubtitleTrack(tracks, { it.lang }, { it.forced }, { !it.pgs }, audioLang = audio, subtitlePref = pref, audioPref = audioPref)?.id
+    private fun auto(tracks: List<Sub>, audio: String?, pref: String) =
+        autoSubtitleTrack(tracks, { it.lang }, { it.forced }, { !it.pgs }, audioLang = audio, subtitlePref = pref)?.id
 
     private val forcedBoth = listOf(
         Sub("en", "eng"),
@@ -443,23 +464,24 @@ class LanguagesTest {
     fun whereNoSubtitlesWouldComeOnTheForcedTrackInTheAudiosLanguageDoes() {
         // English audio, an English viewer: no subtitles by the default rule,
         // the forced English ones — the lines in another language.
-        assertNull(defaultSubtitleTrack(forcedBoth, { it.lang }, { it.forced }, audioLang = "eng", subtitlePref = "eng", audioPref = "eng"))
-        assertEquals("en-forced", auto(forcedBoth, audio = "eng", pref = "eng", audioPref = "eng"))
+        assertNull(defaultSubtitleTrack(forcedBoth, { it.lang }, { it.forced }, audioLang = "eng", subtitlePref = "eng"))
+        assertEquals("en-forced", auto(forcedBoth, audio = "eng", pref = "eng"))
         // Subtitles off in Settings: the forced track still, part of the film.
         assertEquals("en-forced", auto(forcedBoth, audio = "eng", pref = "off"))
-        // German dubs preferred, English subtitles: each audio its own forced
-        // track — asked again as the audio's language changes.
-        assertEquals("de-forced", auto(forcedBoth, audio = "ger", pref = "eng", audioPref = "deu"))
-        assertEquals("en-forced", auto(forcedBoth, audio = "en", pref = "eng", audioPref = "deu"))
+        // German subtitles chosen: over German audio, the forced German
+        // track; over English audio, the full German ones - asked again as
+        // the audio's language changes.
+        assertEquals("de-forced", auto(forcedBoth, audio = "ger", pref = "deu"))
+        assertEquals("de", auto(forcedBoth, audio = "en", pref = "deu"))
     }
 
     @Test
     fun fullSubtitlesTheRulePicksComeBeforeAnyForcedTrack() {
         val tracks = listOf(Sub("fr-forced", "fre", forced = true), Sub("en", "eng"), Sub("en-forced", "eng", forced = true))
         // French audio, an English viewer: the full English subtitles.
-        assertEquals("en", auto(tracks, audio = "fre", pref = "eng", audioPref = "eng"))
+        assertEquals("en", auto(tracks, audio = "fre", pref = "eng"))
         // German audio for an English viewer: the full English ones again.
-        assertEquals("en", auto(forcedBoth, audio = "ger", pref = "eng", audioPref = "eng"))
+        assertEquals("en", auto(forcedBoth, audio = "ger", pref = "eng"))
     }
 
     @Test

@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 /** The hand-over both ways: where the TV starts, whether it plays on, and
  *  where the phone's player stands again when the TV does not take over. */
 class CastHandoffTest {
-    private val auto = CastSubtitleStart.Auto(subtitlePref = "en", audioPref = "orig")
+    private val auto = CastSubtitleStart.Auto(subtitlePref = "en")
     private val sidecars = listOf(
         SidecarSubtitle(id = "a1b2", lang = "ger", url = "https://media.example.com/api/v1/play/subs/a1b2.vtt"),
         SidecarSubtitle(id = "f9", lang = "eng", label = "English (forced)", url = "https://media.example.com/api/v1/play/subs/f9.vtt"),

@@ -168,7 +168,7 @@ internal class IosPlaybackController(
 
     /** The subtitle rule's pick for audio in [audioLang] ([autoSubtitleChoice]). */
     private fun autoSubtitle(audioLang: String?): SubtitleChoice? =
-        autoSubtitleChoice(subtitleChoices, audioLang, state.subtitlePref, state.audioPref)
+        autoSubtitleChoice(subtitleChoices, audioLang, state.subtitlePref)
 
     /** The audio's language changed — the item's audio known, or another
      *  picked: the subtitle rule picks again, until the viewer has picked a

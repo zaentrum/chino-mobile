@@ -216,7 +216,7 @@ class CastMediaTest {
         assertNull(active(CastSubtitleStart.Off))
         // A picture sidecar has no track on the TV: none comes on.
         assertNull(active(CastSubtitleStart.Sidecar("s3", "fre", forced = false)))
-        val auto = CastSubtitleStart.Auto(subtitlePref = "en", audioPref = "orig")
+        val auto = CastSubtitleStart.Auto(subtitlePref = "en")
         // Japanese audio, English subtitles in Settings: the full English track.
         assertEquals(1000L, active(auto, audioLang = "jpn"))
         // English audio: the forced English track - the lines in another language.
@@ -255,7 +255,7 @@ class CastMediaTest {
         // German is the phone's own: on from the start.
         assertEquals(1000L, active(CastSubtitleStart.Sidecar("s2", "ger", forced = false), "eng"))
         // The default rule for Japanese audio picks the master's English: after the load.
-        assertNull(active(CastSubtitleStart.Auto(subtitlePref = "en", audioPref = "orig"), "jpn"))
+        assertNull(active(CastSubtitleStart.Auto(subtitlePref = "en"), "jpn"))
     }
 
     @Test

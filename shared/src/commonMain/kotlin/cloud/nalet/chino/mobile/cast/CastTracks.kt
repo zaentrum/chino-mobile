@@ -96,7 +96,6 @@ private fun pickText(text: List<TvTrack>, start: CastSubtitleStart, audioLang: S
             text = { true },
             audioLang = audioLang,
             subtitlePref = start.subtitlePref,
-            audioPref = start.audioPref,
         )
     }
 

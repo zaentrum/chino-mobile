@@ -69,16 +69,16 @@ class SubtitleChoicesTest {
     @Test
     fun offUnlessTheAudioIsInAnotherLanguageAndThenAFullTrackTheOverlayCanDraw() {
         // English audio, English subtitles preferred, no forced English: off.
-        assertNull(autoSubtitleChoice(choices, audioLang = "eng", subtitlePref = "eng", audioPref = "eng"))
+        assertNull(autoSubtitleChoice(choices, audioLang = "eng", subtitlePref = "eng"))
         // German audio, English subtitles preferred: the English sidecar.
-        assertEquals("s-en", autoSubtitleChoice(choices, "ger", "eng", "eng")?.id)
+        assertEquals("s-en", autoSubtitleChoice(choices, "ger", "eng")?.id)
         // Japanese audio, German subtitles preferred: the PGS sidecar cannot be
         // drawn, so the embedded German text stream comes on.
-        assertEquals("emb-3", autoSubtitleChoice(choices, "jpn", "deu", "orig")?.id)
+        assertEquals("emb-3", autoSubtitleChoice(choices, "jpn", "deu")?.id)
         // The mobile default (subtitles off) switches none on but a forced
         // one; the forced French stream is a picture one, not drawn here.
-        assertNull(autoSubtitleChoice(choices, "jpn", "off", "eng"))
-        assertNull(autoSubtitleChoice(choices, "fre", "off", "eng"))
+        assertNull(autoSubtitleChoice(choices, "jpn", "off"))
+        assertNull(autoSubtitleChoice(choices, "fre", "off"))
     }
 
     @Test
@@ -117,13 +117,13 @@ class SubtitleChoicesTest {
         )
         // English audio, subtitles off in Settings: the forced English text
         // track; the PGS one cannot be drawn here, and comes after it anyway.
-        assertEquals("s-en-f", autoSubtitleChoice(choices, audioLang = "eng", subtitlePref = "off", audioPref = "eng")?.id)
-        assertEquals("s-en-f", autoSubtitleChoice(choices.filter { it.id != "s-en-pgs" }, "eng", "off", "eng")?.id)
-        assertNull(autoSubtitleChoice(choices.filter { it.id != "s-en-f" }, "eng", "off", "eng"))
+        assertEquals("s-en-f", autoSubtitleChoice(choices, audioLang = "eng", subtitlePref = "off")?.id)
+        assertEquals("s-en-f", autoSubtitleChoice(choices.filter { it.id != "s-en-pgs" }, "eng", "off")?.id)
+        assertNull(autoSubtitleChoice(choices.filter { it.id != "s-en-f" }, "eng", "off"))
         // French audio: the embedded forced French stream.
-        assertEquals("emb-5", autoSubtitleChoice(choices, audioLang = "fre", subtitlePref = "off", audioPref = "eng")?.id)
+        assertEquals("emb-5", autoSubtitleChoice(choices, audioLang = "fre", subtitlePref = "off")?.id)
         // Japanese audio, English subtitles chosen: the full English track.
-        assertEquals("s-en", autoSubtitleChoice(choices, audioLang = "jpn", subtitlePref = "eng", audioPref = "eng")?.id)
+        assertEquals("s-en", autoSubtitleChoice(choices, audioLang = "jpn", subtitlePref = "eng")?.id)
     }
 
     @Test

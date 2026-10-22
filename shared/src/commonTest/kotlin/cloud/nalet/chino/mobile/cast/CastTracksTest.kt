@@ -21,7 +21,7 @@ class CastTracksTest {
     private val sidecarDe = TvTrack(1000, TvTrackType.Text, "de", "German", sidecarId = "s2")
     private val tracks = listOf(video, enStereo, en51, ja, masterEn, masterEnForced, sidecarDe)
 
-    private val auto = CastSubtitleStart.Auto(subtitlePref = "en", audioPref = "orig")
+    private val auto = CastSubtitleStart.Auto(subtitlePref = "en")
 
     private fun wish(audio: String?, subtitle: CastSubtitleStart = auto, pref: String? = "orig") = CastTrackWish(audio, pref, subtitle)
 
@@ -54,6 +54,16 @@ class CastTracksTest {
         assertEquals(masterEnForced, castTrackPicks(tracks, listOf(2), wish(audio = "eng")).text)
         // The phone did not know its audio: the TV's tells.
         assertEquals(masterEn, castTrackPicks(tracks, listOf(4), wish(audio = null)).text)
+    }
+
+    @Test
+    fun anEnglishAudioPreferenceNeverKeepsGermanSubtitlesOffOverEnglishAudio() {
+        // Audio preferred "en", English playing, German subtitles preferred:
+        // German comes on - only the audio playing counts (docs/chino).
+        val german = wish(audio = "eng", subtitle = CastSubtitleStart.Auto(subtitlePref = "de"), pref = "en")
+        val picks = castTrackPicks(tracks, listOf(2), german)
+        assertEquals(enStereo, picks.audio)
+        assertEquals(sidecarDe, picks.text)
     }
 
     @Test

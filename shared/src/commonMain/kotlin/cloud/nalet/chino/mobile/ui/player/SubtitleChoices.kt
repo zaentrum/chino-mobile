@@ -34,7 +34,8 @@ fun subtitleKind(format: String?): SubtitleKind {
 data class SubtitleChoice(
     /** The sidecar's id, or "emb-<stream index>" for an embedded track. */
     val id: String,
-    /** Named by language, then kind ([subtitleLabels]). */
+    /** Named by language, then kind ([subtitleLabel]); never numbered: two
+     *  that read the same show once ([distinctSubtitles]). */
     val label: String,
     /** The normalised language ([normalizeLang]); "" when none. */
     val lang: String,
@@ -52,7 +53,9 @@ data class SubtitleChoice(
  * GET /items/{id}/subtitles first (each at /api/v1/play/subs/{id}.vtt), then
  * the embedded text streams /play/info lists (/items/{id}/play/subtitles/
  * {index}.vtt — ffmpeg extracts them as WebVTT). Labels name the language,
- * then the kind: forced, for the deaf and hard of hearing ([subtitleLabel]).
+ * then the kind: forced, for the deaf and hard of hearing ([subtitleLabel]);
+ * two that read the same show once, the file's own before a sidecar
+ * ([distinctSubtitles]).
  *
  * Picture formats stay in the list, marked unavailable unless [drawsPgs]
  * (and an embedded picture stream is always unavailable: the extractor cannot
@@ -98,11 +101,10 @@ fun buildSubtitleChoices(
             available = kind == SubtitleKind.Text,
         )
     }
-    val labels = subtitleLabels(raw.map { SubtitleLabelInput(it.lang, it.title, it.forced) })
-    return raw.mapIndexed { i, r ->
-        SubtitleChoice(
+    val choices = raw.map { r ->
+        r to SubtitleChoice(
             id = r.id,
-            label = labels[i],
+            label = subtitleLabel(SubtitleLabelInput(r.lang, r.title, r.forced)),
             lang = normalizeLang(r.lang),
             url = artworkUrl(apiBase, r.path, streamToken) ?: r.path,
             kind = r.kind,
@@ -110,12 +112,154 @@ fun buildSubtitleChoices(
             available = r.available,
         )
     }
+    return distinctSubtitles(
+        choices,
+        label = { it.second.label },
+        tag = { subtitleLanguage(it.first.lang, it.first.title) },
+        own = { it.second.id.startsWith(EMBEDDED_SUBTITLE_PREFIX) },
+        picture = { it.second.kind != SubtitleKind.Text },
+    ).map { it.second }
 }
 
 /** Whether a sidecar is a forced track: it says so (`forced`), or — from a
  *  server that does not pass the flag on — its label does, as the Android
  *  player reads a track's label. */
 fun sidecarForced(s: SidecarSubtitle): Boolean = s.forced || s.label.orEmpty().contains("forced", ignoreCase = true)
+
+/**
+ * An unpackaged title's embedded text subtitles (/play/info subtitle_tracks),
+ * as sidecars the player loads beside the stream: each at
+ * /items/{id}/play/subtitles/{index}.vtt, which chino-stream extracts as
+ * WebVTT, signed with [streamToken]. A picture track (PGS, VobSub) is not
+ * extracted, and a row without a stream index - a packaged title's - is not
+ * addressable: neither is listed.
+ */
+fun embeddedSidecars(itemId: String, tracks: List<TrackInfo>, apiBase: String, streamToken: String): List<SidecarSubtitle> =
+    tracks.mapNotNull { t ->
+        val index = t.index?.takeIf { it >= 0 } ?: return@mapNotNull null
+        if (subtitleKind(t.codec) != SubtitleKind.Text) return@mapNotNull null
+        SidecarSubtitle(
+            id = "$EMBEDDED_SUBTITLE_PREFIX$index",
+            label = t.title?.takeIf { it.isNotBlank() },
+            lang = t.language.orEmpty(),
+            url = "${apiBase.trimEnd('/')}/v1/items/$itemId/play/subtitles/$index.vtt?stream=$streamToken",
+            format = "webvtt",
+            forced = t.forced,
+        )
+    }
+
+/** Whether a track's own title says the platform made it ("AI"), the kind
+ *  the menu lists last in its language ("Chinese (Simplified) · AI"). */
+fun isAiSubtitle(title: String?): Boolean = title != null && Regex("""(^|[^A-Za-z])AI([^A-Za-z]|$)""").containsMatchIn(title)
+
+/** The id prefix of an embedded subtitle ([embeddedSidecars]). */
+const val EMBEDDED_SUBTITLE_PREFIX = "emb-"
+
+/**
+ * The subtitles menu under "off" (the design system's subtitles pattern):
+ * [top], the languages that matter here, and [more], what "more languages"
+ * opens - empty where there is nothing more to open.
+ */
+data class SubtitleMenu<T>(val top: List<T>, val more: List<T>)
+
+/**
+ * The tracks that would read the same ([label]) once each, where the first
+ * of them was (docs/chino subtitles; never numbered): the one [on] if
+ * either is; else one in a language before one tagged with none ([tag]: an
+ * untagged "English" never hides the English track); else a text one before
+ * a picture one ([picture]); else the file's own ([own]: an original's
+ * embedded track) before one the server adds; else the first in the file.
+ */
+fun <T> distinctSubtitles(
+    tracks: List<T>,
+    label: (T) -> String,
+    tag: (T) -> String,
+    on: (T) -> Boolean = { false },
+    own: (T) -> Boolean = { false },
+    picture: (T) -> Boolean = { false },
+): List<T> {
+    fun better(a: T, b: T): T = when {
+        on(b) -> b
+        on(a) -> a
+        tag(a).isEmpty() != tag(b).isEmpty() -> if (tag(a).isEmpty()) b else a
+        picture(a) != picture(b) -> if (picture(a)) b else a
+        own(a) != own(b) -> if (own(a)) a else b
+        else -> a
+    }
+    val firstOf = LinkedHashMap<String, T>()
+    for (t in tracks) {
+        val key = label(t)
+        firstOf[key] = firstOf[key]?.let { better(it, t) } ?: t
+    }
+    return firstOf.values.toList()
+}
+
+/**
+ * The subtitles menu of a title's [tracks], given in the order the file
+ * brings them (docs/chino subtitles, "The menu"): on top the viewer's
+ * subtitle language ([preferred], Settings - "off" names none), then the
+ * other subtitle languages the server is set up for ([serverLanguages]);
+ * then "more languages" with the rest, by language in the file's order,
+ * tracks in no language last. Each language's tracks stay together - a
+ * region or a script is the same language there, AI ones included - plain
+ * first, then for deaf and hard of hearing, then foreign-language parts
+ * only, then AI ([ai]: made by the platform). A server set up for no
+ * subtitle languages (none, or a server from before the route) has no "more
+ * languages": "off" and "more languages" alone would hide every track behind
+ * a press - all are listed, the viewer's language first, then the file's
+ * order. Tracks that read the same show once ([distinctSubtitles]). A
+ * wanted language takes a track by its language, and by its script and
+ * region where both name one ([tag]: its tag with what its own title says,
+ * [subtitleLanguage]): "zh-Hans" is not "zh-Hant", "en" takes "en-GB" too.
+ */
+fun <T> subtitleMenu(
+    tracks: List<T>,
+    tag: (T) -> String,
+    forced: (T) -> Boolean,
+    sdh: (T) -> Boolean,
+    label: (T) -> String,
+    preferred: String?,
+    serverLanguages: List<String>,
+    on: (T) -> Boolean = { false },
+    own: (T) -> Boolean = { false },
+    ai: (T) -> Boolean = { false },
+    picture: (T) -> Boolean = { false },
+): SubtitleMenu<T> {
+    val unique = distinctSubtitles(tracks, label, tag, on, own, picture)
+    val rank = { t: T -> if (ai(t)) 3 else if (forced(t)) 2 else if (sdh(t)) 1 else 0 }
+    fun ordered(list: List<T>): List<T> =
+        list.groupBy { normalizeLang(tag(it)) }.values.flatMap { g -> g.sortedBy(rank) }
+    val wanted = buildList {
+        preferred?.trim()?.takeUnless { it.isEmpty() || it.equals("off", ignoreCase = true) }?.let { add(it) }
+        addAll(serverLanguages)
+    }.filter { languageTag(it).isNotEmpty() }.distinctBy { languageTag(it) }
+    val placed = HashSet<Int>()
+    val top = ArrayList<T>()
+    for (w in wanted) {
+        val group = unique.indices.filter { it !in placed && sameLanguage(w, tag(unique[it])) }
+        placed += group
+        top += ordered(group.map { unique[it] })
+    }
+    val rest = unique.filterIndexed { i, _ -> i !in placed }
+    val (named, unnamed) = rest.partition { tag(it).isNotEmpty() }
+    val others = ordered(named) + unnamed
+    val noMore = serverLanguages.none { languageTag(it).isNotEmpty() }
+    return if (noMore) SubtitleMenu(top + others, emptyList()) else SubtitleMenu(top, others)
+}
+
+/** Whether a track tagged [code] is in the language [want] names: the same
+ *  language, and the same script and region where both name one. */
+fun sameLanguage(want: String?, code: String?): Boolean {
+    val w = languageTag(want)
+    val t = languageTag(code)
+    if (w.isEmpty() || t.isEmpty() || normalizeLang(w) != normalizeLang(t)) return false
+    val ws = scriptOfTag(w)
+    val ts = scriptOfTag(t)
+    if (ws.isNotEmpty() && ts.isNotEmpty() && ws != ts) return false
+    val wr = regionOfTag(w)
+    val tr = regionOfTag(t)
+    return wr.isEmpty() || tr.isEmpty() || wr == tr
+}
 
 /**
  * The captions menu of a player that side-loads the sidecars and also plays
@@ -174,7 +318,6 @@ fun autoSubtitleChoice(
     choices: List<SubtitleChoice>,
     audioLang: String?,
     subtitlePref: String?,
-    audioPref: String?,
 ): SubtitleChoice? = autoSubtitleTrack(
     tracks = choices.filter { it.available },
     lang = { it.lang },
@@ -182,7 +325,6 @@ fun autoSubtitleChoice(
     text = { it.kind == SubtitleKind.Text },
     audioLang = audioLang,
     subtitlePref = subtitlePref,
-    audioPref = audioPref,
 )
 
 /**
