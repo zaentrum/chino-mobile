@@ -2,7 +2,6 @@ package cloud.nalet.chino.mobile.cast
 
 import android.graphics.Color
 import android.os.Bundle
-import android.view.KeyEvent
 import android.view.Menu
 import android.view.View
 import android.widget.ImageView
@@ -51,11 +50,11 @@ class CastExpandedControlsActivity : ExpandedControllerActivity() {
             val view = getButtonImageViewAt(slot)
             when (slot) {
                 1 -> {
-                    slotIcon(view, R.drawable.chino_cast_replay_10, getString(CastR.string.cast_rewind_10))
+                    slotIcon(view, R.drawable.chino_cast_replay_10, getString(R.string.chino_cast_back_10))
                     controller.bindViewToRewind(view, SKIP_MS)
                 }
                 2 -> {
-                    slotIcon(view, R.drawable.chino_cast_forward_10, getString(CastR.string.cast_forward_10))
+                    slotIcon(view, R.drawable.chino_cast_forward_10, getString(R.string.chino_cast_forward_10))
                     controller.bindViewToForward(view, SKIP_MS)
                 }
                 3 -> {
@@ -79,8 +78,6 @@ class CastExpandedControlsActivity : ExpandedControllerActivity() {
         CastButtonFactory.setUpMediaRouteButton(this, menu, R.id.chino_cast_media_route)
         return true
     }
-
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean = CastKeys.handle(event) || super.dispatchKeyEvent(event)
 
     private companion object {
         /** Back and forward: 10 seconds. */

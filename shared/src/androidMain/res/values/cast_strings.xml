@@ -7,4 +7,9 @@
     <string name="cast_casting_to_device">playing on %1$s</string>
     <string name="cast_disconnect">stop casting</string>
     <string name="chino_cast_stop_casting" translatable="false">stop casting</string>
+
+    <!-- The full controls' skip buttons, read out and shown on a long
+         press. -->
+    <string name="chino_cast_back_10" translatable="false">back 10 seconds</string>
+    <string name="chino_cast_forward_10" translatable="false">forward 10 seconds</string>
 </resources>

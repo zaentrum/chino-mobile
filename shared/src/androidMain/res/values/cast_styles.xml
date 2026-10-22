@@ -13,8 +13,12 @@
         <item name="mediaRouteTheme">@style/Theme.Chino.MediaRouter</item>
     </style>
 
-    <!-- The full controls' activity. -->
+    <!-- The full controls' activity: every line of Google's in Inter - the
+         theme's face is the one a view of its layouts takes where it sets
+         none itself. -->
     <style name="Theme.Chino.CastExpandedControls" parent="Theme.Chino.Cast">
+        <item name="android:fontFamily">@font/chino_inter</item>
+        <item name="fontFamily">@font/chino_inter</item>
         <item name="castExpandedControllerStyle">@style/Widget.Chino.CastExpandedController</item>
         <item name="castExpandedControllerToolbarStyle">@style/ThemeOverlay.Chino.CastToolbar</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
@@ -34,14 +38,20 @@
         <item name="castButtonColor">@color/chino_cast_button</item>
     </style>
 
+    <!-- The bar's lines in Inter: the title medium, the device line
+         regular. -->
     <style name="TextAppearance.Chino.CastBar.Title" parent="TextAppearance.CastMiniController.Title">
         <item name="android:textSize">13sp</item>
         <item name="android:textColor">@color/chino_cast_fg</item>
+        <item name="android:fontFamily">@font/chino_inter_medium</item>
+        <item name="fontFamily">@font/chino_inter_medium</item>
     </style>
 
     <style name="TextAppearance.Chino.CastBar.Device" parent="TextAppearance.CastMiniController.Subtitle">
         <item name="android:textSize">12sp</item>
         <item name="android:textColor">@color/chino_cast_fg_muted</item>
+        <item name="android:fontFamily">@font/chino_inter</item>
+        <item name="fontFamily">@font/chino_inter</item>
     </style>
 
     <!-- The full controls: Google's expanded controller on bg, its buttons
@@ -63,13 +73,29 @@
         <item name="castAdInProgressTextColor">@color/chino_cast_fg</item>
     </style>
 
-    <!-- The full controls' toolbar: the title in fg, the subtitle in
-         fg-muted, Up and the Cast button in fg. -->
+    <!-- The full controls' toolbar: the title in fg, Inter medium, the
+         subtitle in fg-muted, Up and the Cast button in fg. -->
     <style name="ThemeOverlay.Chino.CastToolbar" parent="ThemeOverlay.AppCompat.Dark.ActionBar">
         <item name="android:textColorPrimary">@color/chino_cast_fg</item>
         <item name="android:textColorSecondary">@color/chino_cast_fg_muted</item>
         <item name="colorControlNormal">@color/chino_cast_fg</item>
+        <item name="toolbarStyle">@style/Widget.Chino.CastToolbar</item>
         <item name="mediaRouteTheme">@style/Theme.Chino.MediaRouter</item>
+    </style>
+
+    <style name="Widget.Chino.CastToolbar" parent="Widget.AppCompat.Toolbar">
+        <item name="titleTextAppearance">@style/TextAppearance.Chino.CastToolbar.Title</item>
+        <item name="subtitleTextAppearance">@style/TextAppearance.Chino.CastToolbar.Subtitle</item>
+    </style>
+
+    <style name="TextAppearance.Chino.CastToolbar.Title" parent="TextAppearance.Widget.AppCompat.Toolbar.Title">
+        <item name="android:fontFamily">@font/chino_inter_medium</item>
+        <item name="fontFamily">@font/chino_inter_medium</item>
+    </style>
+
+    <style name="TextAppearance.Chino.CastToolbar.Subtitle" parent="TextAppearance.Widget.AppCompat.Toolbar.Subtitle">
+        <item name="android:fontFamily">@font/chino_inter</item>
+        <item name="fontFamily">@font/chino_inter</item>
     </style>
 
     <!-- Google's Cast button - its icon and states - in fg. -->
@@ -78,8 +104,11 @@
     </style>
 
     <!-- Google's device chooser and its dialog while casting: on surface,
-         text in fg and fg-muted, its actions and sliders in cloud-blue, square. -->
+         text in fg and fg-muted and in Inter, its actions and sliders in
+         cloud-blue, square. -->
     <style name="Theme.Chino.MediaRouter" parent="Theme.MediaRouter">
+        <item name="android:fontFamily">@font/chino_inter</item>
+        <item name="fontFamily">@font/chino_inter</item>
         <item name="mediaRouteButtonStyle">@style/Widget.Chino.MediaRouteButton</item>
         <item name="colorPrimary">@color/chino_cast_surface</item>
         <item name="colorPrimaryDark">@color/chino_cast_bg</item>

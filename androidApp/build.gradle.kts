@@ -166,6 +166,15 @@ android {
         }
     }
 
+    // English only: the app's own words are English, and the libraries'
+    // translations would put Google's Cast screens in the phone's language
+    // beside ours ("playing on", "stop casting"). Dates and numbers still
+    // follow the phone's locale - they are formatted from it, not read from
+    // resources. This goes when the app gets translations of its own.
+    androidResources {
+        localeFilters += "en"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

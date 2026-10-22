@@ -1,12 +1,10 @@
 package cloud.nalet.chino.mobile.android
 
 import android.os.Bundle
-import android.view.KeyEvent
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
 import cloud.nalet.chino.mobile.App
 import cloud.nalet.chino.mobile.android.auth.AppAuthSignInLauncher
-import cloud.nalet.chino.mobile.cast.CastKeys
 
 /** A FragmentActivity: the Cast button's device chooser and the bar while
  *  casting are fragments (Google's Cast widgets). */
@@ -51,7 +49,4 @@ class MainActivity : FragmentActivity() {
             )
         }
     }
-
-    /** While casting, the volume keys set the TV's volume (CastKeys). */
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean = CastKeys.handle(event) || super.dispatchKeyEvent(event)
 }
