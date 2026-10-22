@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing of the app leaves the phone through a backup or a transfer to a new
+  phone (Android 12 and later): not the downloads (files/downloads, its index
+  and cache in databases/chino_downloads.db), not their settings
+  (shared_prefs/chino_downloads.xml), not the positions waiting to be sent
+  (files/progress-book.json), not WorkManager's database, and not the accounts
+  and their tokens (files/datastore). android:allowBackup="false" stops the
+  cloud backup but not a device-to-device transfer: every domain is excluded
+  for both. A new phone signs in and downloads anew.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>
