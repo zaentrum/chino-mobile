@@ -849,9 +849,11 @@ private fun PillButton(
 ) {
     Row(
         modifier = Modifier
+            // Not there yet - a download waiting for its check: the whole
+            // pill dimmed, its fill with its label.
+            .alpha(if (enabled) 1f else 0.4f)
             .clip(RectangleShape)
             .background(if (primary) ChinoCloudBlue else Color.White.copy(alpha = 0.1f))
-            .alpha(if (enabled) 1f else 0.4f)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

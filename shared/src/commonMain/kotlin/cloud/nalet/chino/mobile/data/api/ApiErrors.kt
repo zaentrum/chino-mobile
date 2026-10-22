@@ -158,7 +158,7 @@ fun Throwable.loadDetails(): String = when (this) {
     is ApiStatusException -> "HTTP $status"
     is ResponseException -> "HTTP ${response.status.value}"
     is IOException -> "no answer"
-    else -> "an answer the app could not read"
+    else -> "an answer the app couldn't read"
 }
 
 /** Whether the server answered that a title is not there (404, 410): it

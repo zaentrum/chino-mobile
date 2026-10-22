@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
@@ -44,6 +45,8 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -82,6 +85,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.ui.theme.PosterImage
+import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
@@ -168,7 +172,7 @@ fun DownloadsSection(onPlay: (itemId: String) -> Unit) {
         }
         storage?.let { use ->
             item(key = "storage") {
-                Text(text = storageLine(use, device), color = ChinoMuted, fontSize = 13.sp)
+                Text(text = storageLine(use, device, anythingOnThePhone = entries.any { it.onPhone }), color = ChinoMuted, fontSize = 13.sp)
             }
         }
         if (entries.isEmpty()) {
@@ -373,9 +377,21 @@ internal fun InformationBanner(text: String, details: List<String> = emptyList()
                 liveRegion = LiveRegionMode.Polite
                 if (details.isNotEmpty()) {
                     role = Role.Button
+                    // Expanded or collapsed, in the phone's own words.
+                    if (open) {
+                        collapse {
+                            open = false
+                            true
+                        }
+                    } else {
+                        expand {
+                            open = true
+                            true
+                        }
+                    }
                     // The tap's own action is cleared with the rest: this is
                     // the one a screen reader offers.
-                    onClick(label = if (open) "hide details" else "details") {
+                    onClick(label = "details") {
                         open = !open
                         true
                     }
@@ -392,7 +408,17 @@ internal fun InformationBanner(text: String, details: List<String> = emptyList()
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(text = text, color = ChinoFg, fontSize = 14.sp, lineHeight = 20.sp)
                 if (details.isNotEmpty()) {
-                    Text(text = if (open) "hide details" else "details", color = ChinoCloudBlue, fontSize = 12.sp, style = ChinoMono)
+                    // One label, the caret turning as the details open - the
+                    // design system's banner.
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(text = "details", color = ChinoCloudBlue, fontSize = 12.sp, style = ChinoMono)
+                        Icon(
+                            imageVector = Lucide.ChevronDown,
+                            contentDescription = null,
+                            tint = ChinoCloudBlue,
+                            modifier = Modifier.size(14.dp).rotate(if (open) 180f else 0f),
+                        )
+                    }
                     if (open) {
                         details.forEach { Text(text = it, color = ChinoFg2, fontSize = 13.sp, lineHeight = 18.sp) }
                     }

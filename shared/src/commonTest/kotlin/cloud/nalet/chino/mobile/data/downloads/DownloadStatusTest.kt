@@ -113,6 +113,12 @@ class DownloadWordsTest {
             "820 MB used by downloads · 1 GB free on this tablet",
             storageLine(StorageUse(usedBytes = 820_000_000, freeBytes = 999_600_000), DeviceKind.Tablet),
         )
+        // Nothing on the phone: what is free, alone - not "0 MB used".
+        assertEquals("3.9 GB free on this phone", storageLine(StorageUse(usedBytes = 0, freeBytes = 3_900_000_000), DeviceKind.Phone))
+        assertEquals(
+            "3.9 GB free on this phone",
+            storageLine(StorageUse(usedBytes = 12_000, freeBytes = 3_900_000_000), DeviceKind.Phone, anythingOnThePhone = false),
+        )
         assertEquals("720p · about 1.1 GB an hour", qualityLine(DownloadQuality(720, 1_100_000_000)))
         assertEquals("480p · about 450 MB an hour", qualityLine(DownloadQuality(480, 450_000_000)))
         assertEquals("1080p", qualityLine(DownloadQuality(1080, null)))
@@ -131,12 +137,17 @@ class DownloadWordsTest {
             yourDownloadsGoSentence(DownloadsSummary(23, 12_400_000_000), DeviceKind.Phone),
         )
         assertEquals(
-            "Your 1 download, 281 MB, is deleted from this phone.",
+            "Your download, 281 MB, is deleted from this phone.",
             yourDownloadsGoSentence(DownloadsSummary(1, 281_000_000), DeviceKind.Phone),
         )
         assertEquals(
             "The 23 downloads of Anna, 12.4 GB, are deleted from this tablet.",
             accountDownloadsGoSentence(DownloadsSummary(23, 12_400_000_000), "Anna", DeviceKind.Tablet),
+        )
+        // One download: no "1".
+        assertEquals(
+            "The download of Anna, 281 MB, is deleted from this phone.",
+            accountDownloadsGoSentence(DownloadsSummary(1, 281_000_000), "Anna", DeviceKind.Phone),
         )
     }
 

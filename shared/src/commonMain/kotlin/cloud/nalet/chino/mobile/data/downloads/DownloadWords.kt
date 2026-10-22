@@ -82,9 +82,14 @@ fun seasonOfferLabel(season: Int, episodes: Int, bytes: Long?, noneHandled: Bool
 fun partLabel(downloaded: Int, of: Int): String = "$downloaded of $of downloaded"
 
 /** The downloads screen's top line: "12.4 GB used by downloads · 18 GB free
- *  on this phone". */
-fun storageLine(use: StorageUse, device: DeviceKind): String =
-    "${formatSize(use.usedBytes)} used by downloads · ${formatSize(use.freeBytes)} free on this ${device.word}"
+ *  on this phone"; with nothing on the phone ([anythingOnThePhone]), what
+ *  is free alone: "3.9 GB free on this phone". */
+fun storageLine(use: StorageUse, device: DeviceKind, anythingOnThePhone: Boolean = use.usedBytes > 0): String =
+    if (anythingOnThePhone) {
+        "${formatSize(use.usedBytes)} used by downloads · ${formatSize(use.freeBytes)} free on this ${device.word}"
+    } else {
+        "${formatSize(use.freeBytes)} free on this ${device.word}"
+    }
 
 /** Settings' name of a quality, with what an hour takes at it where enough
  *  of the server's titles say: "720p · about 1.1 GB an hour". */
@@ -133,7 +138,7 @@ const val CHANGE_SERVER_TITLE = "change server"
  *  from this phone." */
 fun yourDownloadsGoSentence(summary: DownloadsSummary, device: DeviceKind): String =
     if (summary.titles == 1) {
-        "Your 1 download, ${formatSize(summary.bytes)}, is deleted from this ${device.word}."
+        "Your download, ${formatSize(summary.bytes)}, is deleted from this ${device.word}."
     } else {
         "Your ${summary.titles} downloads, ${formatSize(summary.bytes)}, are deleted from this ${device.word}."
     }
@@ -142,7 +147,7 @@ fun yourDownloadsGoSentence(summary: DownloadsSummary, device: DeviceKind): Stri
  *  this phone." */
 fun accountDownloadsGoSentence(summary: DownloadsSummary, accountName: String, device: DeviceKind): String =
     if (summary.titles == 1) {
-        "The 1 download of $accountName, ${formatSize(summary.bytes)}, is deleted from this ${device.word}."
+        "The download of $accountName, ${formatSize(summary.bytes)}, is deleted from this ${device.word}."
     } else {
         "The ${summary.titles} downloads of $accountName, ${formatSize(summary.bytes)}, are deleted from this ${device.word}."
     }
