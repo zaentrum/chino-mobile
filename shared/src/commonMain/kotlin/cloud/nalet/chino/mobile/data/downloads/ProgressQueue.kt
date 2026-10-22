@@ -366,6 +366,19 @@ class ProgressSync(
         )
     }
 
+    /**
+     * A position of [itemId] another screen wrote to the server just now for
+     * [accountId] - the TV this phone casts to: newer than anything the
+     * phone kept of the title, so a queued position of it goes unsent, and
+     * for a title on the phone it is where its download resumes here.
+     */
+    suspend fun keptElsewhere(accountId: String, itemId: String, positionSec: Int, durationSec: Int) {
+        if (account() != accountId) return
+        val p = PlayedPosition(server(), accountId, itemId, positionSec, durationSec, now())
+        if (onPhone(accountId, itemId)) queue.remember(p)
+        queue.supersede(p)
+    }
+
     /** The last position played on this phone of [itemId], in seconds. */
     suspend fun lastPlayedSec(itemId: String): Int? {
         val accountId = account() ?: return null

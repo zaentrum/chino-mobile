@@ -12,7 +12,6 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import cloud.nalet.chino.mobile.currentTimeMillis
 import cloud.nalet.chino.mobile.data.AppContainer
-import cloud.nalet.chino.mobile.data.api.ProgressBody
 import cloud.nalet.chino.mobile.data.auth.StreamTokenManager
 import com.google.android.gms.cast.CastStatusCodes
 import com.google.android.gms.cast.MediaError
@@ -190,6 +189,11 @@ internal object ChinoCast {
      */
     fun attach(context: Context, container: AppContainer) {
         appContext = context.applicationContext
+        // While a device is connected, Play on a downloaded title goes to the
+        // TV as a streamed title does - the server's master, the TV's own
+        // links - and nothing of the phone's download goes to it
+        // (downloads/DownloadedPlayback.kt).
+        container.playsOnAnotherScreen = ::castingNow
         if (this.container !== container) {
             this.container = container
             ownerWatch?.cancel()
@@ -363,6 +367,12 @@ internal object ChinoCast {
     /** The session to load into or set the volume of, while one is connected. */
     fun connectedSession(): CastSession? =
         (session ?: sharedContext()?.sessionManager?.currentCastSession)?.takeIf { it.isConnected }
+
+    /** Whether a device is connected now, from any thread: on the main
+     *  thread the framework's own word ([connectedSession]), elsewhere what
+     *  it last reported. */
+    fun castingNow(): Boolean =
+        if (Looper.myLooper() == Looper.getMainLooper()) connectedSession() != null else _state.value.connected
 
     /** The framework's context: this sender's, or - where the full controls
      *  were opened before the app's start had finished - the one the
@@ -565,8 +575,12 @@ internal object ChinoCast {
                 // Once more as it goes out: the request carries the bearer of
                 // whoever is signed in then.
                 if (w.accountId == activeAccountId) {
-                    runCatching { c.chinoApi.postProgress(w.itemId, ProgressBody(positionSec = w.positionSec, durationSec = w.durationSec)) }
-                        .onSuccess { if (w.final) CastEvents.keptPositionOf(w.itemId) }
+                    // Newer than any position of the title the phone still
+                    // keeps from playing it without the server: that one
+                    // goes, and a download of it resumes here where the TV
+                    // is.
+                    val sent = writeCastProgress(w, { id, body -> c.chinoApi.postProgress(id, body) }, c.progressSync)
+                    if (sent && w.final) CastEvents.keptPositionOf(w.itemId)
                 }
             } finally {
                 _writing.update { it - 1 }

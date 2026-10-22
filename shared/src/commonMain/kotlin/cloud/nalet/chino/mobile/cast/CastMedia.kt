@@ -5,6 +5,8 @@ import cloud.nalet.chino.mobile.data.api.artworkUrl
 import cloud.nalet.chino.mobile.data.auth.withStreamToken
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.model.episodeCode
+import cloud.nalet.chino.mobile.ui.player.AUTO_QUALITY
+import cloud.nalet.chino.mobile.ui.player.buildMasterUrl
 import cloud.nalet.chino.mobile.ui.player.HlsMaster
 import cloud.nalet.chino.mobile.ui.player.SubtitleKind
 import cloud.nalet.chino.mobile.ui.player.SubtitleLabelInput
@@ -204,6 +206,26 @@ data class CastMediaInput(
     /** What the TV is to play with. */
     val tracks: CastTrackWish get() = CastTrackWish(audioLang, audioPref, subtitleStart)
 }
+
+/**
+ * [input] for a title the phone plays from its download: the TV is sent it
+ * as a streamed title - the server's master at Auto for [caps], and the
+ * server's subtitles ([serverSidecars], [sidecarsOnTheServer]), each signed
+ * for the TV as it loads - never a file of the phone's, nor the master the
+ * download kept.
+ */
+fun fromTheServer(input: CastMediaInput, serverSidecars: List<SidecarSubtitle>, caps: String): CastMediaInput =
+    input.copy(
+        phoneMasterUrl = buildMasterUrl(input.apiBase, input.itemId, "", AUTO_QUALITY, caps),
+        sidecars = serverSidecars,
+    )
+
+/** chino-api's list of a title's subtitles ([sidecars], its paths under
+ *  /api) as links of the server [apiBase] (".../api"), not signed yet. */
+fun sidecarsOnTheServer(apiBase: String, sidecars: List<SidecarSubtitle>): List<SidecarSubtitle> =
+    sidecars.map { s ->
+        if (s.url.startsWith("http://") || s.url.startsWith("https://")) s else s.copy(url = apiBase.trimEnd('/') + s.url.removePrefix("/api"))
+    }
 
 /** The TV's master of [input], signed with [token]. */
 fun receiverMasterUrl(input: CastMediaInput, token: String): String =

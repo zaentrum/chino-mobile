@@ -1,5 +1,8 @@
 package cloud.nalet.chino.mobile.cast
 
+import cloud.nalet.chino.mobile.data.api.ProgressBody
+import cloud.nalet.chino.mobile.data.downloads.ProgressSync
+import kotlinx.coroutines.CancellationException
 import cloud.nalet.chino.mobile.ui.player.ProgressGuard
 
 /*
@@ -45,6 +48,45 @@ data class CastProgressWrite(
     val durationSec: Int,
     val final: Boolean,
 )
+
+/** What [w] sends: the TV's position as it plays it now - with no age, so
+ *  chino-api writes it at once, and a position the phone kept from playing
+ *  the title earlier without the server, sent later with its age
+ *  (played_ms_ago), never goes over it. */
+fun castProgressBody(w: CastProgressWrite): ProgressBody =
+    ProgressBody(positionSec = w.positionSec, durationSec = w.durationSec)
+
+/**
+ * Sends [w] through [post] (POST /items/{id}/progress for its account) and,
+ * once the server has it, tells [progressSync]: a position the phone kept of
+ * the title from playing it without the server is older - it goes unsent -
+ * and a download of the title resumes on the phone where the TV is. True
+ * when the server has it.
+ */
+suspend fun writeCastProgress(
+    w: CastProgressWrite,
+    post: suspend (itemId: String, body: ProgressBody) -> Unit,
+    progressSync: ProgressSync?,
+): Boolean {
+    val sent = try {
+        post(w.itemId, castProgressBody(w))
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        false
+    }
+    if (sent) {
+        try {
+            progressSync?.keptElsewhere(w.accountId, w.itemId, w.positionSec, w.durationSec)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Unit
+        }
+    }
+    return sent
+}
 
 /** How often the position is written while the TV plays, as the phone's
  *  player writes its own. */

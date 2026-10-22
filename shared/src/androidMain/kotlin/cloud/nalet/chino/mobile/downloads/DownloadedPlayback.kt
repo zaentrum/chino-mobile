@@ -5,6 +5,7 @@ import androidx.media3.common.StreamKey
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.offline.Download
+import cloud.nalet.chino.mobile.cast.resumeSecOf
 import cloud.nalet.chino.mobile.currentTimeMillis
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
@@ -86,8 +87,20 @@ suspend fun downloadedSession(
     itemId: String,
     fromStart: Boolean,
     resumeSec: Int,
+): LocalPlay {
+    // Asked on the caller's thread - the player's, the main one - where the
+    // Cast framework answers for itself.
+    if (container.playsOnAnotherScreen()) return LocalPlay.None
+    return playFromThePhone(context, container, itemId, fromStart, resumeSec)
+}
+
+private suspend fun playFromThePhone(
+    context: Context,
+    container: AppContainer,
+    itemId: String,
+    fromStart: Boolean,
+    resumeSec: Int,
 ): LocalPlay = withContext(Dispatchers.IO) {
-    if (container.playsOnAnotherScreen()) return@withContext LocalPlay.None
     val owner = container.activeOwner.value ?: return@withContext LocalPlay.None
     val engine = DownloadEngine.get(context)
     engine.titles.awaitReady()
@@ -116,7 +129,7 @@ suspend fun downloadedSession(
             when {
                 fromStart || handoff -> null
                 online && !container.progressSync.hasUnsent(itemId) ->
-                    withTimeoutOrNull(SERVER_WAIT_MS) { runCatching { container.chinoApi.getProgress(itemId).positionSec }.getOrNull() }
+                    withTimeoutOrNull(SERVER_WAIT_MS) { runCatching { resumeSecOf(container.chinoApi.getProgress(itemId)) }.getOrNull() }
                         ?: container.progressSync.lastPlayedSec(itemId) ?: claim.savedPositionSec ?: 0
                 else -> container.progressSync.lastPlayedSec(itemId) ?: claim.savedPositionSec ?: 0
             }

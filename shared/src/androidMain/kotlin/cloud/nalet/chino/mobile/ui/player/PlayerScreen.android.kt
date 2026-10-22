@@ -619,6 +619,10 @@ private fun downloadedPlayState(
     playerMode = PlayerMode.Title,
     extraId = null,
     extra = null,
+    // What it is called, its series and artwork: what the TV shows of it,
+    // should casting start while it plays here.
+    item = local.title.item,
+    seriesTitle = local.title.seriesTitle,
     local = local,
 )
 
@@ -1790,10 +1794,11 @@ private fun CastStarting(
     onPlaying: () -> Unit,
     onHereAgain: (LocalAgain) -> Unit,
 ) {
+    val container = LocalAppContainer.current
     LaunchedEffect(handoff) {
         // Its links are signed for the TV as it loads (ChinoCast), with a
         // token minted for it - not this player's.
-        val input = CastMediaInput(
+        val asPlayedHere = CastMediaInput(
             apiBase = state.base,
             itemId = state.itemId,
             extraId = state.extraId,
@@ -1811,6 +1816,18 @@ private fun CastStarting(
             writesProgress = state.writable,
             restart = handoff.restart,
         )
+        // Played here from its download: the TV gets it from the server as a
+        // streamed title, never a file of the phone's.
+        val input = if (state.local != null) {
+            val subs = runCatching { container.chinoApi.itemSubtitles(state.itemId).subtitles }.getOrDefault(emptyList())
+            cloud.nalet.chino.mobile.cast.fromTheServer(
+                asPlayedHere,
+                cloud.nalet.chino.mobile.cast.sidecarsOnTheServer(state.base, subs),
+                state.caps,
+            )
+        } else {
+            asPlayedHere
+        }
         when (ChinoCast.load(input)) {
             CastLoadResult.Playing -> onPlaying()
             is CastLoadResult.Failed, CastLoadResult.Ended -> onHereAgain(localAgainAfterCast(handoff))

@@ -224,6 +224,14 @@ no download control yet: its host passes no `DownloadsPlatform`.
   from before the route is asked title by title. Without the server, a
   download checked within 30 days plays; past them it waits for the server
   ("downloaded · check needed").
+- **With casting** — while a device is connected, Play on a downloaded title
+  plays it on the TV as a streamed one: the server's master and subtitles,
+  signed with the TV's own token (`playsOnAnotherScreen`, set by casting);
+  casting started while a download plays here sends the TV the same,
+  never a file of the phone's. The TV's positions are written as of now; a
+  position the phone kept of the title from playing it without the server is
+  older and goes unsent, and the download resumes here where the TV stopped
+  (`writeCastProgress`).
 - **What a download keeps** — one video rendition, picked by the download
   quality from the master as the server serves it when the download starts
   (Settings: what an hour takes at each quality, the same sample of titles
@@ -355,7 +363,10 @@ AirPlay instead.
   (`CastTag`), made at random and kept on the phone - never in a backup or a
   transfer to a new phone - which names neither the account nor the server;
   a second phone signed in to the same account writes nothing, nor does an
-  extra.
+  extra. A position the phone kept of a title from playing its download
+  without the server never goes over the TV's: it is older, and goes unsent
+  (Downloads, with casting); one a phone sends late goes with its age, and
+  chino-api writes it only over an older one.
 - **Links that run out** — where the TV plays on after a long pause, or in a
   resumed session, with less life left in its links than it still has to
   play - and a new token makes them last meaningfully longer - the phone
