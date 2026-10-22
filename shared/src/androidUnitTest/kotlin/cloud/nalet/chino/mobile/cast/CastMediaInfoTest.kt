@@ -99,7 +99,7 @@ class CastMediaInfoTest {
         }
         assertEquals(listOf("$base/v1/play/subs/s1.vtt?stream=tv456", "$base/v1/play/subs/s2.vtt?stream=tv456"), tracks.map { it.contentId })
         assertEquals(listOf("en", "de"), tracks.map { it.language })
-        assertEquals(listOf("English", "German (forced)"), tracks.map { it.name })
+        assertEquals(listOf("English", "German · foreign-language parts only"), tracks.map { it.name })
         assertEquals(listOf(listOf(MediaTrack.ROLE_SUBTITLE), listOf(MediaTrack.ROLE_FORCED_SUBTITLE)), tracks.map { it.roles })
     }
 

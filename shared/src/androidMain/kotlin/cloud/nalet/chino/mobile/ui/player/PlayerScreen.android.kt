@@ -564,6 +564,9 @@ private data class SubtitleTrack(
     val forced: Boolean,
     /** Drawn as pictures (PGS, VobSub, DVB): a text one comes first. */
     val image: Boolean,
+    /** For the deaf and hard of hearing: its label says so, or the master's
+     *  CHARACTERISTICS do (public.accessibility.describes-music-and-sound). */
+    val sdh: Boolean,
     val selected: Boolean,
     val group: Tracks.Group,
     val trackIndex: Int,
@@ -601,6 +604,7 @@ private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
                         fmt.label.orEmpty().contains("forced", ignoreCase = true),
                     image = fmt.sampleMimeType in IMAGE_SUBTITLE_MIMES ||
                         (fmt.sampleMimeType == MimeTypes.APPLICATION_MEDIA3_CUES && fmt.codecs in IMAGE_SUBTITLE_MIMES),
+                    sdh = isSdhSubtitle(fmt.label) || (fmt.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND) != 0,
                     selected = g.isTrackSelected(i),
                     group = g,
                     trackIndex = i,
@@ -610,10 +614,10 @@ private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
 
 /** The captions menu's labels ([subtitleLabels]): each track by its language
  *  ("German", "No dialogue" for zxx), with what its own label says beyond
- *  that ("English · SDH"); a track in no language by its own label, else
- *  "Unknown". */
+ *  that ("English · Commentary"), then its kind ("English · for deaf and hard
+ *  of hearing"); a track in no language by its own label, else "Unknown". */
 private fun withMenuLabels(tracks: List<SubtitleTrack>): List<SubtitleTrack> {
-    val labels = subtitleLabels(tracks.map { SubtitleLabelInput(it.language, it.title, it.forced) })
+    val labels = subtitleLabels(tracks.map { SubtitleLabelInput(it.language, it.title, it.forced, it.sdh) })
     return tracks.mapIndexed { i, t -> t.copy(label = labels[i]) }
 }
 
@@ -1065,7 +1069,7 @@ private fun PlaybackSurface(
                         isSidecar = { isSidecarKey(it.key) },
                         lang = { it.language },
                         forced = { it.forced },
-                        sdh = { isSdhSubtitle(it.title) },
+                        sdh = { it.sdh },
                     ),
                 )
                 subtitlesEnabled = subtitleTracks.any { it.selected }

@@ -85,18 +85,49 @@ private val NAMES = mapOf(
     "fil" to "Filipino", "gsw" to "Swiss German", "yue" to "Cantonese",
 )
 
-// Regional and script variants with a name of their own (CLDR's English
-// "dialect" names, as chino-web's Intl.DisplayNames gives them). Any other
-// region or script is named by its language.
-private val VARIANT_NAMES = mapOf(
-    "de-AT" to "Austrian German", "de-CH" to "Swiss High German",
-    "en-AU" to "Australian English", "en-CA" to "Canadian English",
-    "en-GB" to "British English", "en-US" to "American English",
-    "es-419" to "Latin American Spanish", "es-ES" to "European Spanish", "es-MX" to "Mexican Spanish",
-    "fr-CA" to "Canadian French", "fr-CH" to "Swiss French",
-    "nl-BE" to "Flemish",
-    "pt-BR" to "Brazilian Portuguese", "pt-PT" to "European Portuguese",
-    "zh-Hans" to "Simplified Chinese", "zh-Hant" to "Traditional Chinese",
+// The English names of the scripts a tag carries, as CLDR puts them in a
+// language's name: "zh-Hans" is "Chinese (Simplified)", "sr-Latn" "Serbian
+// (Latin)".
+private val SCRIPT_NAMES = mapOf(
+    "Hans" to "Simplified", "Hant" to "Traditional", "Latn" to "Latin", "Cyrl" to "Cyrillic",
+    "Arab" to "Arabic", "Deva" to "Devanagari", "Beng" to "Bangla", "Guru" to "Gurmukhi",
+    "Grek" to "Greek", "Hebr" to "Hebrew", "Jpan" to "Japanese", "Kore" to "Korean", "Thai" to "Thai",
+    "Geor" to "Georgian", "Armn" to "Armenian", "Ethi" to "Ethiopic", "Mong" to "Mongolian",
+    "Tibt" to "Tibetan", "Taml" to "Tamil", "Telu" to "Telugu", "Knda" to "Kannada", "Mlym" to "Malayalam",
+    "Gujr" to "Gujarati", "Orya" to "Odia", "Sinh" to "Sinhala", "Khmr" to "Khmer", "Laoo" to "Lao",
+    "Mymr" to "Myanmar",
+)
+
+// The English names of the regions a tag carries, as CLDR puts them in a
+// language's name: "pt-BR" is "Portuguese (Brazil)", "es-419" "Spanish
+// (Latin America)". A region not here is named by its code.
+private val REGION_NAMES = mapOf(
+    "US" to "United States", "GB" to "United Kingdom", "AU" to "Australia", "CA" to "Canada",
+    "NZ" to "New Zealand", "IE" to "Ireland", "IN" to "India", "ZA" to "South Africa", "SG" to "Singapore",
+    "PH" to "Philippines", "MY" to "Malaysia", "NG" to "Nigeria", "KE" to "Kenya",
+    "BR" to "Brazil", "PT" to "Portugal", "AO" to "Angola", "MZ" to "Mozambique",
+    "ES" to "Spain", "MX" to "Mexico", "AR" to "Argentina", "CO" to "Colombia", "CL" to "Chile",
+    "PE" to "Peru", "VE" to "Venezuela", "UY" to "Uruguay", "CU" to "Cuba", "419" to "Latin America",
+    "FR" to "France", "BE" to "Belgium", "CH" to "Switzerland", "LU" to "Luxembourg", "MC" to "Monaco",
+    "DE" to "Germany", "AT" to "Austria", "LI" to "Liechtenstein", "NL" to "Netherlands", "SR" to "Suriname",
+    "IT" to "Italy", "SM" to "San Marino",
+    "CN" to "China", "TW" to "Taiwan", "HK" to "Hong Kong SAR China", "MO" to "Macao SAR China",
+    "JP" to "Japan", "KR" to "South Korea", "KP" to "North Korea", "MN" to "Mongolia",
+    "RU" to "Russia", "UA" to "Ukraine", "BY" to "Belarus", "KZ" to "Kazakhstan", "UZ" to "Uzbekistan",
+    "SE" to "Sweden", "FI" to "Finland", "NO" to "Norway", "DK" to "Denmark", "IS" to "Iceland",
+    "EE" to "Estonia", "LV" to "Latvia", "LT" to "Lithuania",
+    "PL" to "Poland", "CZ" to "Czechia", "SK" to "Slovakia", "HU" to "Hungary", "RO" to "Romania",
+    "MD" to "Moldova", "BG" to "Bulgaria", "RS" to "Serbia", "ME" to "Montenegro",
+    "BA" to "Bosnia & Herzegovina", "HR" to "Croatia", "SI" to "Slovenia", "MK" to "North Macedonia",
+    "AL" to "Albania", "XK" to "Kosovo", "GR" to "Greece", "CY" to "Cyprus", "TR" to "Türkiye",
+    "GE" to "Georgia", "AM" to "Armenia", "AZ" to "Azerbaijan", "IL" to "Israel",
+    "SA" to "Saudi Arabia", "EG" to "Egypt", "AE" to "United Arab Emirates", "MA" to "Morocco",
+    "DZ" to "Algeria", "TN" to "Tunisia", "LB" to "Lebanon", "JO" to "Jordan", "IQ" to "Iraq",
+    "SY" to "Syria", "KW" to "Kuwait", "QA" to "Qatar", "BH" to "Bahrain", "OM" to "Oman", "YE" to "Yemen",
+    "LY" to "Libya", "SD" to "Sudan", "IR" to "Iran", "AF" to "Afghanistan", "PK" to "Pakistan",
+    "BD" to "Bangladesh", "LK" to "Sri Lanka", "NP" to "Nepal",
+    "TH" to "Thailand", "VN" to "Vietnam", "ID" to "Indonesia", "KH" to "Cambodia", "LA" to "Laos",
+    "MM" to "Myanmar", "001" to "world", "150" to "Europe",
 )
 
 private val PRIMARY = Regex("^[a-z]{2,3}$")
@@ -139,18 +170,35 @@ fun languageTag(code: String?): String {
     return (listOf(lang) + rest).joinToString("-")
 }
 
-/** The language's English name ("ger" -> "German", "pt-BR" -> "Brazilian
- *  Portuguese"); the code as it came when there is no name for it; "No
- *  dialogue" for "zxx", "Multiple languages" for "mul", "Other language" for
- *  "mis", "Unknown" for none. */
+/** The language's English name, with the script and the region the code
+ *  names in brackets after it ("ger" -> "German", "zh-Hans" -> "Chinese
+ *  (Simplified)", "pt-BR" -> "Portuguese (Brazil)", "zh-Hant-TW" -> "Chinese
+ *  (Traditional, Taiwan)"); the code as it came when there is no name for
+ *  its language; "No dialogue" for "zxx", "Multiple languages" for "mul",
+ *  "Other language" for "mis", "Unknown" for none. */
 fun languageName(code: String?): String {
     NOT_ONE_LANGUAGE[primarySubtag(code)]?.let { return it }
     val tag = languageTag(code)
     if (tag.isEmpty()) return UNKNOWN_LANGUAGE
-    VARIANT_NAMES[tag]?.let { return it }
-    // A tag with a script and a region ("zh-Hant-TW"): the script variant's name.
-    VARIANT_NAMES[tag.split('-').take(2).joinToString("-")]?.let { return it }
-    return NAMES[normalizeLang(code)] ?: code.orEmpty().trim()
+    val name = NAMES[normalizeLang(code)] ?: return code.orEmpty().trim()
+    val variant = variantNames(tag)
+    return if (variant.isEmpty()) name else "$name (${variant.joinToString(", ")})"
+}
+
+/** The names of the script and the region of a canonical tag ([languageTag]),
+ *  in that order; a variant, an extension or a private use names nothing. */
+private fun variantNames(tag: String): List<String> {
+    var script: String? = null
+    var region: String? = null
+    for (sub in tag.split('-').drop(1)) {
+        if (sub.length == 1) break
+        when {
+            script == null && region == null && sub.length == 4 && sub.all { it.isLetter() } -> script = SCRIPT_NAMES[sub] ?: sub
+            region == null && ((sub.length == 2 && sub.all { it.isLetter() }) || (sub.length == 3 && sub.all { it.isDigit() })) ->
+                region = REGION_NAMES[sub] ?: sub
+        }
+    }
+    return listOfNotNull(script, region)
 }
 
 /** A track's language by name ("German", "No dialogue" for zxx), else its own
@@ -165,8 +213,44 @@ data class SubtitleLabelInput(
     val lang: String?,
     /** The track's own title, from the catalog or the file, when it has one. */
     val title: String? = null,
+    /** Forced: only the lines in another language than the audio's. A title
+     *  that says so counts too. */
     val forced: Boolean = false,
+    /** For the deaf and hard of hearing, where the player knows it other than
+     *  by the title (an HLS rendition's characteristics); a title that says
+     *  so ([isSdhSubtitle]) counts too. */
+    val sdh: Boolean = false,
 )
+
+/** What a forced subtitle is, after its language ("English · foreign-language
+ *  parts only"): the lines a film shows in another language than its audio's,
+ *  not the dialogue. */
+const val FORCED_SUBTITLE_KIND = "foreign-language parts only"
+
+/** What a subtitle for the deaf and hard of hearing is, after its language
+ *  ("English · for deaf and hard of hearing"). */
+const val SDH_SUBTITLE_KIND = "for deaf and hard of hearing"
+
+// What a track's own title may say of a forced subtitle.
+private val FORCED_WORDS = Regex(
+    """(?<![A-Za-z])(foreign[ -]language parts( only)?|foreign parts( only)?|forced( narrative| subtitles?| subs)?)(?![A-Za-z])""",
+    RegexOption.IGNORE_CASE,
+)
+
+// What a track's own title may say of a subtitle for the deaf and hard of
+// hearing - the words isSdhSubtitle reads, and the phrases they are part of.
+private val SDH_PHRASES = Regex(
+    """(?<![A-Za-z])((for )?(the )?deaf( and | & | ?/ ?)hard[ -]of[ -]hearing|(for )?(the )?hard[ -]of[ -]hearing|(for )?(the )?hearing[ -]impaired|closed[ -]captions?|SDH|CC|HoH|deaf)(?![A-Za-z])""",
+    RegexOption.IGNORE_CASE,
+)
+
+// A number a server gave a title to keep it unique in its group ("English
+// (2)"); the menu numbers what still reads the same itself.
+private val TRAILING_NUMBER = Regex("""\s*\(\d+\)$""")
+
+private val SEPARATOR_RUN = Regex("""\s*([·\-–—:,|/])(\s*[·\-–—:,|/])+\s*""")
+private val SEPARATOR_AFTER_OPEN = Regex("""([(\[])\s*[·\-–—:,|/]+\s*""")
+private val SEPARATOR_BEFORE_CLOSE = Regex("""\s*[·\-–—:,|/]+\s*([)\]])""")
 
 private val CODE_LIKE = Regex("^[a-z]{2,3}([-_][a-z0-9]+)*$", RegexOption.IGNORE_CASE)
 
@@ -183,30 +267,53 @@ private fun sameLanguageCode(title: String, lang: String?): Boolean {
     return named.isEmpty() || named == normalizeLang(lang)
 }
 
+/** A track's own title without what it says of the track's kind - forced,
+ *  for the deaf and hard of hearing - or a number that only kept it unique:
+ *  "English SDH" is "English", "German (Forced)" "German", "SDH" nothing. */
+private fun titleWithoutKind(title: String): String =
+    title.replace(TRAILING_NUMBER, "")
+        .replace(FORCED_WORDS, " ")
+        .replace(SDH_PHRASES, " ")
+        .replace(EMPTY_BRACKETS, " ")
+        .replace(SEPARATOR_AFTER_OPEN, "$1")
+        .replace(SEPARATOR_BEFORE_CLOSE, "$1")
+        .replace(EMPTY_BRACKETS, " ")
+        .replace(SEPARATOR_RUN, " $1 ")
+        .replace(SPACES, " ")
+        .replace(EDGE_SEPARATORS, "")
+
 /**
- * The subtitle menu's labels, one per track, in order: the language's name
- * ("German", "No dialogue" for zxx), the track's title when it says more than
- * that ("English · SDH"), "(forced)" for a forced track; a track tagged with no
- * language by its title, else "Unknown"; and where two tracks would still read
- * the same, a number for the second and later ones ("German (2)").
+ * One subtitle's label: the language's name, its script or region in it
+ * ("German", "Chinese (Simplified)", "No dialogue" for zxx); the track's own
+ * title where it says more than that ("English · Commentary"), or alone for a
+ * track tagged with no language, else "Unknown"; then its kind in words -
+ * "foreign-language parts only" for a forced one, "for deaf and hard of
+ * hearing" for one with sound described, both in that order. A title that
+ * says the kind itself ("English SDH", "German (forced)") says it once, in
+ * these words.
  */
-fun subtitleLabels(tracks: List<SubtitleLabelInput>): List<String> {
-    val labels = tracks.map { t ->
-        val name = languageName(t.lang)
-        val title = t.title?.trim().orEmpty()
-        var label = name
-        if (title.isNotEmpty() && !title.equals(name, ignoreCase = true) && !sameLanguageCode(title, t.lang)) {
-            label = when {
-                !hasLanguage(t.lang) -> title
-                title.contains(name, ignoreCase = true) -> title
-                else -> "$name · $title"
-            }
-        }
-        if (t.forced && !label.contains("forced", ignoreCase = true)) label += " (forced)"
-        label
+fun subtitleLabel(track: SubtitleLabelInput): String {
+    val raw = track.title?.trim().orEmpty()
+    val forced = track.forced || FORCED_WORDS.containsMatchIn(raw)
+    val sdh = track.sdh || isSdhSubtitle(raw)
+    val title = titleWithoutKind(raw)
+    val name = languageName(track.lang)
+    val label = when {
+        title.isEmpty() || title.equals(name, ignoreCase = true) || sameLanguageCode(title, track.lang) -> name
+        !hasLanguage(track.lang) -> title
+        title.contains(name, ignoreCase = true) -> title
+        // "English" on a British English track: the name says it already.
+        name.contains(title, ignoreCase = true) -> name
+        else -> "$name · $title"
     }
-    return numbered(labels)
+    val kinds = listOfNotNull(FORCED_SUBTITLE_KIND.takeIf { forced }, SDH_SUBTITLE_KIND.takeIf { sdh })
+    return (listOf(label) + kinds).joinToString(" · ")
 }
+
+/** The subtitle menu's labels, one per track, in order ([subtitleLabel]); where
+ *  two tracks would still read the same, a number for the second and later
+ *  ones ("German (2)"). */
+fun subtitleLabels(tracks: List<SubtitleLabelInput>): List<String> = numbered(tracks.map(::subtitleLabel))
 
 /** The labels, the second and later of the ones that read the same numbered
  *  ("German (2)"). [key] says which read the same: by default the label. */

@@ -14,14 +14,25 @@ class MasterSubtitleChoicesTest {
         SubtitleRendition(index = 1, name = "German", language = "de", forced = false),
         SubtitleRendition(index = 2, name = "German", language = "de", forced = true),
         SubtitleRendition(index = 3, name = "English SDH", language = "en", forced = false),
+        // SDH by its characteristics alone.
+        SubtitleRendition(index = 4, name = "Chinese", language = "zh-Hans", forced = false, sdh = true),
     )
 
     @Test
     fun theRenditionsByLanguageEachDrawnByThePlayer() {
         val choices = masterSubtitleChoices(renditions)
-        assertEquals(listOf("English", "German", "German (forced)", "English SDH"), choices.map { it.label })
-        assertEquals(listOf("en", "de", "de", "en"), choices.map { it.lang })
-        assertEquals(listOf(false, false, true, false), choices.map { it.forced })
+        assertEquals(
+            listOf(
+                "English",
+                "German",
+                "German · foreign-language parts only",
+                "English · for deaf and hard of hearing",
+                "Chinese (Simplified) · for deaf and hard of hearing",
+            ),
+            choices.map { it.label },
+        )
+        assertEquals(listOf("en", "de", "de", "en", "zh"), choices.map { it.lang })
+        assertEquals(listOf(false, false, true, false, false), choices.map { it.forced })
         // No cue file: AVPlayer draws the rendition, nothing is fetched.
         assertTrue(choices.all { it.available && it.url.isEmpty() && it.kind == SubtitleKind.Text })
     }
@@ -29,7 +40,7 @@ class MasterSubtitleChoicesTest {
     @Test
     fun aRowNamesItsRendition() {
         val choices = masterSubtitleChoices(renditions)
-        assertEquals(listOf(0, 1, 2, 3), choices.map { masterSubtitleIndex(it.id) })
+        assertEquals(listOf(0, 1, 2, 3, 4), choices.map { masterSubtitleIndex(it.id) })
         assertNull(masterSubtitleIndex(null))
         // A title's sidecar or embedded track is no rendition.
         assertNull(masterSubtitleIndex("emb-3"))
@@ -51,7 +62,8 @@ class MasterSubtitleChoicesTest {
     fun whereNoneWouldComeOnTheForcedRenditionInTheAudiosLanguage() {
         val choices = masterSubtitleChoices(renditions)
         // German audio, subtitles off in Settings: the forced German one.
-        assertEquals("German (forced)", autoSubtitleChoice(choices, audioLang = "de", subtitlePref = "off", audioPref = "orig")?.label)
-        assertEquals("German (forced)", autoSubtitleChoice(choices, audioLang = "ger", subtitlePref = "de", audioPref = "orig")?.label)
+        val forced = "German · foreign-language parts only"
+        assertEquals(forced, autoSubtitleChoice(choices, audioLang = "de", subtitlePref = "off", audioPref = "orig")?.label)
+        assertEquals(forced, autoSubtitleChoice(choices, audioLang = "ger", subtitlePref = "de", audioPref = "orig")?.label)
     }
 }

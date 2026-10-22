@@ -197,7 +197,7 @@ class CastMediaTest {
         assertEquals(listOf("s1", "s2", "s4"), tracks.map { it.sidecarId })
         assertEquals(listOf(1000L, 1001L, 1002L), tracks.map { it.id })
         assertEquals(listOf("en", "de", "en"), tracks.map { it.language })
-        assertEquals(listOf("English", "German", "English (forced)"), tracks.map { it.name })
+        assertEquals(listOf("English", "German", "English · foreign-language parts only"), tracks.map { it.name })
         assertEquals(listOf(false, false, true), tracks.map { it.forced })
         // Signed for the TV, not with the phone's player's token.
         assertEquals("https://media.example.com/api/v1/play/subs/s2.vtt?stream=tv456", tracks[1].url)

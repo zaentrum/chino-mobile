@@ -105,6 +105,9 @@ data class Subtitle(
     val label: String? = null,
     val format: String? = null,
     val default: Boolean = false,
+    /** A forced track: only the lines in another language than the audio's
+     *  (chino-api passes katalog's forced on; an older server leaves it out). */
+    val forced: Boolean = false,
 )
 
 @Serializable

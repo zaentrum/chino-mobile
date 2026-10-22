@@ -5,8 +5,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
-/** chino-web's languages.test.ts cases: codes as one language, the menu's
- *  labels, and when subtitles come on by themselves. */
+/** chino-web's languages.test.ts cases - codes as one language, the menu's
+ *  labels, and when subtitles come on by themselves - and the subtitle
+ *  labels' kind in words: "English · for deaf and hard of hearing",
+ *  "English · foreign-language parts only". */
 class LanguagesTest {
     @Test
     fun codesInEverySpellingTheLibraryUsesAreOneLanguage() {
@@ -50,14 +52,26 @@ class LanguagesTest {
         assertEquals("French", languageName("fre"))
         assertEquals("Dutch", languageName("dut"))
         assertEquals("Vietnamese", languageName("vie"))
-        assertEquals("Brazilian Portuguese", languageName("pt-BR"))
-        assertEquals("Traditional Chinese", languageName("zh-Hant-TW"))
-        // A region without a name of its own is its language.
-        assertEquals("English", languageName("en-NZ"))
         assertEquals("Unknown", languageName("und"))
         assertEquals("Unknown", languageName(null))
         // A code there is no name for is shown as it came.
         assertEquals("qaa", languageName("qaa"))
+    }
+
+    @Test
+    fun aScriptOrARegionStaysInTheNameInBracketsAfterTheLanguage() {
+        assertEquals("Chinese (Simplified)", languageName("zh-Hans"))
+        assertEquals("Chinese (Traditional)", languageName("zh-hant"))
+        assertEquals("Chinese (Traditional, Taiwan)", languageName("zh-Hant-TW"))
+        assertEquals("Portuguese (Brazil)", languageName("pt_br"))
+        assertEquals("Spanish (Latin America)", languageName("spa-419"))
+        assertEquals("English (New Zealand)", languageName("en-NZ"))
+        assertEquals("Serbian (Latin, Serbia)", languageName("sr-Latn-RS"))
+        // A region the table has no name for: its code.
+        assertEquals("English (GU)", languageName("en-GU"))
+        // A variant or an extension names nothing.
+        assertEquals("German", languageName("de-1901"))
+        assertEquals("English (United States)", languageName("en-US-x-custom"))
     }
 
     @Test
@@ -79,29 +93,117 @@ class LanguagesTest {
     }
 
     @Test
-    fun aTracksTitleWhenItSaysMoreForcedTracksTheSameLanguageTwice() {
+    fun theKindInWordsAfterTheLanguageForcedFirst() {
         assertEquals(
             listOf(
-                "English · SDH",
-                "English [CC]",
+                "English · for deaf and hard of hearing",
+                "English · foreign-language parts only",
+                "English · foreign-language parts only · for deaf and hard of hearing",
+                "Chinese (Simplified) · foreign-language parts only",
+            ),
+            subtitleLabels(
+                listOf(
+                    SubtitleLabelInput("eng", sdh = true),
+                    SubtitleLabelInput("eng", forced = true),
+                    SubtitleLabelInput("eng", forced = true, sdh = true),
+                    SubtitleLabelInput("zh-Hans", forced = true),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun bothTracksOfALanguageEachWithItsKind() {
+        assertEquals(
+            listOf("English", "English · for deaf and hard of hearing", "German", "German · foreign-language parts only"),
+            subtitleLabels(
+                listOf(
+                    SubtitleLabelInput("eng", title = "English"),
+                    SubtitleLabelInput("eng", title = "English SDH"),
+                    SubtitleLabelInput("ger"),
+                    SubtitleLabelInput("ger", title = "German (forced)", forced = true),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun aLabelThatSaysTheKindItselfSaysItOnceInTheseWords() {
+        val sdh = "English · for deaf and hard of hearing"
+        val forced = "English · foreign-language parts only"
+        val both = "English · foreign-language parts only · for deaf and hard of hearing"
+        val cases = mapOf(
+            "English SDH" to sdh,
+            "SDH" to sdh,
+            "English [CC]" to sdh,
+            "English (Closed Captions)" to sdh,
+            "English - Hearing Impaired" to sdh,
+            "English (for the deaf and hard of hearing)" to sdh,
+            // A packager's NAME, and this rule's own words again.
+            "English · SDH" to sdh,
+            sdh to sdh,
+            "English (Forced)" to forced,
+            "Forced" to forced,
+            "English Forced Narrative" to forced,
+            forced to forced,
+            "English · SDH (forced)" to both,
+            "Forced, SDH" to both,
+            both to both,
+        )
+        for ((title, label) in cases) assertEquals(label, subtitleLabel(SubtitleLabelInput("eng", title)), title)
+        // A title that says nothing of a kind is no kind.
+        assertEquals("English", subtitleLabel(SubtitleLabelInput("eng", "English")))
+    }
+
+    @Test
+    fun whatElseATitleSaysStaysBeforeTheKind() {
+        assertEquals(
+            listOf(
+                "English · Commentary",
+                "English Commentary",
+                "English · Commentary · for deaf and hard of hearing",
+                "German · Signs & Songs · foreign-language parts only",
+                // "English" on a British English track: the name says it.
+                "English (United Kingdom)",
+                // A made track's label, its script in the name already.
+                "Chinese (Simplified) · Converted",
+            ),
+            subtitleLabels(
+                listOf(
+                    SubtitleLabelInput("eng", title = "Commentary"),
+                    SubtitleLabelInput("eng", title = "English Commentary"),
+                    SubtitleLabelInput("eng", title = "Commentary (SDH)"),
+                    SubtitleLabelInput("ger", title = "Signs & Songs", forced = true),
+                    SubtitleLabelInput("en-GB", title = "English"),
+                    SubtitleLabelInput("zh-Hans", title = "Chinese (Simplified) · Converted"),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun theSameLabelTwiceIsNumberedTheServersNumberNoMore() {
+        assertEquals(
+            listOf(
                 "English",
                 "English (2)",
-                "German (forced)",
-                "German · Forced",
-                "German",
-                "German (2)",
+                "English (3)",
+                "English · for deaf and hard of hearing",
+                "English · for deaf and hard of hearing (2)",
+                "German · foreign-language parts only",
+                "German · foreign-language parts only (2)",
                 "Unknown",
             ),
             subtitleLabels(
                 listOf(
-                    SubtitleLabelInput("eng", title = "SDH"),
-                    SubtitleLabelInput("eng", title = "English [CC]"),
                     SubtitleLabelInput("eng", title = "eng"),
                     SubtitleLabelInput("eng", title = "English"),
+                    // chino-stream's unique NAME: numbered by the menu, once.
+                    SubtitleLabelInput("eng", title = "English (2)"),
+                    SubtitleLabelInput("eng", title = "SDH"),
+                    SubtitleLabelInput("eng", title = "English · SDH (2)"),
                     SubtitleLabelInput("ger", forced = true),
                     SubtitleLabelInput("ger", title = "Forced", forced = true),
-                    SubtitleLabelInput("ger"),
-                    SubtitleLabelInput("ger"),
                     SubtitleLabelInput("und"),
                 ),
             ),
@@ -111,7 +213,15 @@ class LanguagesTest {
     @Test
     fun subtitlesWithoutDialogueOrInNoKnownLanguageNoDialogueElseTheTitleElseUnknown() {
         assertEquals(
-            listOf("No dialogue", "No dialogue (2)", "No dialogue · Signs", "Signs & Songs", "Unknown", "Forced", "Unknown (2)"),
+            listOf(
+                "No dialogue",
+                "No dialogue (2)",
+                "No dialogue · Signs",
+                "Signs & Songs",
+                "Unknown",
+                "Unknown · foreign-language parts only",
+                "Unknown (2)",
+            ),
             subtitleLabels(
                 listOf(
                     SubtitleLabelInput("zxx"),
@@ -129,7 +239,7 @@ class LanguagesTest {
     @Test
     fun audioByItsLanguageFirstNoDialogueForZxxUnknownForNone() {
         assertEquals(
-            listOf("English", "No dialogue", "Unknown", "German", "Brazilian Portuguese"),
+            listOf("English", "No dialogue", "Unknown", "German", "Portuguese (Brazil)"),
             audioLabels(
                 listOf(
                     AudioLabelInput("eng"),

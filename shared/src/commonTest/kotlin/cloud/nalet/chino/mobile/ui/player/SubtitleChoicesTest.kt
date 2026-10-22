@@ -37,10 +37,10 @@ class SubtitleChoicesTest {
             listOf(
                 "s-en" to "English",
                 "s-fr" to "French",
-                "s-de" to "German · SDH",
+                "s-de" to "German · for deaf and hard of hearing",
                 "s-it" to "Italian",
                 "emb-3" to "German",
-                "emb-4" to "French (forced)",
+                "emb-4" to "French · foreign-language parts only",
             ),
             choices.map { it.id to it.label },
         )
@@ -96,7 +96,10 @@ class SubtitleChoicesTest {
             "tok",
         )
         assertEquals(listOf(false, true, true), forced.map { it.forced })
-        assertEquals(listOf("English", "English (forced)", "German · Forced"), forced.map { it.label })
+        assertEquals(
+            listOf("English", "English · foreign-language parts only", "German · foreign-language parts only"),
+            forced.map { it.label },
+        )
     }
 
     @Test

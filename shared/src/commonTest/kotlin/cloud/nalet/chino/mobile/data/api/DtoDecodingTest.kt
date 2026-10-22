@@ -57,6 +57,18 @@ class DtoDecodingTest {
     }
 
     @Test
+    fun anItemsSubtitlesSayWhichAreForced() {
+        // katalog.Subtitle: `forced,omitempty`, left out by an older server.
+        val item = ChinoJson.decodeFromString<Item>(
+            """
+            {"id":"m1","type":"movie","title":"A Film",
+             "subtitles":[{"id":"s1","lang":"en","label":"English"},{"id":"s2","lang":"de","forced":true}]}
+            """,
+        )
+        assertEquals(listOf(false, true), item.subtitles.map { it.forced })
+    }
+
+    @Test
     fun aTitlesExtrasComeBesideItsTrailerLinks() {
         // chino-api's item detail with an extra, as its README shows it.
         val item = ChinoJson.decodeFromString<Item>(
