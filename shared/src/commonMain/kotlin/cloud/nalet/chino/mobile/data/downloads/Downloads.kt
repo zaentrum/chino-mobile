@@ -123,7 +123,43 @@ data class DownloadedSubtitle(
     val file: String,
     /** Where the server serves it ("/api/v1/play/subs/{id}.vtt"). */
     val source: String? = null,
+    /** How often the server answered for it, and not with the file (a 5xx,
+     *  a refusal): at [SIDECAR_TRIES] it is left out, and the title is on
+     *  the phone without it. No answer at all counts nothing. */
+    val tries: Int = 0,
 )
+
+/** How often a sidecar subtitle the server answers for but does not serve
+ *  is asked for before the download goes on without it: one text track the
+ *  server cannot give never keeps a whole title off the phone. */
+const val SIDECAR_TRIES = 3
+
+/** What a sidecar subtitle's fetch that did not bring it comes to. */
+sealed interface SidecarMiss {
+    /** The server no longer has it (404, 410): whether the title is still
+     *  the account's decides - left out if so, the title gone if not. */
+    data object AskWhetherTheTitleIsStillTheAccounts : SidecarMiss
+
+    /** The server answered, and not with the file: asked again later, its
+     *  [tries] so far counted. */
+    data class TryAgain(val tries: Int) : SidecarMiss
+
+    /** The server answered so [SIDECAR_TRIES] times: the title goes on
+     *  without it. */
+    data object LeaveOut : SidecarMiss
+
+    /** No answer: nothing counted; it comes once the server answers. */
+    data object WaitForTheServer : SidecarMiss
+}
+
+/** What a sidecar's fetch the server answered [status] for (null: no
+ *  answer) comes to, after [triesSoFar] such answers. */
+fun sidecarMiss(status: Int?, triesSoFar: Int): SidecarMiss = when {
+    status == null -> SidecarMiss.WaitForTheServer
+    status == 404 || status == 410 -> SidecarMiss.AskWhetherTheTitleIsStillTheAccounts
+    triesSoFar + 1 >= SIDECAR_TRIES -> SidecarMiss.LeaveOut
+    else -> SidecarMiss.TryAgain(triesSoFar + 1)
+}
 
 /**
  * Where a download is - the download manager's own states, in the words the
@@ -194,14 +230,13 @@ data class DownloadEntry(
 
     /** The size a row shows: the size its offer said, as the server
      *  reported it - the same number before and after (the status carries
-     *  it once it is on the phone); for one that failed, what it keeps,
-     *  which is nothing but where its media came in whole and the rest of it
-     *  did not. */
+     *  it once it is on the phone); for one that failed, none - a failed
+     *  download keeps nothing. */
     val size: Long?
         get() = when (status) {
             is DownloadStatus.Downloaded -> status.bytes
             is DownloadStatus.CheckNeeded -> status.bytes
-            is DownloadStatus.Failed -> onPhoneBytes.takeIf { it > 0 }
+            is DownloadStatus.Failed -> null
             else -> title.estimatedBytes ?: onPhoneBytes.takeIf { it > 0 }
         }
 

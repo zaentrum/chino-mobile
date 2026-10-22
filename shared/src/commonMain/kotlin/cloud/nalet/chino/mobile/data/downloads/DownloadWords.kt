@@ -34,13 +34,12 @@ fun statusLabel(status: DownloadStatus): String = when (status) {
  * screen alike: the status and the size its offer said, as the server
  * reports it ([size]) - "queued · 347 MB", "waiting for Wi-Fi · 347 MB",
  * "downloading 15% · 347 MB", "downloaded · 347 MB", the same number before
- * and after. One that failed keeps nothing, and its row says no size - but
- * where its media came in whole and the rest of it did not, what it keeps.
+ * and after. One that failed keeps nothing, and says no size.
  */
 fun rowLabel(status: DownloadStatus, size: Long?): String {
     val label = statusLabel(status)
     val sized = status is DownloadStatus.Queued || status is DownloadStatus.WaitingForWifi ||
-        status is DownloadStatus.WaitingForConnection || status is DownloadStatus.Downloading || status is DownloadStatus.Failed
+        status is DownloadStatus.WaitingForConnection || status is DownloadStatus.Downloading
     return if (sized && size != null && size > 0) "$label · ${formatSize(size)}" else label
 }
 

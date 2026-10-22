@@ -43,8 +43,10 @@ class DownloadStatusTest {
     fun onThePhoneOnceItsSubtitlesAreThereToo() {
         assertEquals(DownloadStatus.Downloaded(1_400_000_000), status(ManagerState.Completed))
         assertEquals(DownloadStatus.Downloading(99), status(ManagerState.Completed, extrasDone = false))
+        // Its media in, its subtitles held up: still on its way, never a
+        // failed title that keeps its media.
         assertEquals(
-            DownloadStatus.Failed(DownloadFailure.NoAnswer),
+            DownloadStatus.Downloading(99),
             status(ManagerState.Completed, extrasDone = false, failure = DownloadFailure.NoAnswer),
         )
         // Not checked for 30 days, the server out of reach: it waits for it.
@@ -96,10 +98,9 @@ class DownloadWordsTest {
         assertEquals("downloading 15% · 281\u00A0MB", rowLabel(DownloadStatus.Downloading(15), 281_000_000))
         // There: what it takes, once.
         assertEquals("downloaded · 22\u00A0MB", rowLabel(DownloadStatus.Downloaded(22_000_000), 22_000_000))
-        // Failed: nothing kept, no size - but what it keeps where its media
-        // came in whole and the rest of it did not.
+        // Failed: nothing kept, no size, whatever size it is given.
         assertEquals("couldn't download", rowLabel(DownloadStatus.Failed(DownloadFailure.NoSpace), null))
-        assertEquals("couldn't download · 49\u00A0MB", rowLabel(DownloadStatus.Failed(DownloadFailure.ServerProblem), 49_000_000))
+        assertEquals("couldn't download", rowLabel(DownloadStatus.Failed(DownloadFailure.ServerProblem), 49_000_000))
         assertEquals("queued", rowLabel(DownloadStatus.Queued, null))
     }
 
@@ -251,6 +252,47 @@ class DownloadWordsTest {
                 assertEquals(false, Regex("\\b$word\\b", RegexOption.IGNORE_CASE).containsMatchIn(text), "\"$text\" says $word")
             }
         }
+    }
+}
+
+/** A sidecar subtitle that does not come: tried again where the server
+ *  answered, left out after a few such answers, waited for where it did
+ *  not answer - never a failed title that keeps its media. */
+class SidecarMissTest {
+    @Test
+    fun aSubtitleTheServerKeepsRefusingIsLeftOutAfterAFewTries() {
+        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(503, triesSoFar = 0))
+        assertEquals(SidecarMiss.TryAgain(2), sidecarMiss(500, triesSoFar = 1))
+        assertEquals(SidecarMiss.LeaveOut, sidecarMiss(502, triesSoFar = SIDECAR_TRIES - 1))
+        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(403, triesSoFar = 0))
+    }
+
+    @Test
+    fun noAnswerCountsNothingAndAGoneOneAsksTheServerAboutTheTitle() {
+        assertEquals(SidecarMiss.WaitForTheServer, sidecarMiss(null, triesSoFar = SIDECAR_TRIES))
+        assertEquals(SidecarMiss.AskWhetherTheTitleIsStillTheAccounts, sidecarMiss(404, triesSoFar = 0))
+        assertEquals(SidecarMiss.AskWhetherTheTitleIsStillTheAccounts, sidecarMiss(410, triesSoFar = 5))
+    }
+
+    @Test
+    fun aFailedTitleShowsNoSizeOnItsRow() {
+        val claim = OwnerClaim("anna", addedAtMs = 1, checkedAtMs = 1)
+        val entry = DownloadEntry(
+            title = DownloadedTitle(
+                itemId = "film",
+                item = Item(id = "film", title = "A Film", kind = "movie"),
+                quality = "Medium (720p)",
+                estimatedBytes = 1_400_000_000,
+                server = "s",
+                owners = listOf(claim),
+            ),
+            status = DownloadStatus.Failed(DownloadFailure.ServerProblem),
+            onPhoneBytes = 1_400_000_000,
+            claim = claim,
+            mediaBytes = 1_400_000_000,
+        )
+        assertNull(entry.size)
+        assertEquals("couldn't download", rowLabel(entry.status, entry.size))
     }
 }
 
