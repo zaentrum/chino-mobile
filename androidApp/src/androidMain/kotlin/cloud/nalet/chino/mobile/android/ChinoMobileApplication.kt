@@ -10,14 +10,20 @@ import cloud.nalet.chino.mobile.data.PlatformServerConfigStoreFactory
 import cloud.nalet.chino.mobile.data.PlatformSettingsStoreFactory
 import cloud.nalet.chino.mobile.data.auth.PlatformAccountStoreFactory
 import cloud.nalet.chino.mobile.data.auth.PlatformTokenStoreFactory
+import cloud.nalet.chino.mobile.downloads.AndroidDownloadsPlatform
+import cloud.nalet.chino.mobile.downloads.AppContainerHost
 import cloud.nalet.chino.mobile.feedback.CurrentActivity
 import cloud.nalet.chino.mobile.feedback.FilePendingReportStore
 import cloud.nalet.chino.mobile.feedback.bugFingerprint
 import java.io.File
 
-class ChinoMobileApplication : Application() {
-    lateinit var container: AppContainer
+class ChinoMobileApplication : Application(), AppContainerHost {
+    override lateinit var container: AppContainer
         private set
+
+    /** Downloads and playing without the server: one for the process, given
+     *  to every graph built ([buildContainer]). */
+    private val downloadsPlatform by lazy { AndroidDownloadsPlatform(this) }
 
     /** Crash-report queue at filesDir/bug_reports — written synchronously by
      *  the uncaught-exception handler below, drained by BugReporter.flushPending
@@ -40,6 +46,10 @@ class ChinoMobileApplication : Application() {
         })
         installCrashReporter()
         container = buildContainer()
+        // The connection and the app coming to the front, followed: once
+        // the server answers again the positions played without it go out,
+        // and downloads that wait go on.
+        downloadsPlatform.watch(this)
     }
 
     /** Rebuild the DI graph from scratch — called after the user connects to
@@ -103,6 +113,7 @@ class ChinoMobileApplication : Application() {
             serverConfigStoreFactory = PlatformServerConfigStoreFactory(this),
             deviceStaticContext = deviceStaticContext(),
             pendingReportStore = pendingReports,
+            downloadsPlatform = downloadsPlatform,
         )
     }
 

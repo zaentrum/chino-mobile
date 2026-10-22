@@ -3,8 +3,14 @@ package cloud.nalet.chino.mobile.ui.detail
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.style.TextAlign
+import cloud.nalet.chino.mobile.data.downloads.hasDownloadControl
 import cloud.nalet.chino.mobile.data.model.episodeCode
 import cloud.nalet.chino.mobile.data.model.fileEntries
+import cloud.nalet.chino.mobile.ui.components.CouldntLoad
+import cloud.nalet.chino.mobile.ui.downloads.EpisodeDownloadControl
+import cloud.nalet.chino.mobile.ui.downloads.SeasonDownloadControl
+import cloud.nalet.chino.mobile.ui.downloads.SeriesDownloadSummary
+import cloud.nalet.chino.mobile.ui.downloads.TitleDownloadControl
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
@@ -173,7 +179,23 @@ class DetailScreen(private val itemId: String) : Screen {
         Scaffold(containerColor = MaterialTheme.colorScheme.background) { _ ->
             when (val s = state) {
                 DetailUiState.Loading -> Center { CircularProgressIndicator() }
-                is DetailUiState.Error -> Center { Text(s.message, color = MaterialTheme.colorScheme.error) }
+                // The design system's "couldn't load" screen; a title the
+                // library no longer has offers the way back.
+                is DetailUiState.Error -> if (s.gone) {
+                    CouldntLoad(
+                        title = "this title isn't in the library anymore",
+                        sentence = null,
+                        action = "back",
+                        onAction = { if (!closeGuard.holdsInput()) nav.pop() },
+                    )
+                } else {
+                    CouldntLoad(
+                        title = "couldn't load this title",
+                        sentence = s.message,
+                        action = "try again",
+                        onAction = { model.retry() },
+                    )
+                }
                 is DetailUiState.Ready -> {
                     // Effective watched state: the user's optimistic flip this
                     // session wins; otherwise follow the server-stamped
@@ -394,6 +416,13 @@ private fun ReadyContent(
                             watched = watched,
                             isSeries = item.kind == "series",
                             trailer = trailer,
+                            download = when {
+                                hasDownloadControl(item.kind) -> { { TitleDownloadControl(item.id, item.durationMs) } }
+                                item.kind == "series" && ready.seasons.isNotEmpty() -> {
+                                    { SeriesDownloadSummary(ready.seasons.flatMap { fileEntries(it.episodes) }) }
+                                }
+                                else -> null
+                            },
                             onResume = { onPlay(false) },
                             onPlay = { onPlay(false) },
                             onStartOver = { onPlay(true) },
@@ -647,6 +676,8 @@ private fun ActionRow(
     isSeries: Boolean = false,
     /** The Trailer pill's choice; null: no pill. */
     trailer: TrailerChoice? = null,
+    /** The download control, next to "play" (ui/downloads); null: none. */
+    download: (@Composable () -> Unit)? = null,
     onResume: () -> Unit,
     onPlay: () -> Unit,
     onStartOver: () -> Unit,
@@ -681,6 +712,7 @@ private fun ActionRow(
                 PillButton(label = "Play", icon = Lucide.Play, primary = true, onClick = onPlay)
             }
         }
+        download?.invoke()
         // Trailer, for movies and series alike (web: DetailPage.tsx): the
         // clapperboard plays this server's trailer in the app, the YouTube
         // mark opens the link.
@@ -980,6 +1012,14 @@ private fun SeasonRow(
                 modifier = Modifier.size(20.dp),
             )
         }
+        // All of the season's episodes at once, or how far it is on the
+        // phone (ui/downloads).
+        SeasonDownloadControl(
+            season = season.season,
+            entries = fileEntries(season.episodes),
+            expanded = expanded,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+        )
         if (expanded) {
             Column(modifier = Modifier.padding(bottom = 8.dp)) {
                 // One entry per file: a file that holds several episodes is
@@ -1310,6 +1350,8 @@ private fun EpisodeRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            // The episode's own download control: the file's, for a box.
+            EpisodeDownloadControl(episode.id, fileDurationMs, modifier = Modifier.padding(top = 4.dp))
         }
     }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {

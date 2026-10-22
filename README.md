@@ -186,6 +186,70 @@ shows the backdrop); a card's first light takes over from its backdrop in
 small at its foot, and Save and Watch beside them at the right edge. Zap
 plays with sound: the phone's volume is the mute.
 
+## Downloads
+
+On Android a film or an episode can be downloaded and watched without a
+connection (`data/downloads/` shared, `downloads/` in androidMain). iOS shows
+no download control yet: its host passes no `DownloadsPlatform`.
+
+- **What can be downloaded** — one rule, `downloadability`: a title that
+  plays from its package (`/play/info` mode `packaged`). Anything the server
+  makes from the original while it plays (a copy, an encode) says "can't be
+  downloaded yet". The server has the last word: `features.downloads` of its
+  `/api/config` (chino-api's `DOWNLOADS_ENABLED`, on by default); while it is
+  false no new download is offered, and what is on the phone stays.
+- **What a download keeps** — one video rendition, picked by the download
+  quality (Settings: the size classes the player's quality menu names a
+  package's renditions by, "720p", each with what an hour takes as the
+  server's masters say; the tallest rendition not taller than it, else the
+  shortest); the audio in the viewer's language and the original audio (the
+  master's default) when that is another; the sidecar subtitles (WebVTT,
+  SubRip) in the viewer's languages and the forced ones of the audio kept;
+  the poster, the backdrop (an episode's still) and the metadata the detail,
+  the downloads screen and the player need. The size shown before a download
+  is the variant's AVERAGE-BANDWIDTH over the title's length (192 kbit/s more
+  for a second audio rendition); once it is on the phone, what it took.
+- **How** — Media3's `DownloadManager` and `DownloadService` (a foreground
+  service with a notification of its progress), one title at a time, three
+  segments at once, into app-specific storage (no storage permission). It
+  runs while its requirements hold: Wi-Fi only by default (Settings, "Download
+  over Wi-Fi only"), and while the battery is low it waits for the charger.
+  Media3 keeps the service running while it waits (Android 12 and later) and
+  goes on as the requirements come back; below 12 WorkManager starts it again.
+  A download cut off by the app closing goes on when the app opens, and so
+  does one Android 15 stopped after its six hours a day for data sync
+  services. A process the system starts for the service alone, with no screen
+  open, reaches the app's graph through the Application: it signs its
+  requests and fetches subtitles and artwork as the app would. A download
+  asked for on a page - a whole season - is worked out in the app's scope, so
+  leaving the page stops none of it.
+- **The stream token** — chino-stream writes the token it was asked with into
+  every URI of its playlists. A download keeps each piece under its URL
+  without the token and signs every request with the one valid now (a
+  `ResolvingDataSource`); a refused token is forgotten and a new one minted on
+  the next attempt. A download resumed after the token's 6 h asks with a fresh
+  one; playing a finished download reads the phone alone and never asks the
+  server.
+- **Storage** — `files/downloads/media/` (Media3's cache, never evicted),
+  `files/downloads/titles/<id>/` (`title.json`, `poster.jpg`, `backdrop.jpg`,
+  `subs/<id>.vtt`), `databases/chino_downloads.db` (the download index and the
+  cache's own). Deleting a title removes its pieces and its folder at once.
+- **Without the server** — when the phone has no connection or the server
+  does not answer (`/api/config`, within 4 s), the app opens on the downloads,
+  without a sign-in, with the banner "Can't reach the server. Your downloads
+  still play." Screens that need the server show what couldn't load and
+  "try again". A downloaded title plays from its download wherever it is
+  opened. Positions played without the server are kept (`progress-book.json`)
+  and sent in the order they were played once it answers again — at the next
+  start, when the connection comes back, when the app comes to the front, or
+  by a WorkManager job — as positions only, so the server's rule decides what
+  is finished. No answer, or a sign-in it did not accept, keeps them all for
+  later; a position the server fails on is tried ten times without holding
+  the others back; one it refuses (the title gone, not the viewer's) is
+  dropped. A title the
+  server no longer has (404, 410) keeps its download and says it isn't in the
+  library anymore.
+
 ## Trailers
 
 A title's trailer plays in the app when the server has one — one of the

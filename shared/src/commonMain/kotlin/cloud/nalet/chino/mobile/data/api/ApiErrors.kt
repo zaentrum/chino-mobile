@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.data.api
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import kotlinx.io.IOException
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -78,6 +79,9 @@ fun Throwable.catalogueMessage(): String {
     val status = when (this) {
         is ApiStatusException -> status
         is ResponseException -> response.status.value
+        // No answer - no connection, the server down or too slow: what to
+        // check, not the request it was.
+        is IOException -> return NO_ANSWER_SENTENCE
         else -> return message ?: this::class.simpleName.orEmpty()
     }
     return when {
@@ -89,6 +93,15 @@ fun Throwable.catalogueMessage(): String {
         else -> "The server answered HTTP $status."
     }
 }
+
+/** What a screen that needs the server says when no answer came: the
+ *  design system's "couldn't load" sentence for it. */
+const val NO_ANSWER_SENTENCE = "Check the connection to the server, then try again."
+
+/** Whether the server answered that a title is not there (404, 410): it
+ *  was removed from the library. */
+val Throwable.titleGone: Boolean
+    get() = this is ApiStatusException && (status == 404 || status == 410)
 
 /**
  * The server refuses the person's sign-in: a 401 or 403 of chino-api, which a

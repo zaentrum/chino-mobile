@@ -12,14 +12,28 @@ import cloud.nalet.chino.mobile.data.auth.PlatformTokenStoreFactory
 import cloud.nalet.chino.mobile.data.auth.StreamTokenManager
 import cloud.nalet.chino.mobile.data.auth.TokenManager
 import cloud.nalet.chino.mobile.data.auth.TokenStore
+import cloud.nalet.chino.mobile.data.downloads.DownloadPlanner
+import cloud.nalet.chino.mobile.data.downloads.DownloadStarts
+import cloud.nalet.chino.mobile.data.downloads.Downloads
+import cloud.nalet.chino.mobile.data.downloads.DownloadsPlatform
+import cloud.nalet.chino.mobile.data.downloads.MemoryProgressBookStore
+import cloud.nalet.chino.mobile.data.downloads.PlanResult
+import cloud.nalet.chino.mobile.data.downloads.ProgressQueue
+import cloud.nalet.chino.mobile.data.downloads.ProgressSync
+import cloud.nalet.chino.mobile.data.downloads.ServerReach
 import cloud.nalet.chino.mobile.data.notices.NoticesRepository
 import cloud.nalet.chino.mobile.data.telemetry.Telemetry
 import cloud.nalet.chino.mobile.feedback.BugReporter
 import cloud.nalet.chino.mobile.feedback.PendingReportStore
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -50,6 +64,9 @@ class AppContainer(
     /** Hosts the Add-Server probe may reach over plain http (iOS: localhost
      *  only — see [ServerBootstrap]); every other host is https only. */
     private val allowPlainHttp: (host: String) -> Boolean = { true },
+    /** Downloads and playing without the server, where the platform has
+     *  them (Android); null: none ([DownloadsPlatform]). */
+    private val downloadsPlatform: DownloadsPlatform? = null,
 ) {
     /** Application-lifetime scope for fire-and-forget POSTs (progress,
      *  watched, telemetry) that must outlive a screen-model's onCleared —
@@ -242,5 +259,90 @@ class AppContainer(
             staticContext = deviceStaticContext,
             pendingStore = pendingReportStore,
         )
+    }
+
+    // ---- Downloads and playing without the server ------------------------
+
+    /** The connected server's API base, without the trailing slash: what
+     *  downloads and queued positions belong to. */
+    val serverBase: String get() = config.apiBaseUrl.trimEnd('/')
+
+    /** Whether this platform keeps downloads - without building them. */
+    val downloadsSupported: Boolean get() = downloadsPlatform != null
+
+    /** Titles kept on the phone, where the platform keeps them; null where
+     *  it does not (no download control then). */
+    val downloads: Downloads? by lazy { downloadsPlatform?.downloads(this) }
+
+    /** Works a download out before it starts: whether the title can come
+     *  along, what it keeps and what that comes to. */
+    val downloadPlanner: DownloadPlanner by lazy {
+        DownloadPlanner(
+            api = chinoApi,
+            streamToken = { streamTokenManager.valid() },
+            apiBase = { serverBase },
+            caps = { downloadsPlatform?.downloadCaps().orEmpty() },
+        )
+    }
+
+    /** Downloads asked for on a page: worked out and started in the app's
+     *  scope, so leaving the page stops none of them. */
+    val downloadStarts: DownloadStarts by lazy {
+        DownloadStarts(appScope) { itemId ->
+            val d = downloads ?: return@DownloadStarts null
+            val prefs = settings.flow.first()
+            when (
+                val r = downloadPlanner.plan(
+                    itemId = itemId,
+                    quality = d.preferences.value.quality,
+                    audioPref = prefs.preferredAudioLang,
+                    subtitlePref = prefs.preferredSubLang,
+                )
+            ) {
+                is PlanResult.Ready -> {
+                    d.start(r.plan)
+                    null
+                }
+                is PlanResult.NotPossible -> r.reason
+            }
+        }
+    }
+
+    /** Whether the server answers, and what its /api/config says it
+     *  offers (features.downloads). */
+    val serverReach: ServerReach by lazy {
+        ServerReach(
+            fetch = {
+                val resp = probeHttp.get("$serverBase/config") {
+                    timeout {
+                        connectTimeoutMillis = REACH_CONNECT_TIMEOUT_MS
+                        requestTimeoutMillis = REACH_TIMEOUT_MS
+                    }
+                }
+                if (resp.status.isSuccess()) resp.bodyAsText() else null
+            },
+            networkUp = { downloadsPlatform?.networkUp() },
+        )
+    }
+
+    /** The player's positions: sent at once, or kept and sent once the
+     *  server can be reached again. */
+    val progressSync: ProgressSync by lazy {
+        ProgressSync(
+            queue = ProgressQueue(downloadsPlatform?.progressBookStore ?: MemoryProgressBookStore()),
+            post = { id, body -> chinoApi.postProgress(id, body) },
+            account = { accountStore.snapshotBlocking().activeAccount?.id },
+            server = { serverBase },
+            scope = appScope,
+            onQueued = { downloadsPlatform?.scheduleProgressFlush() },
+            onReach = { answered -> serverReach.report(answered) },
+        )
+    }
+
+    private companion object {
+        /** How long a look at the server waits: the app's start waits for
+         *  it before it opens on the downloads. */
+        const val REACH_CONNECT_TIMEOUT_MS = 3_000L
+        const val REACH_TIMEOUT_MS = 4_000L
     }
 }

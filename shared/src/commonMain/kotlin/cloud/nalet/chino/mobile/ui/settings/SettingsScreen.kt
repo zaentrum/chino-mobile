@@ -56,6 +56,7 @@ import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.feedback.captureScreenshot
 import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
+import cloud.nalet.chino.mobile.ui.downloads.DownloadSettings
 import cloud.nalet.chino.mobile.ui.feedback.BugReportDialog
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.profile.ProfileScreen
@@ -171,6 +172,10 @@ fun SettingsSection() {
                 value = s.autoPlayNext,
                 onChange = { v -> scope.launch { container.settings.setAutoPlayNext(v) } },
             )
+            // Downloads: their quality and whether they use mobile data -
+            // where the platform keeps downloads and the server offers them.
+            DownloadSettings()
+
             Box(modifier = Modifier.padding(top = 12.dp))
             SectionHeading("Server")
             // Change-server entry — re-opens Add-Server prefilled with the current
@@ -268,7 +273,7 @@ private class BugReportDraft(val screenshot: ByteArray?)
 
 /** A section's title: the web's Section h2, in the heading face. */
 @Composable
-private fun SectionHeading(text: String) {
+internal fun SectionHeading(text: String) {
     Text(
         text = text,
         color = Color.White,
@@ -305,7 +310,7 @@ private fun ActionRow(
 }
 
 @Composable
-private fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

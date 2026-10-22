@@ -48,6 +48,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Icon
 import com.composables.icons.lucide.Bookmark
+import com.composables.icons.lucide.Download
 import com.composables.icons.lucide.Film
 import com.composables.icons.lucide.House
 import com.composables.icons.lucide.Lucide
@@ -111,7 +112,11 @@ import cloud.nalet.chino.mobile.ui.zap.ZapAppStartWarm
  * (Home / Film / Tv / Settings / Bell / User) so the glyphs match
  * chino-web's lucide-react set as closely as the Material set allows.
  */
-class MainShellScreen : Screen {
+class MainShellScreen(
+    /** The tab it opens on: Home, or the downloads when the server cannot
+     *  be reached. */
+    private val startSection: Section = Section.Home,
+) : Screen {
     override val key: ScreenKey = uniqueScreenKey
 
     @Composable
@@ -138,7 +143,7 @@ class MainShellScreen : Screen {
         // screen's saveable state while it is in the stack, and the activity
         // keeps it through a recreation or the process being killed. Home
         // (replaceAll) starts a new shell, on Home.
-        var section by rememberSaveable { mutableStateOf(Section.Home) }
+        var section by rememberSaveable { mutableStateOf(startSection) }
         // Lifted search state — drives both the TopBar SearchField and
         // the SearchResultsSection. Non-empty query hides the active
         // section and shows results inline (mirroring chino-web, where
@@ -241,6 +246,9 @@ private fun SectionContent(
         Section.Settings -> tabStates.SaveableStateProvider(Section.Settings.name) {
             SettingsSection()
         }
+        Section.Downloads -> tabStates.SaveableStateProvider(Section.Downloads.name) {
+            cloud.nalet.chino.mobile.ui.downloads.DownloadsSection(onPlay = onPlay)
+        }
     }
 }
 
@@ -262,7 +270,22 @@ enum class Section(val label: String, val icon: ImageVector) {
     // inside the content area, the same way the web Zap section bleeds out of
     // the page padding.
     Zap("Zap", Lucide.Zap),
+    // What is on the phone, to play without a connection: where the
+    // platform keeps downloads ([shellTabs]).
+    Downloads("Downloads", Lucide.Download),
     Settings("Settings", Lucide.Settings),
+}
+
+/** The shell's tabs, in their order: the downloads only where the platform
+ *  keeps them, and while the server offers them or something is on the
+ *  phone. */
+@Composable
+private fun shellTabs(): List<Section> {
+    val container = LocalAppContainer.current
+    val downloads = container.downloads ?: return Section.entries - Section.Downloads
+    val onPhone by downloads.entries.collectAsState()
+    val features by container.serverReach.features.collectAsState()
+    return if (features?.downloads == false && onPhone.isEmpty()) Section.entries - Section.Downloads else Section.entries
 }
 
 /* ────────────────────────────  Layout  ──────────────────────────── */
@@ -368,8 +391,8 @@ private fun SideRail(active: Section, onChange: (Section) -> Unit) {
             )
         }
         // Same order as web/TV + the bottom nav: Home, Movies, Series,
-        // Watchlist, Zap (Settings is pinned separately below).
-        val tabs = listOf(Section.Home, Section.Movies, Section.Series, Section.Watchlist, Section.Zap)
+        // Watchlist, Zap, Downloads (Settings is pinned separately below).
+        val tabs = shellTabs() - Section.Settings
         // Where the tabs don't fit the rail's height - a phone on its side
         // leaves the rail some 360 dp, and the logo, the five tabs and
         // Settings take 432 - their column scrolls, each tab still 48 dp,
@@ -377,7 +400,7 @@ private fun SideRail(active: Section, onChange: (Section) -> Unit) {
         // into view. Where they fit there is nothing to scroll: the scroll
         // is off and the rail is as it was.
         val tabScroll = rememberScrollState()
-        val tabInView = remember { tabs.associateWith { BringIntoViewRequester() } }
+        val tabInView = remember(tabs) { tabs.associateWith { BringIntoViewRequester() } }
         // maxValue is how far the column overflows, known once it is laid
         // out (Int.MAX_VALUE until then): keyed on it, the open tab comes
         // into view after the layout that shows it short - the phone turned,
@@ -478,7 +501,7 @@ private fun BottomNav(active: Section, onChange: (Section) -> Unit) {
                 .selectableGroup(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Section.entries.forEach { s ->
+            shellTabs().forEach { s ->
                 BottomNavItem(
                     section = s,
                     isActive = s == active,

@@ -116,6 +116,14 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.ktor.client.mock)
         }
+
+        // Downloads (androidMain downloads/): Media3's DownloadService,
+        // restarted by WorkManager below Android 12, and the WorkManager job
+        // that sends the positions played without a connection.
+        androidMain.dependencies {
+            implementation(libs.media3.exoplayer.workmanager)
+            implementation(libs.androidx.work.runtime)
+        }
     }
 }
 

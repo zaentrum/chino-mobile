@@ -216,6 +216,14 @@ actual class PlayerScreen actual constructor(
                 // The caps as playback starts: the output the sound goes to
                 // now says whether a Dolby bitstream passes through.
                 val caps = CodecCaps.queryParam(appContext)
+                // A title on this phone plays from its download, with the
+                // server or without it (downloads/DownloadedPlayback.kt).
+                if (extraId == null) {
+                    cloud.nalet.chino.mobile.downloads.downloadedSession(appContext, container, itemId, fromStart, resumeSec)?.let { local ->
+                        ready = downloadedPlayState(local, itemId, base, caps, container.settings.flow.first())
+                        return@LaunchedEffect
+                    }
+                }
                 // An extra: the title's detail and the extra's master, and
                 // nothing else of the server's (PlayerMode.Extra) — what
                 // /play/info says of a title is read off the master, signed
@@ -464,6 +472,9 @@ private data class PlayState(
      *  for non-packaged items (or when the fetch failed) — the scrubber
      *  then shows time/segment text only. */
     val trickplayCues: List<TrickplayCue>,
+    /** The title's download, when it plays from the phone; null when it
+     *  streams. */
+    val local: cloud.nalet.chino.mobile.downloads.DownloadedSession? = null,
     /** What it plays, a title or one of its extras: what it reads and
      *  writes ([PlayerMode]). */
     val playerMode: PlayerMode,
@@ -475,8 +486,45 @@ private data class PlayState(
     /** The master at [quality]: a title's ([buildMasterUrl]), else the
      *  extra's — `q` for a rung the viewer picked ([withQuality]). */
     fun masterUrl(quality: String): String =
-        extra?.let { withQuality(it.masterUrl, quality) } ?: buildMasterUrl(base, itemId, streamToken, quality, caps)
+        // A download's: the one on the phone, whatever the quality.
+        local?.masterUri ?: extra?.let { withQuality(it.masterUrl, quality) } ?: buildMasterUrl(base, itemId, streamToken, quality, caps)
 }
+
+/** The play state of a title played from its download
+ *  ([cloud.nalet.chino.mobile.downloads.downloadedSession]): what was kept of
+ *  it - its play info, segments, subtitles and heading - in its one
+ *  rendition, so no quality menu, and no scrub previews. */
+private fun downloadedPlayState(
+    local: cloud.nalet.chino.mobile.downloads.DownloadedSession,
+    itemId: String,
+    base: String,
+    caps: String,
+    settings: cloud.nalet.chino.mobile.data.AppSettings,
+): PlayState = PlayState(
+    itemId = itemId,
+    base = base,
+    streamToken = "",
+    caps = caps,
+    currentQuality = AUTO_QUALITY,
+    qualities = emptyList(),
+    resumeMs = local.startMs,
+    writable = local.writable,
+    audioPref = settings.preferredAudioLang,
+    subtitlePref = settings.preferredSubLang,
+    firstAudioLang = preferredAudioTrack(local.title.info?.audioTracks.orEmpty(), settings.preferredAudioLang)?.language
+        ?: local.title.audioLanguages.firstOrNull(),
+    title = local.heading,
+    info = local.title.info,
+    segments = local.title.segments,
+    prevEpisodeId = local.prevEpisodeId,
+    nextEpisodeId = local.nextEpisodeId,
+    sidecarSubtitles = local.sidecars,
+    trickplayCues = emptyList(),
+    playerMode = PlayerMode.Title,
+    extraId = null,
+    extra = null,
+    local = local,
+)
 
 private enum class OpenPopover { NONE, SPEED, AUDIO, CAPTIONS, INFO, VOLUME, QUALITY }
 
@@ -730,14 +778,9 @@ private fun PlaybackSurface(
     fun saveProgress(p: ExoPlayer) {
         val pos = guard.position() ?: return
         val durMs = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.info?.durationMs ?: 0L
-        container.appScope.launch {
-            runCatching {
-                container.chinoApi.postProgress(
-                    itemId,
-                    cloud.nalet.chino.mobile.data.api.ProgressBody(positionSec = pos, durationSec = (durMs / 1000L).toInt()),
-                )
-            }
-        }
+        // Sent at once, or kept on the phone and sent once the server can
+        // be reached (ProgressSync).
+        container.progressSync.save(itemId, positionSec = pos, durationSec = (durMs / 1000L).toInt())
     }
 
     // On the app's one connection pool (SharedConnections): the master goes
@@ -798,7 +841,8 @@ private fun PlaybackSurface(
                 return super.getRetryDelayMsFor(info)
             }
         }
-        val hlsFactory = HlsMediaSource.Factory(httpFactory).setLoadErrorHandlingPolicy(retryPolicy)
+        // A download plays from the phone alone; a stream from the server.
+        val hlsFactory = HlsMediaSource.Factory(state.local?.mediaSources ?: httpFactory).setLoadErrorHandlingPolicy(retryPolicy)
         // The 5.1 companions next to their stereo twins, in one group:
         // Media3 is told each rendition's codec, /play/info's, so it starts
         // from the master alone instead of loading every rendition first
@@ -811,6 +855,8 @@ private fun PlaybackSurface(
                 MediaItem.Builder()
                     .setUri(activeMasterUrl)
                     .setMimeType(MimeTypes.APPLICATION_M3U8)
+                    // A download's renditions, the ones on the phone.
+                    .setStreamKeys(state.local?.streamKeys.orEmpty())
                     .build(),
             )
         // Side-load each VTT as its own SingleSampleMediaSource and merge.
@@ -835,7 +881,8 @@ private fun PlaybackSurface(
             //   "Legacy decoding is disabled, can't handle text/vtt
             //    samples (expected application/x-media3-cues)".
             val sideSources = sideSubs.map { cfg ->
-                androidx.media3.exoplayer.source.SingleSampleMediaSource.Factory(httpFactory)
+                // A download's subtitles are files beside it.
+                androidx.media3.exoplayer.source.SingleSampleMediaSource.Factory(state.local?.sidecarSources ?: httpFactory)
                     .createMediaSource(cfg, C.TIME_UNSET)
             }
             androidx.media3.exoplayer.source.MergingMediaSource(

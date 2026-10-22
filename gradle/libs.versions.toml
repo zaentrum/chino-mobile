@@ -29,6 +29,10 @@ androidxTestRules = "1.6.1"
 composeUiTest = "1.7.6"
 junit = "4.13.2"
 
+# WorkManager: sends the positions played without a connection once one is
+# back, and restarts downloads below Android 12 (Media3's WorkManagerScheduler).
+work = "2.10.0"
+
 [libraries]
 # KMP networking + serialization
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
@@ -104,6 +108,11 @@ androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "a
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4-android", version.ref = "composeUiTest" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "composeUiTest" }
 junit = { module = "junit:junit", version.ref = "junit" }
+
+# Downloads: Media3's DownloadService scheduler on WorkManager, and
+# WorkManager itself for the positions played without a connection.
+media3-exoplayer-workmanager = { module = "androidx.media3:media3-exoplayer-workmanager", version.ref = "media3" }
+androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

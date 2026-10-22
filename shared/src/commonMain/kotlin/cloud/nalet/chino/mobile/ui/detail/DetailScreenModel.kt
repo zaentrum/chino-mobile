@@ -4,6 +4,8 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
+import cloud.nalet.chino.mobile.data.api.catalogueMessage
+import cloud.nalet.chino.mobile.data.api.titleGone
 import cloud.nalet.chino.mobile.data.api.watchlistRefusal
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.CancellationException
@@ -40,7 +42,9 @@ sealed interface DetailUiState {
         /** The play button: what the player will do with [resumePositionSec]. */
         val playAction: PlayAction get() = playAction(resumePositionSec, (item.durationMs ?: 0L) / 1000.0)
     }
-    data class Error(val message: String) : DetailUiState
+    /** It couldn't load: [message] why, as far as the app can tell; [gone]
+     *  when the server says the title is not in the library (404, 410). */
+    data class Error(val message: String, val gone: Boolean = false) : DetailUiState
 }
 
 /** One episode row's in-progress state (from /me/continue-watching): where
@@ -172,10 +176,18 @@ class DetailScreenModel(
         screenModelScope.launch {
             _state.value = try {
                 fetch()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                DetailUiState.Error(e.message ?: e::class.simpleName.orEmpty())
+                DetailUiState.Error(e.catalogueMessage(), gone = e.titleGone)
             }
         }
+    }
+
+    /** "try again" on the page that couldn't load: loads it again. */
+    fun retry() {
+        _state.value = DetailUiState.Loading
+        load()
     }
 
     /** The quiet refresh under way; one at a time. */

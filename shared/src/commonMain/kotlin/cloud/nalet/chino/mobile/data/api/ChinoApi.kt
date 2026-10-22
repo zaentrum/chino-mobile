@@ -303,13 +303,17 @@ class ChinoApi(private val http: HttpClient) {
 
     /** Pre-playback probe: chino-stream's transcode decision + container/codec
      *  metadata + the ladder of qualities the server can serve. */
-    suspend fun playInfo(id: String, caps: String? = null): PlayInfo =
+    suspend fun playInfo(id: String, caps: String? = null, timeoutMs: Long = PLAY_INFO_TIMEOUT_MS): PlayInfo =
         http.get("v1/items/$id/play/info") {
             caps?.let { parameter("caps", it) }
             // The player's start waits for it: [PLAY_INFO_TIMEOUT_MS] in all,
             // a slow trickle of an answer included, then it starts without
-            // it, in Auto (qualityLadder).
-            timeout { requestTimeoutMillis = PLAY_INFO_TIMEOUT_MS }
+            // it, in Auto (qualityLadder). A download, which starts nothing
+            // on the screen, waits longer ([timeoutMs]).
+            timeout {
+                requestTimeoutMillis = timeoutMs
+                socketTimeoutMillis = timeoutMs
+            }
         }.body()
 
     /** Raw WebVTT trickplay (scrub-preview thumbnail) cue file for a

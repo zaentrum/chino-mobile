@@ -177,6 +177,12 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
         }
     }
 
+    /** "try again" on a Home that couldn't load: loads it again. */
+    fun retry() {
+        _state.value = HomeUiState.Loading
+        load()
+    }
+
     private fun load() {
         screenModelScope.launch {
             _state.value = try {
