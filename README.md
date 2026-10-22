@@ -227,8 +227,12 @@ no download control yet: its host passes no `DownloadsPlatform`.
   foreground service with a notification, only while a download is on its
   way), one title at a time, into app-specific storage (no storage
   permission), Wi-Fi only by default. Waiting for a connection, the service
-  stops: the downloads go on when it comes back - while the app runs, and
-  below Android 12 by WorkManager with the app closed. Android 15's six
+  stops: the downloads go on when it comes back - in front with the service
+  again; in the background from Android 14 by a user-initiated data transfer
+  job planned as they start to wait (`DownloadResumeJob`, with a
+  notification of its own; from Android 15 an app in the background has no
+  network without one); on Android 12 and 13 while the app's process lives;
+  below 12 by WorkManager. Android 15's six
   hours a day for data sync services pause them until the app is opened.
   Before the disk is full they stop, "Not enough space on this phone".
 - **The stream token** — never on the disk: each playlist is kept without

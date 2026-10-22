@@ -158,8 +158,10 @@ class AndroidDownloadsPlatform(context: Context) : DownloadsPlatform {
             }
             // A connection again: downloads that waited for it run, with the
             // service in the foreground where Android lets the app start it -
-            // while it is in front. In the background the manager runs them
-            // as long as the process does.
+            // while it is in front. In the background the job planned for it
+            // carries them from Android 14 (DownloadResumeJob: from 15 an app
+            // in the background has no network without it); before 14 the
+            // manager runs them as long as the process does.
             if (inFront) runCatching { DownloadEngine.get(context).resumeIfPending() }
         }
     }

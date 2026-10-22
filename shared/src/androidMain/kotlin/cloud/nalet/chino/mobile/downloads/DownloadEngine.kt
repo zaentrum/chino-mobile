@@ -5,6 +5,7 @@ import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
@@ -206,6 +207,7 @@ internal class DownloadEngine private constructor(context: Context) {
                 // One that stopped as the connection went: nothing runs, so
                 // nothing keeps the service in the foreground.
                 if (download.state == Download.STATE_QUEUED && manager.notMetRequirements != 0) stopServiceWhileWaiting()
+                if (!download.runs()) forgetResumeWhenNothingWaits()
                 // Subtitles and artwork as the media comes: the app graph's
                 // downloads, built here if this process has none yet.
                 runCatching { (app?.downloads as? AndroidDownloads)?.changed(download) }
@@ -213,6 +215,7 @@ internal class DownloadEngine private constructor(context: Context) {
 
             override fun onDownloadRemoved(downloadManager: DownloadManager, download: Download) {
                 _downloads.value = _downloads.value - download.request.id
+                forgetResumeWhenNothingWaits()
             }
 
             override fun onRequirementsStateChanged(
@@ -280,19 +283,41 @@ internal class DownloadEngine private constructor(context: Context) {
             runCatching {
                 androidx.media3.exoplayer.offline.DownloadService.sendResumeDownloads(context, ChinoDownloadService::class.java, true)
             }
+            // The service has them: no job for them in the background.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) DownloadResumeJob.cancel(context)
         }
     }
 
     /** No service in the foreground while the downloads wait for a
-     *  connection: it is stopped, and started again as they run. Only a
-     *  service that runs already (in the foreground) is stopped. */
+     *  connection: it is stopped, and started again as they run - by the app
+     *  in front, or, in the background from Android 14, by the job planned
+     *  here for when the connection is back ([DownloadResumeJob]); planned
+     *  first, while the service still runs, as Android asks. Only a service
+     *  that runs already (in the foreground) is stopped. */
     fun stopServiceWhileWaiting() = onMain {
         if (manager.notMetRequirements == 0) return@onMain
         if (_downloads.value.values.any { it.state == Download.STATE_DOWNLOADING || it.state == Download.STATE_REMOVING }) return@onMain
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !manager.downloadsPaused &&
+            manager.currentDownloads.any { it.runs() }
+        ) {
+            DownloadResumeJob.plan(context, _preferences.value.wifiOnly)
+        }
         if (ChinoDownloadService.running) {
             runCatching { context.stopService(Intent(context, ChinoDownloadService::class.java)) }
         }
     }
+
+    /** Nothing left that waits to run: no job for it. */
+    private fun forgetResumeWhenNothingWaits() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+        if (runCatching { manager.currentDownloads.any { it.runs() } }.getOrDefault(true)) return
+        DownloadResumeJob.cancel(context)
+    }
+
+    /** The downloads' notification as it stands: the service's, and the
+     *  job's while it carries them in the background. */
+    fun notification(): android.app.Notification =
+        downloadNotification(context, manager.currentDownloads, manager.notMetRequirements)
 
     /** Whether the downloads wait for a connection now. */
     val waitingForConnection: Boolean get() = manager.notMetRequirements != 0

@@ -19,7 +19,8 @@ import cloud.nalet.chino.mobile.shared.R
  * downloads wait for a connection it does not run (DownloadEngine stops it):
  * below Android 12 its scheduler ([WorkManagerScheduler]) starts it again
  * once the connection is back; from 12 the app does as it comes to the
- * front, and the manager runs them while the process lives.
+ * front, and in the background from Android 14 a job carries the downloads
+ * on ([DownloadResumeJob]).
  */
 class ChinoDownloadService : DownloadService(
     NOTIFICATION_ID,
@@ -79,7 +80,7 @@ class ChinoDownloadService : DownloadService(
  *  or what the downloads wait for, for the moment before the service stops
  *  for them. Never one word twice: nothing active and nothing waiting is the
  *  channel's name alone. Plain words, as the app's. */
-private fun downloadNotification(context: Context, downloads: List<Download>, notMet: Int): Notification {
+internal fun downloadNotification(context: Context, downloads: List<Download>, notMet: Int): Notification {
     val active = downloads.filter { it.state == Download.STATE_DOWNLOADING }
     val waiting = downloads.count {
         (it.state == Download.STATE_QUEUED || it.state == Download.STATE_RESTARTING) && it.stopReason == Download.STOP_REASON_NONE
