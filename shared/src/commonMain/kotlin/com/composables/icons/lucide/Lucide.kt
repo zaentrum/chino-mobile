@@ -1,4 +1,4 @@
-// AUTO-GENERATED from Lucide's MIT-licensed SVG source (lucide.dev).
+// AUTO-GENERATED from Lucide's ISC-licensed SVG source (lucide.dev).
 // Self-contained replacement for the icons-lucide-cmp library: its iOS klib is
 // built with Kotlin 2.2.x (ABI 2.2.0) and is unreadable by this project's
 // Kotlin 2.1.0 / Kotlin-Native compiler. Same package + accessor names, so no
