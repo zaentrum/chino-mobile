@@ -114,7 +114,9 @@ class PlayerRulesTest {
         )
         assertEquals(AUTO_QUALITY, ladder.initial)
         assertEquals(
-            listOf("auto" to "Auto", "v0" to "1080p HDR", "v1" to "360p", "v2" to "v2"),
+            // A name and its height by the server's table ("Lowest (360p)");
+            // a label that says more stays.
+            listOf("auto" to "Auto", "v0" to "1080p HDR", "v1" to "Lowest (360p)", "v2" to "v2"),
             ladder.options.map { it.id to it.label },
         )
         assertTrue(ladder.pickable)
@@ -134,7 +136,9 @@ class PlayerRulesTest {
             ),
         )
         assertEquals("high", ladder.initial)
-        assertEquals(listOf("High (source resolution)", "Medium (720p)", "480p"), ladder.options.map { it.label })
+        // As the server names them; one without a name, the bare word - no
+        // height the phone would only guess.
+        assertEquals(listOf("High (source resolution)", "Medium (720p)", "Low"), ladder.options.map { it.label })
         // A packaged title the server lists no rungs for: nothing to pick, its
         // default rendition requested — what the Android player sends today.
         val packaged = qualityLadder(PlayInfo(mode = "packaged", defaultQuality = "v0"))

@@ -30,16 +30,20 @@ fun qualityLadder(info: PlayInfo?): QualityLadder {
             .map { r ->
                 QualityOption(
                     id = r.id,
-                    label = r.label?.takeIf { it.isNotBlank() }
-                        ?: r.height?.takeIf { it > 0 }?.let { "${it}p" }
-                        ?: r.id,
+                    label = namedQuality(
+                        r.label?.takeIf { it.isNotBlank() }
+                            ?: r.height?.takeIf { it > 0 }?.let { "${it}p" }
+                            ?: r.id,
+                    ),
                 )
             }
         return QualityLadder(listOf(QualityOption(AUTO_QUALITY, "Auto")) + options, AUTO_QUALITY)
     }
+    // The server's names as it gives them; two `q` it names alike are one
+    // picture, and one entry - the first, the higher.
     val options = info?.qualities.orEmpty().map { q ->
-        QualityOption(q.name, q.label.takeIf { it.isNotBlank() } ?: labelForQuality(q.name))
-    }
+        QualityOption(q.name, q.label.takeIf { it.isNotBlank() }?.let(::namedQuality) ?: labelForQuality(q.name))
+    }.distinctBy { it.label.lowercase() }
     return QualityLadder(options, startQuality(info))
 }
 
@@ -55,15 +59,41 @@ fun qualityLadder(info: PlayInfo?): QualityLadder {
 fun startQuality(info: PlayInfo?): String =
     if (info == null) AUTO_QUALITY else info.defaultQuality?.takeIf { it.isNotBlank() } ?: "high"
 
-/** The fallback name of an on-the-fly rung ("high" -> "1080p"), as the
- *  Android and TV players show a bare rung. */
+/** The name of an on-the-fly `q` an older server sent without a label: a
+ *  height by the server's table ([namedQuality]: "720p" -> "Medium
+ *  (720p)"), "Original" for the original played as it is, else the bare
+ *  word ("High", "Medium", "Low") - no height the phone would only guess:
+ *  a step's height is the source's, which only the server knows. */
 fun labelForQuality(q: String): String = when (q.lowercase()) {
-    "high" -> "1080p"
-    "medium" -> "720p"
-    "low" -> "480p"
-    "source" -> "Source"
+    "source", "original" -> "Original"
     AUTO_QUALITY -> "Auto"
-    else -> q
+    else -> namedQuality(q).let { n -> if (n == q) q.replaceFirstChar { it.uppercase() } else n }
+}
+
+/**
+ * A quality as every app names it (docs/chino words): the server's label as
+ * it gives it ("Medium (720p)", "Original"); an older server's label that
+ * names a height alone ("720p") gets its name by the same table
+ * ([qualityTitle]) - a height never twice.
+ */
+fun namedQuality(label: String): String {
+    val height = Regex("""^(\d{3,4})p$""").matchEntire(label.trim())?.groupValues?.get(1)?.toInt() ?: return label
+    return qualityTitle(height)
+}
+
+/** The name of a picture height's quality, with the height, by the one
+ *  table the server names its qualities by: Ultra from 2160p, High from
+ *  1080p, Medium from 720p, Low from 480p, Lowest below it; a height between
+ *  two steps takes the lower name with its own height ("Medium (900p)"). */
+fun qualityTitle(height: Int): String {
+    val name = when {
+        height >= 2160 -> "Ultra"
+        height >= 1080 -> "High"
+        height >= 720 -> "Medium"
+        height >= 480 -> "Low"
+        else -> "Lowest"
+    }
+    return "$name (${height}p)"
 }
 
 /**

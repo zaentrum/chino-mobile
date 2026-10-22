@@ -28,6 +28,28 @@ class PlaybackRecoveryTest {
     }
 
     @Test
+    fun anOnTheFlyTitleStepsDownTheListedEntriesToAnotherPicture() {
+        // A 720p source: high and medium are one picture, "Medium (720p)" -
+        // high steps to low, never to the same picture again.
+        val listed = listOf(
+            cloud.nalet.chino.mobile.data.api.QualityRung("high", "Medium (720p)"),
+            cloud.nalet.chino.mobile.data.api.QualityRung("medium", "Medium (720p)"),
+            cloud.nalet.chino.mobile.data.api.QualityRung("low", "Low (480p)"),
+        )
+        assertEquals(PlaybackRecovery.StepDown("low"), playbackRecovery("transcode", "high", 0, listed))
+        assertEquals(PlaybackRecovery.StepDown("low"), playbackRecovery("transcode", "medium", 0, listed))
+        assertEquals(PlaybackRecovery.GiveUp, playbackRecovery("transcode", "low", 0, listed))
+        // A 360p source: every q one picture - nothing to step to.
+        val small = listOf("high", "medium", "low").map { cloud.nalet.chino.mobile.data.api.QualityRung(it, "Lowest (360p)") }
+        assertEquals(PlaybackRecovery.GiveUp, playbackRecovery("transcode", "high", 0, small))
+        // No list (a direct stream): the fixed ladder.
+        assertEquals(PlaybackRecovery.StepDown("medium"), playbackRecovery("passthrough", "high", 0, emptyList()))
+        // The menu: one entry for one picture, the server's names as given.
+        val ladder = qualityLadder(cloud.nalet.chino.mobile.data.api.PlayInfo(mode = "transcode", qualities = listed))
+        assertEquals(listOf("high" to "Medium (720p)", "low" to "Low (480p)"), ladder.options.map { it.id to it.label })
+    }
+
+    @Test
     fun aPackagedTitleThatKeepsFailingWhereItWasIsGivenUpOn() {
         val r = PlaybackRecoveries()
         assertEquals(PlaybackRecovery.RetryInPlace, r.next("packaged", "auto", 600_000))

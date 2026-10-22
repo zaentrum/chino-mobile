@@ -163,7 +163,7 @@ class ExtraPlaybackTest {
         // Auto, then the rungs, the tallest first, as chino-stream lists a
         // packaged title's; the name is the q that asks for the rung.
         assertEquals(
-            listOf(QualityRung("auto", "Auto"), QualityRung("v0", "720p"), QualityRung("v1", "480p")),
+            listOf(QualityRung("auto", "Auto"), QualityRung("v0", "Medium (720p)"), QualityRung("v1", "Low (480p)")),
             info.qualities,
         )
         assertEquals(AUTO_QUALITY, info.defaultQuality)
@@ -219,7 +219,7 @@ class ExtraPlaybackTest {
 
         // A 2.39:1 film's 1920x804 is 1080p, 1280x536 720p; v2 is 720p again.
         assertEquals(listOf("auto", "v0", "v1"), info.qualities.map { it.name })
-        assertEquals(listOf("Auto", "1080p", "720p"), info.qualities.map { it.label })
+        assertEquals(listOf("Auto", "High (1080p)", "Medium (720p)"), info.qualities.map { it.label })
         // The audio of the first variant's group alone: the stereo one.
         assertEquals(listOf("German"), info.audioTracks.map { it.title })
         assertNull(info.durationMs)

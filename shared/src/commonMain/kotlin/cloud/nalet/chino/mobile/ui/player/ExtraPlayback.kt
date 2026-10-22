@@ -180,7 +180,7 @@ private fun masterQualities(master: HlsMaster): List<QualityRung> {
     val picks = master.rungs().distinctBy { rungLabel(it.rung, it.width, it.height) }
     if (picks.size < 2) return emptyList()
     return listOf(QualityRung(AUTO_QUALITY, "Auto")) +
-        picks.sortedByDescending { it.height }.map { QualityRung(it.rung, rungLabel(it.rung, it.width, it.height)) }
+        picks.sortedByDescending { it.height }.map { QualityRung(it.rung, namedQuality(rungLabel(it.rung, it.width, it.height))) }
 }
 
 /** The picture heights quality labels name (chino-stream's sizeClasses). */
