@@ -3,10 +3,6 @@ package cloud.nalet.chino.mobile.ui.theme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import chino_mobile.shared.generated.resources.Inter_Bold
-import chino_mobile.shared.generated.resources.Inter_Medium
-import chino_mobile.shared.generated.resources.Inter_Regular
-import chino_mobile.shared.generated.resources.Inter_SemiBold
 import chino_mobile.shared.generated.resources.JetBrainsMono_Bold
 import chino_mobile.shared.generated.resources.JetBrainsMono_ExtraBold
 import chino_mobile.shared.generated.resources.JetBrainsMono_Medium
@@ -17,21 +13,19 @@ import org.jetbrains.compose.resources.Font
 
 /**
  * App-wide font families — mirrors chino-web's Google Fonts config in
- * Chino Logos.html (`--ff-ui: Inter; --ff-mono: JetBrains Mono`). The
- * TTFs are bundled in commonMain/composeResources/font/ so the same
- * family ships on every platform.
+ * Chino Logos.html (`--ff-ui: Inter; --ff-mono: JetBrains Mono`).
  *
- * Compose Multiplatform generates the `Res.font.*` accessors from the
- * filenames in composeResources/font/ — Inter-Regular.ttf becomes
- * Res.font.Inter_Regular, etc.
+ * Inter is one variable font, at the weights the design system sets type in,
+ * and ships once per platform: on Android the app's font resource
+ * (res/font/inter_variable.ttf), which the Cast widgets' themes take too; on
+ * iOS a Compose resource of iosMain (composeResources/font/Inter.ttf).
+ * JetBrains Mono is a Compose resource of commonMain: Compose Multiplatform
+ * generates the `Res.font.*` accessors from the filenames in
+ * composeResources/font/ — JetBrainsMono-Regular.ttf becomes
+ * Res.font.JetBrainsMono_Regular, etc.
  */
 @Composable
-fun ChinoInterFamily(): FontFamily = FontFamily(
-    Font(Res.font.Inter_Regular, FontWeight.Normal),
-    Font(Res.font.Inter_Medium, FontWeight.Medium),
-    Font(Res.font.Inter_SemiBold, FontWeight.SemiBold),
-    Font(Res.font.Inter_Bold, FontWeight.Bold),
-)
+expect fun ChinoInterFamily(): FontFamily
 
 /** JetBrains Mono in the weights chino-web's index.html loads (500 to 800),
  *  and Regular. SemiBold is the web's `font-semibold` heading: without it,
