@@ -550,14 +550,19 @@ internal object ChinoCast {
      * as that account first - the last position the TV confirmed, the one
      * the phone keeps - and casting stops, so that the TV does not play on
      * for whoever comes next. Waits for the write, at most
-     * [LEAVE_WRITE_WAIT_MS]. The device it stopped casting on; null where
-     * the account cast nothing.
+     * [LEAVE_WRITE_WAIT_MS]. Not [writeLast] - the server deleted the
+     * account - nothing of what the TV plays is written any more. The device
+     * it stopped casting on; null where the account cast nothing.
      */
-    suspend fun leave(accountId: String): String? = withContext(Dispatchers.Main) {
+    suspend fun leave(accountId: String, writeLast: Boolean): String? = withContext(Dispatchers.Main) {
         if (connectedSession() == null || activeAccountId != accountId) return@withContext null
         val device = castDeviceInLine(_state.value.device)
-        bridge.sessionEnding()
-        withTimeoutOrNull(LEAVE_WRITE_WAIT_MS) { _writing.first { it == 0 } }
+        if (writeLast) {
+            bridge.sessionEnding()
+            withTimeoutOrNull(LEAVE_WRITE_WAIT_MS) { _writing.first { it == 0 } }
+        } else {
+            reporter.letGoUnwritten(accountId)
+        }
         stopCasting()
         device
     }

@@ -236,7 +236,21 @@ class CastProgressReporter(
     fun writerChanged() {
         tracked = null
         expected = null
+        silenced = null
     }
+
+    /** An account whose positions are written no more - the server deleted
+     *  it: what the TV plays is let go unwritten, and nothing more is
+     *  written for it, whatever the TV reports before casting has stopped,
+     *  until another account signs in ([writerChanged]). */
+    fun letGoUnwritten(accountId: String) {
+        silenced = accountId
+        tracked = null
+        expected = null
+    }
+
+    /** The account [letGoUnwritten] named, while it is still signed in. */
+    private var silenced: String? = null
 
     private fun ask(at: Long) {
         val last = askedAt
@@ -253,7 +267,7 @@ class CastProgressReporter(
 
     private fun save(t: Tracked, final: Boolean) {
         t.lastWriteAt = now()
-        if (t.writer != writer()) return
+        if (t.writer != writer() || t.writer.accountId == silenced) return
         val pos = t.guard.position() ?: return
         // Never a position short of the one a takeover started from.
         if (t.floorSec != null && pos < t.floorSec) return

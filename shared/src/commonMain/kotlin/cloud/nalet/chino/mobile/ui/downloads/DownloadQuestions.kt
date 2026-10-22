@@ -51,7 +51,7 @@ suspend fun signOutOfThisPhone(container: AppContainer, accountId: String, casti
  *  written as it, and casting stops; "Stopped casting on {device}." where
  *  no question said so ([castingSaid]). */
 suspend fun leaveCastingOf(container: AppContainer, accountId: String, castingSaid: Boolean = false) {
-    val device = runCatching { container.leaveCasting(accountId) }.getOrNull() ?: return
+    val device = runCatching { container.leaveCasting(accountId, true) }.getOrNull() ?: return
     if (!castingSaid) container.toasts.tryEmit(Toast(stoppedCastingToast(device)))
 }
 

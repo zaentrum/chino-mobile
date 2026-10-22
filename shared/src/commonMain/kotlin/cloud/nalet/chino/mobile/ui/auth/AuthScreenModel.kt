@@ -9,6 +9,7 @@ import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.data.auth.SignInLauncher
 import cloud.nalet.chino.mobile.data.auth.SignInResult
 import cloud.nalet.chino.mobile.data.refreshServerConfig
+import cloud.nalet.chino.mobile.ui.downloads.leaveCastingOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,6 +81,11 @@ class AuthScreenModel(private val container: AppContainer) : ScreenModel {
                         expiresAtEpochMillis = tokens.expiresAtEpochMillis,
                         lastUsedAt = currentTimeMillis(),
                     )
+                    // Another account signed in in its place - "Add account"
+                    // in the picker is a switch: the one casting stops, its
+                    // last position written first, and a toast says so.
+                    accountLeavingFor(container.accountStore.snapshotBlocking().activeAccount?.id, account.id)
+                        ?.let { leaveCastingOf(container, it) }
                     container.accountStore.addOrUpdate(account, setActive = true)
                     container.telemetry.event(
                         "auth_signin_completed",
@@ -102,6 +108,10 @@ class AuthScreenModel(private val container: AppContainer) : ScreenModel {
         }
     }
 }
+
+/** The account that leaves as [signedIn] is signed in and made the active
+ *  one: the one active before, where it is another; null for none. */
+internal fun accountLeavingFor(activeBefore: String?, signedIn: String): String? = activeBefore?.takeIf { it != signedIn }
 
 /** How long the sign-in screen waits for the server's settings before it
  *  offers the sign-in with the stored ones. */

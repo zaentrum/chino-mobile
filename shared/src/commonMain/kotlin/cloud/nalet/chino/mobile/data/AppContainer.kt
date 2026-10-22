@@ -269,8 +269,10 @@ class AppContainer(
      */
     suspend fun forgetDeletedAccount(accountId: String) {
         // Casting stops - the TV plays nothing on for whoever comes next -
-        // and a toast says so: the question did not.
-        runCatching { leaveCasting(accountId) }.getOrNull()?.let { device ->
+        // and a toast says so: the question did not. Its last position is
+        // not written: the server has just deleted what it kept of the
+        // account, and nothing of it comes back.
+        runCatching { leaveCasting(accountId, false) }.getOrNull()?.let { device ->
             toasts.tryEmit(Toast(cloud.nalet.chino.mobile.data.downloads.stoppedCastingToast(device)))
         }
         // Its downloads on this phone go too, as Delete Account said.
@@ -383,9 +385,10 @@ class AppContainer(
 
     /** [accountId] leaves the phone while it casts - signed out, removed,
      *  another account in its place: what the TV plays of it is written as
-     *  it, then casting stops. The device it stopped casting on; null where
-     *  it cast nothing. Set by the platform that casts. */
-    var leaveCasting: suspend (accountId: String) -> String? = { null }
+     *  it ([writeLast]; never for an account the server deleted), then
+     *  casting stops. The device it stopped casting on; null where it cast
+     *  nothing. Set by the platform that casts. */
+    var leaveCasting: suspend (accountId: String, writeLast: Boolean) -> String? = { _, _ -> null }
 
     /** Short confirmations shown over any screen, the design system's
      *  toasts (ui/components/Toast.kt). */
