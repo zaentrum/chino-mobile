@@ -48,6 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,15 +70,17 @@ import cloud.nalet.chino.mobile.ui.shell.Section
 import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
 import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
 import cloud.nalet.chino.mobile.data.downloads.Owner
+import cloud.nalet.chino.mobile.data.downloads.REMOVE_ACCOUNT_LABEL
 import cloud.nalet.chino.mobile.data.downloads.REMOVE_ACCOUNT_TITLE
 import cloud.nalet.chino.mobile.data.downloads.accountDownloadsGoSentence
 import cloud.nalet.chino.mobile.data.downloads.accountRemovedSentence
 import cloud.nalet.chino.mobile.data.downloads.castingStopsSentence
+import cloud.nalet.chino.mobile.data.downloads.pickerHintLine
 import cloud.nalet.chino.mobile.ui.downloads.leaveCastingOf
 import cloud.nalet.chino.mobile.ui.components.QuestionDialog
-import com.composables.icons.lucide.LogOut
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.X
 import kotlinx.coroutines.launch
 
 /**
@@ -165,7 +170,7 @@ class AccountPickerScreen(
                             style = ChinoHeading,
                         )
                         Text(
-                            text = "Tap to switch. Tap the sign-out badge to remove an account.",
+                            text = pickerHintLine(LocalDeviceKind.current),
                             color = ChinoMuted,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
@@ -263,21 +268,23 @@ private fun AccountTile(
             ) {
                 Avatar(displayName = account.displayName, email = account.email, size = 88.dp)
             }
-            // Per-account remove / sign-out badge — a small touch target on the
-            // tile corner (the TV uses long-press; phones get an explicit tap
-            // target since there's no remote long-press affordance).
+            // The remove badge: a ✕ on the tile's corner, "remove account"
+            // to a screen reader - removing an account, not signing out of
+            // it (the TV uses long-press; a phone gets a tap target, with no
+            // remote's long press to offer).
             Box(
                 modifier = Modifier
                     .size(28.dp)
                     .clip(RectangleShape)
                     .background(ChinoBg2)
                     .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
-                    .clickable(enabled = enabled, onClick = onRemove),
+                    .clickable(enabled = enabled, onClickLabel = REMOVE_ACCOUNT_LABEL, role = Role.Button, onClick = onRemove)
+                    .semantics { contentDescription = REMOVE_ACCOUNT_LABEL },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Lucide.LogOut,
-                    contentDescription = "Remove ${account.displayName}",
+                    imageVector = Lucide.X,
+                    contentDescription = null,
                     tint = ChinoFg2,
                     modifier = Modifier.size(14.dp),
                 )
