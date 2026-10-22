@@ -196,15 +196,17 @@ class ChinoApi(private val http: HttpClient) {
 
     /** POST /v1/me/available: which of [ids] the account signed in now -
      *  the one [bearer] is, where given - may watch now, in one request: the
-     *  phone deletes its downloads of the others. Throws for any answer that
-     *  is no 2xx, a server without the route among them: no answer decides
-     *  nothing. */
-    suspend fun available(ids: List<String>, bearer: String? = null): List<String> =
+     *  phone deletes its downloads of the others. With an answer that leaves
+     *  out every id asked, the server says how many titles of the library
+     *  the account may watch ([AvailableIds.titles]). Throws for any answer
+     *  that is no 2xx, a server without the route among them: no answer
+     *  decides nothing. */
+    suspend fun available(ids: List<String>, bearer: String? = null): AvailableIds =
         http.post("v1/me/available") {
             contentType(ContentType.Application.Json)
             setBody(AvailableIds(ids))
             bearer?.let { asAccount(it) }
-        }.body<AvailableIds>().ids
+        }.body<AvailableIds>()
 
     /** Marks the item as fully watched — drives the green "watched" badge on
      *  posters + lets continue-watching substitute the next episode. Mirrors
@@ -797,9 +799,15 @@ data class ProgressBody(
     @SerialName("played_ms_ago") val playedMsAgo: Long? = null,
 )
 
-/** POST /v1/me/available's body and answer: `{"ids": [...]}`. */
+/** POST /v1/me/available's body and answer: `{"ids": [...]}`; an answer
+ *  that leaves out every id asked also says how many titles of the library
+ *  the account may watch, `"titles"` - null where the server does not say
+ *  (one from before it). Never sent in a body. */
 @Serializable
-data class AvailableIds(val ids: List<String> = emptyList())
+data class AvailableIds(
+    val ids: List<String> = emptyList(),
+    val titles: Int? = null,
+)
 
 /** This request with [bearer] - an account's own - and not the one the
  *  client holds for whoever is signed in now: the auth plugin leaves it be. */

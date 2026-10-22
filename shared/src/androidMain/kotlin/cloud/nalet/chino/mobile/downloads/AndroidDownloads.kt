@@ -500,13 +500,15 @@ internal class AndroidDownloads(
 
     /**
      * Asks the server about every download of the account signed in now -
-     * whichever [itemIds] the caller is after: an answer that leaves out all
-     * of them is no answer (a library being imported anew, a reset), and a
-     * title is only ever taken off the phone where the server still knows
-     * others of the account's ([applyAvailability]). What the answer took or
-     * marked is in the result; a title it answered for again that had
-     * stopped as gone (404, 410) is a download that stopped before it was
-     * done, which "try again" works out anew.
+     * whichever [itemIds] the caller is after. A title goes after two answers
+     * that it is not the account's ([applyAvailability]): an hour apart where
+     * the answer is the library's word - it still answers for others of the
+     * account's, or says the library holds titles for it - else a day apart
+     * (a library imported anew or reset leaves out everything for a while),
+     * so an account's only download, or all of them, goes too. What the
+     * answer took or marked is in the result; a title it answered for again
+     * that had stopped as gone (404, 410) is a download that stopped before
+     * it was done, which "try again" works out anew.
      */
     override suspend fun checkAvailability(itemIds: List<String>?): AvailabilityCheck {
         val owner = container.activeOwner.value ?: return AvailabilityCheck.NotAnswered
@@ -520,21 +522,20 @@ internal class AndroidDownloads(
             ?: return AvailabilityCheck.NotAnswered
         // No answer, a refusal of the request, a server without the route:
         // none of them says a title is not the account's.
-        val available = withTimeoutOrNull(CHECK_WAIT_MS) { askAvailable(container.chinoApi, ids, bearer) }
+        val answer = withTimeoutOrNull(CHECK_WAIT_MS) { askAvailable(container.chinoApi, ids, bearer) }
             ?: return AvailabilityCheck.NotAnswered
         // The account changed meanwhile: the answer is not the one signed in now's.
         if (container.activeOwner.value != owner) return AvailabilityCheck.NotAnswered
         var result: AvailabilityChange? = null
         val change = engine.titles.change { titles ->
-            val c = applyAvailability(titles, owner, ids, available, currentTimeMillis())
+            val c = applyAvailability(titles, owner, ids, answer.ids, currentTimeMillis(), libraryTitles = answer.libraryTitles)
             result = c
             c.change
         }
         val c = result ?: return AvailabilityCheck.NotAnswered
-        if (!c.answered) return AvailabilityCheck.NotAnswered
         removeMedia(change.removed)
         // Answered for again: one that stopped as gone did not go.
-        for (id in available) {
+        for (id in answer.ids) {
             val key = downloadKey(owner.server, id)
             engine.titles.update(key) { if (it.failure == DownloadFailure.Gone) it.copy(failure = DownloadFailure.Stopped) else it }
         }

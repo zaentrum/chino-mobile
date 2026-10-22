@@ -107,16 +107,23 @@ fun checkDue(claim: OwnerClaim, now: Long): Boolean = now - claim.checkedAtMs >=
  *  moment never takes downloads off the phone. */
 const val GONE_CONFIRM_MS = 60L * 60 * 1000
 
+/** How far apart two answers that leave out every title asked must be
+ *  before a title goes, where nothing says the library still holds titles
+ *  for the account - a server that does not say so (a chino-api from before
+ *  the "titles" of POST /me/available, one asked title by title), or a
+ *  library that shows the account nothing: a library imported anew or reset
+ *  answers so for a while, and an hour of that takes nothing off the phone.
+ *  Two such answers a day apart still do - an account's only download above
+ *  its lowered cap goes, on every server. */
+const val EMPTY_ANSWER_CONFIRM_MS = 24L * 60 * 60 * 1000
+
 /** What the server's answer to a check came to: the titles as they are now,
  *  those it took off the phone for the account, and those it only marked -
- *  the first answer that they are not the account's any more. Not
- *  [answered]: the answer left out every title asked, which counts as none,
- *  and nothing changed. */
+ *  the first answer that they are not the account's any more. */
 data class AvailabilityChange(
     val change: BookChange,
     val deleted: List<DownloadedTitle>,
     val marked: List<DownloadedTitle> = emptyList(),
-    val answered: Boolean = true,
 )
 
 /**
@@ -128,9 +135,11 @@ data class AvailabilityChange(
  * else - it still plays, and its last good check stands; the second, an
  * hour or more after the first, takes the claim, the media with the last
  * one. Only an answer the server gave the owning account decides this; no
- * answer decides nothing - and an answer that leaves out every title asked
- * is none: a library imported anew or reset answers so for a while, and
- * that takes nothing off the phone, nor counts as a first answer.
+ * answer decides nothing. An answer that leaves out every title asked is
+ * the library's word only where the server says the library holds titles
+ * for the account ([libraryTitles] above 0, POST /me/available's "titles");
+ * else - a library imported anew or reset answers so for a while - its two
+ * answers must be [EMPTY_ANSWER_CONFIRM_MS] apart. Never one answer alone.
  */
 fun applyAvailability(
     titles: Map<String, DownloadedTitle>,
@@ -138,12 +147,14 @@ fun applyAvailability(
     asked: Collection<String>,
     available: Set<String>,
     now: Long,
+    libraryTitles: Int? = null,
 ): AvailabilityChange {
     val askedSet = asked.toSet()
     val ownedAsked = titles.values.filter { it.ownedBy(owner) && it.itemId in askedSet && it.claimOf(owner.subject) != null }
-    if (ownedAsked.isNotEmpty() && ownedAsked.none { it.itemId in available }) {
-        return AvailabilityChange(BookChange(titles), emptyList(), emptyList(), answered = false)
-    }
+    // The library's word for what the answer leaves out: it still answers
+    // for others of the account's, or the server says it holds titles for it.
+    val librarysWord = ownedAsked.any { it.itemId in available } || (libraryTitles ?: 0) > 0
+    val confirmAfter = if (librarysWord) GONE_CONFIRM_MS else EMPTY_ANSWER_CONFIRM_MS
     var book = BookChange(titles)
     val deleted = ArrayList<DownloadedTitle>()
     val marked = ArrayList<DownloadedTitle>()
@@ -161,12 +172,12 @@ fun applyAvailability(
                 marked += first
                 book = BookChange(book.titles + (t.key to first), book.removed)
             }
-            now - goneSince >= GONE_CONFIRM_MS -> {
+            now - goneSince >= confirmAfter -> {
                 deleted += t
                 val next = unclaim(book.titles, t.key, owner.subject)
                 book = BookChange(next.titles, book.removed + next.removed)
             }
-            // Said again within the hour: marked as it was, since the first.
+            // Said again too soon: marked as it was, since the first.
             else -> marked += t
         }
     }
@@ -193,6 +204,12 @@ fun stopReasonFor(title: DownloadedTitle?, active: Owner?, serverOffersDownloads
 /** How many titles one POST /me/available asks about. */
 const val MAX_AVAILABLE_IDS = 500
 
+/** The server's answer to which titles an account may watch now: [ids] of
+ *  those asked; and, with an answer that leaves out every title asked, how
+ *  many titles of the library the account may watch ([libraryTitles], POST
+ *  /me/available's "titles"; null where the server does not say). */
+data class AvailableAnswer(val ids: Set<String>, val libraryTitles: Int? = null)
+
 /**
  * The server's answer to which of [ids] the account with [bearer] may watch
  * now (POST /me/available), asked [MAX_AVAILABLE_IDS] at a time; null when
@@ -201,22 +218,24 @@ const val MAX_AVAILABLE_IDS = 500
  * it) is asked title by title instead, as its title route answers them
  * ([titleByTitle]): a title it answers 404 or 410 for is not the account's.
  */
-suspend fun askAvailable(api: ChinoApi, ids: List<String>, bearer: String?): Set<String>? {
+suspend fun askAvailable(api: ChinoApi, ids: List<String>, bearer: String?): AvailableAnswer? {
     val out = HashSet<String>()
+    var library: Int? = null
     for (chunk in ids.chunked(MAX_AVAILABLE_IDS)) {
         val answer = try {
             api.available(chunk, bearer)
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiStatusException) {
-            if (e.status == 404 || e.status == 405) return titleByTitle(api, ids, bearer)
+            if (e.status == 404 || e.status == 405) return titleByTitle(api, ids, bearer)?.let { AvailableAnswer(it) }
             return null
         } catch (e: Exception) {
             return null
         }
-        out += answer
+        out += answer.ids
+        answer.titles?.let { n -> library = maxOf(library ?: 0, n) }
     }
-    return out
+    return AvailableAnswer(out, library)
 }
 
 /** At most this many titles are asked about one by one, on a server from
@@ -225,8 +244,9 @@ const val MAX_TITLE_BY_TITLE = 100
 
 /** [ids] asked about one by one (GET /items/{id}, the title route a capped
  *  account is held to its cap on): those the server answers 2xx for; null
- *  for any other answer than 404 or 410, or none - and where it answers 404
- *  or 410 for every one, which says nothing of any of them. */
+ *  for any other answer than 404 or 410, or none. A 404 or 410 for every
+ *  one is an answer that leaves out every title asked, which such a server
+ *  never vouches for ([EMPTY_ANSWER_CONFIRM_MS]). */
 private suspend fun titleByTitle(api: ChinoApi, ids: List<String>, bearer: String?): Set<String>? {
     if (ids.size > MAX_TITLE_BY_TITLE) return null
     val out = HashSet<String>()
@@ -242,5 +262,5 @@ private suspend fun titleByTitle(api: ChinoApi, ids: List<String>, bearer: Strin
             return null
         }
     }
-    return out.takeIf { it.isNotEmpty() || ids.isEmpty() }
+    return out
 }
