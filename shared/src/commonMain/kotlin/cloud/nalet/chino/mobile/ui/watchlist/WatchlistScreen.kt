@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.watchlist
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.contentOn
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -574,7 +575,8 @@ internal fun DialogButton(label: String, containerColor: Color, onClick: () -> U
             .padding(horizontal = 20.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = label, color = Color.White, fontSize = 14.sp)
+        // Dark on a filled colour (blue, Delete's red), light on a neutral one.
+        Text(text = label, color = contentOn(containerColor), fontSize = 14.sp)
     }
 }
 

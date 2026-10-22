@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.feedback
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.contentOn
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -284,7 +285,6 @@ fun BugReportDialog(
                     DialogButton(
                         label = "Submit",
                         containerColor = ChinoCloudBlue,
-                        textColor = ChinoBg2,
                         enabled = !submitting && description.isNotBlank(),
                         busy = submitting,
                         onClick = submit,
@@ -299,7 +299,8 @@ fun BugReportDialog(
 private fun DialogButton(
     label: String,
     containerColor: Color,
-    textColor: Color = Color.White,
+    /** Dark on a filled colour, light on a neutral one. */
+    textColor: Color = contentOn(containerColor),
     enabled: Boolean = true,
     busy: Boolean = false,
     onClick: () -> Unit,

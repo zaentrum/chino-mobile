@@ -24,6 +24,7 @@ import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.notices.badgeText
 import cloud.nalet.chino.mobile.data.notices.bellLabel
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoMono
 import com.composables.icons.lucide.Bell
@@ -68,7 +69,7 @@ fun NoticesBell(onClick: () -> Unit) {
                     .clearAndSetSemantics {},
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = badge, color = ChinoBg, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, style = ChinoMono)
+                Text(text = badge, color = ChinoOnFill, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, style = ChinoMono)
             }
         }
     }

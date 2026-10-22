@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.browse
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -331,7 +332,7 @@ private fun BrowseCard(
                     Icon(
                         imageVector = Lucide.Check,
                         contentDescription = "Watched",
-                        tint = Color.White,
+                        tint = ChinoOnFill,
                         modifier = Modifier.size(12.dp),
                     )
                 }

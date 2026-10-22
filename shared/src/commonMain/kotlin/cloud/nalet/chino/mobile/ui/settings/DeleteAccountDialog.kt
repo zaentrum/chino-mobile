@@ -41,6 +41,7 @@ import cloud.nalet.chino.mobile.data.account.title
 import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
@@ -178,17 +179,19 @@ fun DeleteAccountDialog(
                     onClick = delete,
                     enabled = !deleting,
                     shape = RectangleShape,
+                    // The design system's red with its dark label; while it
+                    // deletes, the same, with the spinner.
                     colors = ButtonDefaults.buttonColors(
                         containerColor = ChinoRed,
-                        contentColor = Color.White,
-                        disabledContainerColor = ChinoRed.copy(alpha = 0.6f),
-                        disabledContentColor = Color.White,
+                        contentColor = ChinoOnFill,
+                        disabledContainerColor = ChinoRed,
+                        disabledContentColor = ChinoOnFill,
                     ),
                 ) {
                     if (deleting) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
-                            color = Color.White,
+                            color = ChinoOnFill,
                             strokeWidth = 2.dp,
                         )
                         Text(text = "Deleting…", modifier = Modifier.padding(start = 8.dp))

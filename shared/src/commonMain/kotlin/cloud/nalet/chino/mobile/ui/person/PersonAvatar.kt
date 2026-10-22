@@ -17,8 +17,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
-import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
-import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
+import cloud.nalet.chino.mobile.ui.theme.avatarColor
 import coil3.compose.AsyncImage
 
 /** Faces sit in the upper part of a portrait: keep them in the crop
@@ -47,13 +47,14 @@ internal fun PersonAvatar(
         modifier = modifier
             .size(width, if (portrait) width * 1.5f else width)
             .clip(RectangleShape)
-            .background(personAvatarColor(name))
+            .background(avatarColor(name))
             .clearAndSetSemantics {},
         contentAlignment = Alignment.Center,
     ) {
+        // Dark on its colour, as the account avatars' initials are.
         Text(
             text = initialsOf(name),
-            color = Color.White,
+            color = ChinoOnFill,
             fontSize = (width.value * 0.36f).sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -81,14 +82,3 @@ internal fun initialsOf(name: String): String =
 /** "1 title", "12 titles". */
 internal fun titleCount(count: Int): String = if (count == 1) "1 title" else "$count titles"
 
-/** A deterministic colour per name, from the account avatar's palette. */
-private fun personAvatarColor(seed: String): Color {
-    val palette = listOf(
-        ChinoCloudBlue, Color(0xFFFFB454), ChinoGreen, Color(0xFF9E86FF),
-        Color(0xFFFF6B6B), Color(0xFF14B8A6), Color(0xFFE879F9), Color(0xFFEAB308),
-        Color(0xFF38BDF8), Color(0xFFF472B6), Color(0xFF4ADE80), Color(0xFFFB923C),
-    )
-    val hash = seed.fold(0) { acc, c -> acc * 31 + c.code }
-    val idx = ((hash % palette.size) + palette.size) % palette.size
-    return palette[idx]
-}

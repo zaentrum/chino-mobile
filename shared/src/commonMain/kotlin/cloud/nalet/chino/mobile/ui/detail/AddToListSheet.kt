@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.detail
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -186,7 +187,7 @@ private fun ListCheckRow(name: String, checked: Boolean, onToggle: () -> Unit) {
                 Icon(
                     imageVector = Lucide.Check,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = ChinoOnFill,
                     modifier = Modifier.size(16.dp),
                 )
             }
@@ -230,7 +231,7 @@ private fun NewListInlineField(
                     Icon(
                         imageVector = Lucide.Check,
                         contentDescription = "Create and add",
-                        tint = Color.White,
+                        tint = ChinoOnFill,
                         modifier = Modifier.size(18.dp),
                     )
                 }

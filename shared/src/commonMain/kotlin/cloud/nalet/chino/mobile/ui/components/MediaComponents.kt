@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import cloud.nalet.chino.mobile.data.model.episodeCode
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -279,7 +280,7 @@ private fun HeroContentNarrow(
                 label = "Play",
                 icon = Lucide.Play,
                 background = ChinoCloudBlue,
-                contentColor = Color.White,
+                contentColor = ChinoOnFill,
                 compact = true,
                 onClick = { onPlay?.invoke(item.id) },
             )
@@ -413,7 +414,7 @@ private fun HeroContentWide(
                 label = "Play",
                 icon = Lucide.Play,
                 background = ChinoCloudBlue,
-                contentColor = Color.White,
+                contentColor = ChinoOnFill,
                 onClick = { onPlay?.invoke(item.id) },
             )
             HeroButton(
@@ -477,7 +478,7 @@ private fun YearRatingChipRow(item: Item) {
             ) {
                 Text(
                     text = ((r * 10).toInt() / 10.0).toString(),
-                    color = Color.White,
+                    color = ChinoOnFill,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
                 )
@@ -778,7 +779,7 @@ fun MediaCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-            // Watched badge — top-end emerald circle with a white check.
+            // Watched badge — top-end emerald square with a dark check.
             // Mirrors the TV PosterCard badge (RectangleShape, #2EA043). Shown
             // when chino-api reports a watched_at timestamp for the item.
             if (item.watchedAt != null) {
@@ -794,7 +795,7 @@ fun MediaCard(
                     Icon(
                         imageVector = Lucide.Check,
                         contentDescription = "Watched",
-                        tint = Color.White,
+                        tint = ChinoOnFill,
                         modifier = Modifier.size(12.dp),
                     )
                 }

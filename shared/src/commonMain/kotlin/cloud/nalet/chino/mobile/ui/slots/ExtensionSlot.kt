@@ -32,6 +32,7 @@ import cloud.nalet.chino.mobile.data.slots.SlotButton
 import cloud.nalet.chino.mobile.data.slots.SlotKind
 import cloud.nalet.chino.mobile.data.slots.slotButtons
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import com.composables.icons.lucide.Boxes
 import com.composables.icons.lucide.Clapperboard
 import com.composables.icons.lucide.Database
@@ -140,10 +141,10 @@ private fun SlotButtonView(button: SlotButton, resting: Boolean, onClick: () -> 
         Icon(
             imageVector = slotIcon(button.icon),
             contentDescription = null,
-            tint = Color.White,
+            tint = ChinoOnFill,
             modifier = Modifier.size(16.dp),
         )
-        Text(text = button.label, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text(text = button.label, color = ChinoOnFill, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
 }
 

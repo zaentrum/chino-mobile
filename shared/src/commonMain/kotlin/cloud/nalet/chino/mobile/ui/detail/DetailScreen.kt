@@ -15,12 +15,14 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
 import cloud.nalet.chino.mobile.ui.theme.PosterImage
+import cloud.nalet.chino.mobile.ui.theme.contentOn
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
@@ -728,14 +730,15 @@ private fun ActionRow(
         // (POST to mark, DELETE to un-mark).
         CircleIconButton(
             icon = if (watched) Lucide.Check else Lucide.Eye,
-            tint = Color.White,
+            tint = if (watched) ChinoOnFill else Color.White,
             background = if (watched) ChinoGreen else Color.White.copy(alpha = 0.1f),
             onClick = onToggleWatched,
         )
+        // Liked: the design system's red, the heart dark on it.
         CircleIconButton(
             icon = Lucide.Heart,
-            tint = Color.White,
-            background = if (liked) Color(0xFFE11D48) else Color.White.copy(alpha = 0.1f),
+            tint = if (liked) ChinoOnFill else Color.White,
+            background = if (liked) ChinoRed else Color.White.copy(alpha = 0.1f),
             onClick = onToggleLike,
         )
     }
@@ -757,17 +760,19 @@ private fun PillButton(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // On the blue fill, dark; on the neutral one, white.
+        val content = if (primary) ChinoOnFill else Color.White
         if (icon != null) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = Color.White,
+                tint = content,
                 modifier = Modifier.size(20.dp),
             )
         }
         Text(
             text = label,
-            color = Color.White,
+            color = content,
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium,
         )
@@ -823,7 +828,7 @@ private fun WatchlistButton(
             Icon(
                 imageVector = if (inAnyList) Lucide.Check else Lucide.Plus,
                 contentDescription = if (inAnyList) "In your lists" else "Add to watchlist",
-                tint = Color.White,
+                tint = if (inAnyList) ChinoOnFill else Color.White,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -1404,7 +1409,8 @@ private fun EpisodeStillChip(
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                tint = Color.White,
+                // Dark on the watched green, white on the dark chip.
+                tint = contentOn(background),
                 modifier = Modifier.size(14.dp),
             )
         }

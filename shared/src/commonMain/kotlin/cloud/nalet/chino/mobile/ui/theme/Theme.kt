@@ -20,8 +20,17 @@ import androidx.compose.ui.unit.sp
  *  variant — the same look ships on every platform. If the host OS is in
  *  light mode we still render dark; matches chino-web + chino-androidtv. */
 private val ChinoScheme = darkColorScheme(
+    // The filled colours, each with the dark label the design system puts
+    // on a fill ([ChinoOnFill]): a Material button, chip or badge on one of
+    // them takes it by itself.
     primary = ChinoCloudBlue,
-    onPrimary = ChinoBg,
+    onPrimary = ChinoOnFill,
+    secondary = ChinoGreen,
+    onSecondary = ChinoOnFill,
+    tertiary = ChinoWarning,
+    onTertiary = ChinoOnFill,
+    error = ChinoRed,
+    onError = ChinoOnFill,
     background = ChinoBg,
     onBackground = ChinoFg2,
     surface = ChinoSurface,

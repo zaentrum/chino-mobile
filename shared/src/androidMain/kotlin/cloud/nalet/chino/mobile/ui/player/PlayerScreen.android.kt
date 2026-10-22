@@ -122,6 +122,7 @@ import cloud.nalet.chino.mobile.ui.feedback.BugReportDialog
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Captions
 import com.composables.icons.lucide.ChevronLeft
@@ -2766,7 +2767,7 @@ private fun CheckboxIndicator(selected: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         if (selected) {
-            Text(text = "1", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(text = "1", color = ChinoOnFill, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -2932,7 +2933,7 @@ private fun AutoNextOverlay(
                             .clickable(onClick = onPlayNow)
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) {
-                        Text(text = "Play now", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(text = "Play now", color = ChinoOnFill, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
                     Box(
                         modifier = Modifier
@@ -3013,12 +3014,12 @@ private fun NextEpisodeCard(
                             // intent), Play for the plain manual button.
                             imageVector = if (secondsLeft != null) Lucide.SkipForward else Lucide.Play,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = ChinoOnFill,
                             modifier = Modifier.size(16.dp),
                         )
                         Text(
                             text = "Next episode",
-                            color = Color.White,
+                            color = ChinoOnFill,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                         )

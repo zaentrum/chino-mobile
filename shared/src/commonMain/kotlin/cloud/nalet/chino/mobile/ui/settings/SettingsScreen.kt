@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.ui.settings
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
@@ -382,7 +383,7 @@ private fun LangPickerRow(
                 ) {
                     Text(
                         text = name,
-                        color = Color.White,
+                        color = if (on) ChinoOnFill else Color.White,
                         fontSize = 13.sp,
                         fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                     )
