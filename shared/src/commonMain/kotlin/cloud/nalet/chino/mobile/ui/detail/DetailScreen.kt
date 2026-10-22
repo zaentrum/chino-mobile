@@ -3,8 +3,21 @@ package cloud.nalet.chino.mobile.ui.detail
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.style.TextAlign
+import cloud.nalet.chino.mobile.data.downloads.hasDownloadControl
 import cloud.nalet.chino.mobile.data.model.episodeCode
 import cloud.nalet.chino.mobile.data.model.fileEntries
+import cloud.nalet.chino.mobile.ui.components.CouldntLoad
+import cloud.nalet.chino.mobile.ui.downloads.EpisodeDownloadControl
+import cloud.nalet.chino.mobile.ui.downloads.SeasonDownloadControl
+import cloud.nalet.chino.mobile.ui.downloads.SeriesDownloadSummary
+import cloud.nalet.chino.mobile.ui.downloads.InformationBanner
+import cloud.nalet.chino.mobile.data.downloads.Reach
+import cloud.nalet.chino.mobile.data.downloads.UNREACHABLE_BANNER
+import cloud.nalet.chino.mobile.data.api.LoadFailure
+import cloud.nalet.chino.mobile.data.api.sentence
+import cloud.nalet.chino.mobile.ui.auth.AuthScreen
+import androidx.compose.ui.draw.alpha
+import cloud.nalet.chino.mobile.ui.downloads.TitleDownloadControl
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
@@ -147,6 +160,31 @@ class DetailScreen(private val itemId: String) : Screen {
             }
         }
         val state by model.state.collectAsState()
+        // The page from the phone, and the server answers again: its own
+        // page. While it doesn't, a look at it now and then.
+        val reach by container.serverReach.state.collectAsState()
+        val fromThePhone = (state as? DetailUiState.Ready)?.offline != null
+        LaunchedEffect(reach, fromThePhone) {
+            if (!fromThePhone) return@LaunchedEffect
+            if (reach == Reach.Reachable) {
+                model.retry()
+                return@LaunchedEffect
+            }
+            while (true) {
+                delay(OFFLINE_RECHECK_MS)
+                if (container.serverReach.check() == Reach.Reachable) break
+            }
+        }
+        // Which downloads wait for their check with the server, as it stands
+        // now: they don't play from the phone's page.
+        val downloadEntries by remember(container) {
+            container.downloads?.entries ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList())
+        }.collectAsState()
+        val waitingForCheck = remember(downloadEntries) {
+            downloadEntries.filter { it.status is cloud.nalet.chino.mobile.data.downloads.DownloadStatus.CheckNeeded }
+                .map { it.itemId }
+                .toSet()
+        }
         val watchlist by container.userFlags.watchlist.collectAsState()
         val likes by container.userFlags.likes.collectAsState()
         val watchedOverride by model.watchedOverride.collectAsState()
@@ -173,14 +211,41 @@ class DetailScreen(private val itemId: String) : Screen {
         Scaffold(containerColor = MaterialTheme.colorScheme.background) { _ ->
             when (val s = state) {
                 DetailUiState.Loading -> Center { CircularProgressIndicator() }
-                is DetailUiState.Error -> Center { Text(s.message, color = MaterialTheme.colorScheme.error) }
+                // The design system's "couldn't load" screen, by its case: what
+                // was removed or is not the viewer's offers the way back - trying
+                // again cannot bring it back; a sign-in that no longer holds is
+                // no empty state, but the sign-in.
+                is DetailUiState.Error -> when (s.failure) {
+                    LoadFailure.Removed -> CouldntLoad(
+                        title = "this title isn't in the library anymore",
+                        sentence = null,
+                        action = "back",
+                        onAction = { if (!closeGuard.holdsInput()) nav.pop() },
+                        details = s.details,
+                    )
+                    LoadFailure.NoAccess -> CouldntLoad(
+                        title = "you don't have access to this",
+                        sentence = null,
+                        action = "back",
+                        onAction = { if (!closeGuard.holdsInput()) nav.pop() },
+                        details = s.details,
+                    )
+                    LoadFailure.SignedOut -> LaunchedEffect(Unit) { nav.replaceAll(AuthScreen()) }
+                    else -> CouldntLoad(
+                        title = "couldn't load this title",
+                        sentence = s.failure.sentence(),
+                        action = "try again",
+                        onAction = { model.retry() },
+                        details = s.details,
+                    )
+                }
                 is DetailUiState.Ready -> {
                     // Effective watched state: the user's optimistic flip this
                     // session wins; otherwise follow the server-stamped
                     // watched_at. Mirrors chino-web's `watchedOverride ?? !!watched_at`.
                     val watched = watchedOverride ?: (s.item.watchedAt != null)
                     ReadyContent(
-                        ready = s,
+                        ready = s.offline?.let { o -> s.copy(offline = o.copy(waitingForCheck = waitingForCheck)) } ?: s,
                         inWatchlist = inAnyList,
                         liked = effectiveId in likes,
                         watched = watched,
@@ -324,7 +389,7 @@ private fun ReadyContent(
             // Backdrop hero — web uses `aspect-[21/9] max-h-[60vh]`.
             Box(modifier = Modifier.fillMaxWidth().height(backdropH)) {
                 AsyncImage(
-                    model = "${ready.baseUrl}/v1/items/${item.id}/backdrop?stream=${ready.streamToken}",
+                    model = ready.offline?.backdropUrl ?: "${ready.baseUrl}/v1/items/${item.id}/backdrop?stream=${ready.streamToken}",
                     contentDescription = item.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
@@ -353,7 +418,7 @@ private fun ReadyContent(
                 val isWideDetail = maxWidth >= 600.dp
                 val poster: @Composable () -> Unit = {
                     PosterImage(
-                        model = "${ready.baseUrl}/v1/items/${item.id}/poster?stream=${ready.streamToken}",
+                        model = ready.offline?.posterUrl ?: "${ready.baseUrl}/v1/items/${item.id}/poster?stream=${ready.streamToken}",
                         title = item.title,
                         contentDescription = item.title,
                         contentScale = ContentScale.Crop,
@@ -366,6 +431,9 @@ private fun ReadyContent(
                 }
                 val content: @Composable (Modifier, androidx.compose.ui.unit.TextUnit) -> Unit = { mod, titleSize ->
                     Column(modifier = mod, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        // From the phone: the server can't be reached, the
+                        // downloads play all the same.
+                        if (ready.offline != null) InformationBanner(UNREACHABLE_BANNER)
                         // The web's h1: the heading face.
                         Text(
                             text = item.title,
@@ -393,7 +461,19 @@ private fun ReadyContent(
                             liked = liked,
                             watched = watched,
                             isSeries = item.kind == "series",
-                            trailer = trailer,
+                            // What needs the server is not there from the phone.
+                            trailer = trailer.takeIf { ready.offline == null },
+                            serverActions = ready.offline == null,
+                            // A download waiting for its check does not play;
+                            // its control says why.
+                            playEnabled = ready.offline?.waitingForCheck?.contains(item.id) != true,
+                            download = when {
+                                hasDownloadControl(item.kind) -> { { TitleDownloadControl(item.id, item.durationMs) } }
+                                item.kind == "series" && ready.seasons.isNotEmpty() -> {
+                                    { SeriesDownloadSummary(ready.seasons.flatMap { fileEntries(it.episodes) }) }
+                                }
+                                else -> null
+                            },
                             onResume = { onPlay(false) },
                             onPlay = { onPlay(false) },
                             onStartOver = { onPlay(true) },
@@ -419,8 +499,9 @@ private fun ReadyContent(
                             )
                         }
                         // Starring (billing order, with characters), the crew
-                        // by role, Subtitles / Analyzed — chino-web's strip.
-                        MetaStrip(item, onPersonNavigate)
+                        // by role, Subtitles / Analyzed — chino-web's strip;
+                        // not from the phone, whose people go to the server.
+                        if (ready.offline == null) MetaStrip(item, onPersonNavigate)
                     }
                 }
                 if (isWideDetail) {
@@ -465,6 +546,7 @@ private fun ReadyContent(
                         seasons = ready.seasons,
                         baseUrl = ready.baseUrl,
                         streamToken = ready.streamToken,
+                        offline = ready.offline,
                         episodeWatched = episodeWatched,
                         episodeResume = episodeResume,
                         focusEpisodeId = ready.focusEpisodeId,
@@ -515,6 +597,9 @@ private fun ReadyContent(
 /** How long the page waits, back on it, before it refreshes quietly: the
  *  player sends its last progress save as it closes. */
 private const val REFRESH_ON_RETURN_DELAY_MS = 500L
+
+/** How often the page from the phone asks the server again. */
+private const val OFFLINE_RECHECK_MS = 15_000L
 
 /** Where the Back / Home row starts under the status bar, and how big its
  *  buttons are: the poster starts below them (heroOverlap). */
@@ -647,6 +732,13 @@ private fun ActionRow(
     isSeries: Boolean = false,
     /** The Trailer pill's choice; null: no pill. */
     trailer: TrailerChoice? = null,
+    /** The download control, next to "play" (ui/downloads); null: none. */
+    download: (@Composable () -> Unit)? = null,
+    /** Watchlist, lists, watched, like: false from the phone, where they
+     *  would need the server. */
+    serverActions: Boolean = true,
+    /** Play: false for a download waiting for its check with the server. */
+    playEnabled: Boolean = true,
     onResume: () -> Unit,
     onPlay: () -> Unit,
     onStartOver: () -> Unit,
@@ -674,13 +766,15 @@ private fun ActionRow(
                     icon = Lucide.Play,
                     primary = true,
                     onClick = onResume,
+                    enabled = playEnabled,
                 )
-                PillButton(label = "Start over", icon = null, primary = false, onClick = onStartOver)
+                PillButton(label = "Start over", icon = null, primary = false, onClick = onStartOver, enabled = playEnabled)
             }
             else -> {
-                PillButton(label = "Play", icon = Lucide.Play, primary = true, onClick = onPlay)
+                PillButton(label = "Play", icon = Lucide.Play, primary = true, onClick = onPlay, enabled = playEnabled)
             }
         }
+        download?.invoke()
         // Trailer, for movies and series alike (web: DetailPage.tsx): the
         // clapperboard plays this server's trailer in the app, the YouTube
         // mark opens the link.
@@ -696,7 +790,8 @@ private fun ActionRow(
         // pressed state recolours to emerald (watchlist/watched) or rose (like).
         // The watchlist button is now an ADD-TO-LIST control: plain tap adds to
         // the default list (filled = in >=1 list), long-press OR the trailing
-        // caret opens the per-list picker.
+        // caret opens the per-list picker. None from the phone.
+        if (!serverActions) return@FlowRow
         WatchlistButton(
             inAnyList = inWatchlist,
             onToggle = onToggleWatchlist,
@@ -726,12 +821,14 @@ private fun PillButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector?,
     primary: Boolean,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
             .clip(RectangleShape)
             .background(if (primary) ChinoCloudBlue else Color.White.copy(alpha = 0.1f))
-            .clickable(onClick = onClick)
+            .alpha(if (enabled) 1f else 0.4f)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -872,6 +969,9 @@ private fun EpisodesSection(
     seasons: List<cloud.nalet.chino.mobile.data.api.Season>,
     baseUrl: String,
     streamToken: String,
+    /** The page from the phone: its episodes' stills, and no server-only
+     *  controls. */
+    offline: OfflineDetail? = null,
     episodeWatched: Map<String, Boolean>,
     episodeResume: Map<String, EpisodeResume>,
     /** When set, the season containing this episode is auto-expanded and the
@@ -901,6 +1001,7 @@ private fun EpisodesSection(
                     season = season,
                     baseUrl = baseUrl,
                     streamToken = streamToken,
+                    offline = offline,
                     episodeWatched = episodeWatched,
                     episodeResume = episodeResume,
                     focusEpisodeId = if (containsFocus) focusEpisodeId else null,
@@ -920,6 +1021,7 @@ private fun SeasonRow(
     season: cloud.nalet.chino.mobile.data.api.Season,
     baseUrl: String,
     streamToken: String,
+    offline: OfflineDetail? = null,
     episodeWatched: Map<String, Boolean>,
     episodeResume: Map<String, EpisodeResume>,
     focusEpisodeId: String?,
@@ -965,7 +1067,7 @@ private fun SeasonRow(
                     modifier = Modifier.align(Alignment.CenterVertically),
                 )
                 Text(
-                    text = "${season.episodes.size} episodes",
+                    text = if (season.episodes.size == 1) "1 episode" else "${season.episodes.size} episodes",
                     color = ChinoMuted,
                     fontSize = 14.sp,
                     maxLines = 1,
@@ -978,6 +1080,17 @@ private fun SeasonRow(
                 contentDescription = if (expanded) "Collapse" else "Expand",
                 tint = ChinoMuted,
                 modifier = Modifier.size(20.dp),
+            )
+        }
+        // All of the season's episodes at once, or how far it is on the
+        // phone (ui/downloads) - not from the phone, which knows only the
+        // episodes it has.
+        if (offline == null) {
+            SeasonDownloadControl(
+                season = season.season,
+                entries = fileEntries(season.episodes),
+                expanded = expanded,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
             )
         }
         if (expanded) {
@@ -1012,6 +1125,7 @@ private fun SeasonRow(
                             lastEpisodeNumber = entry.last,
                             baseUrl = baseUrl,
                             streamToken = streamToken,
+                            offline = offline,
                             watched = epWatched,
                             resume = entry.ids.firstNotNullOfOrNull { episodeResume[it] },
                             focused = focusEpisodeId != null && focusEpisodeId in entry.ids,
@@ -1041,6 +1155,9 @@ private fun EpisodeRow(
     lastEpisodeNumber: Int? = null,
     baseUrl: String,
     streamToken: String,
+    /** The page from the phone: the still from the phone, no watched or
+     *  add-to-list chips. */
+    offline: OfflineDetail? = null,
     watched: Boolean,
     /** Non-null when the continue-watching feed has this episode in
      *  progress — drives the thumbnail progress bar + "Resume" meta line.
@@ -1104,7 +1221,8 @@ private fun EpisodeRow(
                 Modifier
             },
         )
-        .clickable(onClick = onClick)
+        // A download waiting for its check does not play: its control says why.
+        .clickable(enabled = offline?.waitingForCheck?.contains(episode.id) != true, onClick = onClick)
         .padding(
             horizontal = if (several) EPISODE_ROW_PADDING - EPISODE_BOX_INSET else EPISODE_ROW_PADDING,
             vertical = 12.dp,
@@ -1125,7 +1243,7 @@ private fun EpisodeRow(
                     .background(ChinoBg2),
             ) {
                 AsyncImage(
-                    model = "$baseUrl/v1/items/${episode.id}/backdrop?stream=$streamToken",
+                    model = if (offline != null) offline.stills[episode.id] else "$baseUrl/v1/items/${episode.id}/backdrop?stream=$streamToken",
                     contentDescription = episode.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
@@ -1159,8 +1277,9 @@ private fun EpisodeRow(
             // Always rendered so a watched episode keeps a visible green
             // check; unwatched rows get a subtle dark Eye chip the user can
             // tap to mark watched. The tap is consumed here so it doesn't
-            // also fire the row's open-player click.
-            EpisodeStillChip(
+            // also fire the row's open-player click. Not from the phone: both
+            // chips need the server.
+            if (offline == null) EpisodeStillChip(
                 icon = if (watched) Lucide.Check else Lucide.Eye,
                 contentDescription = if (watched) "Mark episode as unwatched" else "Mark episode as watched",
                 background = if (watched) ChinoGreen else Color(0x99000000),
@@ -1172,7 +1291,7 @@ private fun EpisodeRow(
             // watched pip's styling). Opens the add-to-list picker targeting
             // THIS episode; the tap is consumed here so it doesn't also fire
             // the row's open-player click.
-            EpisodeStillChip(
+            if (offline == null) EpisodeStillChip(
                 icon = Lucide.Plus,
                 contentDescription = "Add episode to list",
                 background = Color(0x99000000),
@@ -1312,6 +1431,12 @@ private fun EpisodeRow(
             }
         }
     }
+    // The episode's own download control - the file's, for a box - across
+    // the row's whole width, under the still and the text: its label stays
+    // on one line ("can't be downloaded").
+    val download: @Composable () -> Unit = {
+        EpisodeDownloadControl(episode.id, fileDurationMs, modifier = Modifier.fillMaxWidth())
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         // Large text on a narrow phone: the still above the text, which then
         // has the row's width. Beside the still the column was narrower than
@@ -1325,11 +1450,15 @@ private fun EpisodeRow(
             Column(modifier = rowModifier, verticalArrangement = Arrangement.spacedBy(EPISODE_ROW_GAP)) {
                 still()
                 details(Modifier.fillMaxWidth())
+                download()
             }
         } else {
-            Row(modifier = rowModifier, horizontalArrangement = Arrangement.spacedBy(EPISODE_ROW_GAP)) {
-                still()
-                details(Modifier.weight(1f))
+            Column(modifier = rowModifier, verticalArrangement = Arrangement.spacedBy(EPISODE_ROW_GAP)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(EPISODE_ROW_GAP)) {
+                    still()
+                    details(Modifier.weight(1f))
+                }
+                download()
             }
         }
     }

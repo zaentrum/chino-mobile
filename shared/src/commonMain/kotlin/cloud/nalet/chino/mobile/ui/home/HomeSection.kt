@@ -35,6 +35,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.model.Item
+import cloud.nalet.chino.mobile.ui.components.CouldntLoad
 import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
 import cloud.nalet.chino.mobile.ui.components.EpisodeBadge
@@ -75,7 +76,17 @@ fun HomeSection(
 
     when (val s = state) {
         HomeUiState.Loading -> Center { CircularProgressIndicator() }
-        is HomeUiState.Error -> Center {
+        // The design system's "couldn't load" screen, with "try again"; a
+        // sign-in the server refuses has its own ways on, below.
+        is HomeUiState.Error -> if (!s.signInRefused) {
+            CouldntLoad(
+                title = "couldn't load the library",
+                sentence = s.message,
+                action = "try again",
+                onAction = { model.retry() },
+                details = s.details,
+            )
+        } else Center {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),

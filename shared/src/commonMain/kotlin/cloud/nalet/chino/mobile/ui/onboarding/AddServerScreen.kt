@@ -57,6 +57,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
+import cloud.nalet.chino.mobile.data.downloads.CHANGE_SERVER_TITLE
+import cloud.nalet.chino.mobile.data.downloads.yourDownloadsGoSentence
+import cloud.nalet.chino.mobile.ui.downloads.DownloadsGoQuestion
+import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
 import cafe.adriel.voyager.core.screen.ScreenKey
 import cafe.adriel.voyager.core.screen.uniqueScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -119,6 +123,17 @@ class AddServerScreen(private val changeServer: Boolean = false) : Screen {
         }
 
         val probing = state is AddServerState.Probing
+
+        // Changing to another server deletes the downloads of this one:
+        // asked once the new server answered.
+        (state as? AddServerState.AskDropDownloads)?.let { ask ->
+            DownloadsGoQuestion(
+                title = CHANGE_SERVER_TITLE,
+                sentence = yourDownloadsGoSentence(ask.summary, LocalDeviceKind.current),
+                onConfirm = { model.confirm() },
+                onDismiss = { model.cancel() },
+            )
+        }
 
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(

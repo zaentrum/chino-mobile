@@ -4,10 +4,22 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Downloads: the service they run in, in the foreground while one is
+         on its way (never while they wait), with a notification of how far
+         it is (shared downloads/). Its type is dataSync. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Downloads that waited for a connection carry on in the background
+         once it is back (Android 14 and later): a user-initiated data
+         transfer job (DownloadResumeJob). -->
+    <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
 
     <application
         android:name=".ChinoMobileApplication"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:networkSecurityConfig="@xml/network_security_config"
         android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
@@ -27,5 +39,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Downloads run in Media3's DownloadService (shared downloads/). -->
+        <service
+            android:name="cloud.nalet.chino.mobile.downloads.ChinoDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
+            <intent-filter>
+                <action android:name="androidx.media3.exoplayer.downloadService.action.RESTART" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="cloud.nalet.chino.mobile.downloads.DownloadResumeJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 </manifest>

@@ -2,7 +2,7 @@
 # Generate a self-contained Compose ImageVector set for the Lucide icons the
 # shared module uses, under package com.composables.icons.lucide (same API as
 # the icons-lucide-cmp library) so no call sites change. Geometry comes straight
-# from Lucide's MIT-licensed SVG source -> identical glyphs, no external klib.
+# from Lucide's ISC-licensed SVG source -> identical glyphs, no external klib.
 import os, urllib.request, xml.etree.ElementTree as ET, sys
 
 # Output: the vendored Lucide.kt in this repo, found relative to this script
@@ -65,7 +65,7 @@ def fetch(name):
     with urllib.request.urlopen(BASE.format(name),timeout=20) as r: return r.read().decode()
 
 out=[]
-out.append("""// AUTO-GENERATED from Lucide's MIT-licensed SVG source (lucide.dev).
+out.append("""// AUTO-GENERATED from Lucide's ISC-licensed SVG source (lucide.dev).
 // Self-contained replacement for the icons-lucide-cmp library: its iOS klib is
 // built with Kotlin 2.2.x (ABI 2.2.0) and is unreadable by this project's
 // Kotlin 2.1.0 / Kotlin-Native compiler. Same package + accessor names, so no

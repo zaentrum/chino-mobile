@@ -203,6 +203,10 @@ actual class PlayerScreen actual constructor(
 
         var ready: PlayState? by remember { mutableStateOf(null) }
         var error: String? by remember { mutableStateOf(null) }
+        // A download that may not play: the server took it off the phone, or
+        // it waits for the server's check (downloads/DownloadedPlayback.kt).
+        var downloadNote: String? by remember { mutableStateOf(null) }
+        val device = cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind.current
         // An extra that is not there: gone from the detail, or its master
         // answers 404 (at the load, or once playing).
         var notAvailable: ExtraPlayback.NotAvailable? by remember { mutableStateOf(null) }
@@ -210,12 +214,32 @@ actual class PlayerScreen actual constructor(
         LaunchedEffect(itemId, fromStart, resumeSec, extraId) {
             ready = null
             error = null
+            downloadNote = null
             notAvailable = null
             try {
                 val base = container.config.apiBaseUrl.trimEnd('/')
                 // The caps as playback starts: the output the sound goes to
                 // now says whether a Dolby bitstream passes through.
                 val caps = CodecCaps.queryParam(appContext)
+                // A title on this phone plays from its download, with the
+                // server or without it (downloads/DownloadedPlayback.kt).
+                if (extraId == null) {
+                    when (val local = cloud.nalet.chino.mobile.downloads.downloadedSession(appContext, container, itemId, fromStart, resumeSec)) {
+                        is cloud.nalet.chino.mobile.downloads.LocalPlay.Ready -> {
+                            ready = downloadedPlayState(local.session, itemId, base, caps, container.settings.flow.first())
+                            return@LaunchedEffect
+                        }
+                        cloud.nalet.chino.mobile.downloads.LocalPlay.NoLongerAvailable -> {
+                            downloadNote = cloud.nalet.chino.mobile.data.downloads.deletedOneSentence(device)
+                            return@LaunchedEffect
+                        }
+                        cloud.nalet.chino.mobile.downloads.LocalPlay.CheckNeeded -> {
+                            downloadNote = cloud.nalet.chino.mobile.data.downloads.CHECK_NEEDED_SENTENCE
+                            return@LaunchedEffect
+                        }
+                        cloud.nalet.chino.mobile.downloads.LocalPlay.None -> Unit
+                    }
+                }
                 // An extra: the title's detail and the extra's master, and
                 // nothing else of the server's (PlayerMode.Extra) — what
                 // /play/info says of a title is read off the master, signed
@@ -392,8 +416,21 @@ actual class PlayerScreen actual constructor(
             }
         }
 
+        // Playing from the phone, and the server takes the title off it now
+        // (a check elsewhere, a refusal of its progress): playback stops, and
+        // the player says why.
+        LaunchedEffect(itemId) {
+            container.downloadsTaken.collect { taken ->
+                if (itemId in taken && ready?.local != null) {
+                    ready = null
+                    downloadNote = cloud.nalet.chino.mobile.data.downloads.deletedOneSentence(device)
+                }
+            }
+        }
         val missing = notAvailable
+        val note = downloadNote
         when {
+            note != null -> DownloadNotPlaying(message = note, onBack = close)
             missing != null -> ExtraNotAvailable(title = missing.title, link = missing.link, onBack = close)
             error != null -> ErrorState(message = error!!, itemId = itemId, extraId = extraId, onBack = close)
             ready == null -> LoadingState()
@@ -464,6 +501,9 @@ private data class PlayState(
      *  for non-packaged items (or when the fetch failed) — the scrubber
      *  then shows time/segment text only. */
     val trickplayCues: List<TrickplayCue>,
+    /** The title's download, when it plays from the phone; null when it
+     *  streams. */
+    val local: cloud.nalet.chino.mobile.downloads.DownloadedSession? = null,
     /** What it plays, a title or one of its extras: what it reads and
      *  writes ([PlayerMode]). */
     val playerMode: PlayerMode,
@@ -475,8 +515,45 @@ private data class PlayState(
     /** The master at [quality]: a title's ([buildMasterUrl]), else the
      *  extra's — `q` for a rung the viewer picked ([withQuality]). */
     fun masterUrl(quality: String): String =
-        extra?.let { withQuality(it.masterUrl, quality) } ?: buildMasterUrl(base, itemId, streamToken, quality, caps)
+        // A download's: the one on the phone, whatever the quality.
+        local?.masterUri ?: extra?.let { withQuality(it.masterUrl, quality) } ?: buildMasterUrl(base, itemId, streamToken, quality, caps)
 }
+
+/** The play state of a title played from its download
+ *  ([cloud.nalet.chino.mobile.downloads.downloadedSession]): what was kept of
+ *  it - its play info, segments, subtitles and heading - in its one
+ *  rendition, so no quality menu, and no scrub previews. */
+private fun downloadedPlayState(
+    local: cloud.nalet.chino.mobile.downloads.DownloadedSession,
+    itemId: String,
+    base: String,
+    caps: String,
+    settings: cloud.nalet.chino.mobile.data.AppSettings,
+): PlayState = PlayState(
+    itemId = itemId,
+    base = base,
+    streamToken = "",
+    caps = caps,
+    currentQuality = AUTO_QUALITY,
+    qualities = emptyList(),
+    resumeMs = local.startMs,
+    writable = local.writable,
+    audioPref = settings.preferredAudioLang,
+    subtitlePref = settings.preferredSubLang,
+    firstAudioLang = preferredAudioTrack(local.title.info?.audioTracks.orEmpty(), settings.preferredAudioLang)?.language
+        ?: local.title.audioLanguages.firstOrNull(),
+    title = local.heading,
+    info = local.title.info,
+    segments = local.title.segments,
+    prevEpisodeId = local.prevEpisodeId,
+    nextEpisodeId = local.nextEpisodeId,
+    sidecarSubtitles = local.sidecars,
+    trickplayCues = emptyList(),
+    playerMode = PlayerMode.Title,
+    extraId = null,
+    extra = null,
+    local = local,
+)
 
 private enum class OpenPopover { NONE, SPEED, AUDIO, CAPTIONS, INFO, VOLUME, QUALITY }
 
@@ -583,6 +660,32 @@ private fun LoadingState() {
         CircularProgressIndicator(color = Color(0xFF58A6FF))
     }
 }
+
+/** A download that does not play, and why - the server took it off the
+ *  phone, or it waits for the server's check - with the way back. Not a
+ *  failure to report: the app does what the library decided. */
+@Composable
+private fun DownloadNotPlaying(message: String, onBack: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(horizontal = 24.dp),
+        ) {
+            Text(text = message, color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Box(
+                modifier = Modifier
+                    .clip(androidx.compose.ui.graphics.RectangleShape)
+                    .background(Color(0x1AFFFFFF))
+                    .clickable(onClick = onBack)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+            ) {
+                Text(text = "back", color = Color.White, style = cloud.nalet.chino.mobile.ui.theme.ChinoMono)
+            }
+        }
+    }
+}
+
 
 /** Terminal playback failure — both the prepare-time catch and Media3's
  *  onPlayerError land here (the auto bug report has already fired by then).
@@ -730,14 +833,9 @@ private fun PlaybackSurface(
     fun saveProgress(p: ExoPlayer) {
         val pos = guard.position() ?: return
         val durMs = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.info?.durationMs ?: 0L
-        container.appScope.launch {
-            runCatching {
-                container.chinoApi.postProgress(
-                    itemId,
-                    cloud.nalet.chino.mobile.data.api.ProgressBody(positionSec = pos, durationSec = (durMs / 1000L).toInt()),
-                )
-            }
-        }
+        // Sent at once, or kept on the phone and sent once the server can
+        // be reached (ProgressSync).
+        container.progressSync.save(itemId, positionSec = pos, durationSec = (durMs / 1000L).toInt())
     }
 
     // On the app's one connection pool (SharedConnections): the master goes
@@ -798,7 +896,8 @@ private fun PlaybackSurface(
                 return super.getRetryDelayMsFor(info)
             }
         }
-        val hlsFactory = HlsMediaSource.Factory(httpFactory).setLoadErrorHandlingPolicy(retryPolicy)
+        // A download plays from the phone alone; a stream from the server.
+        val hlsFactory = HlsMediaSource.Factory(state.local?.mediaSources ?: httpFactory).setLoadErrorHandlingPolicy(retryPolicy)
         // The 5.1 companions next to their stereo twins, in one group:
         // Media3 is told each rendition's codec, /play/info's, so it starts
         // from the master alone instead of loading every rendition first
@@ -811,6 +910,8 @@ private fun PlaybackSurface(
                 MediaItem.Builder()
                     .setUri(activeMasterUrl)
                     .setMimeType(MimeTypes.APPLICATION_M3U8)
+                    // A download's renditions, the ones on the phone.
+                    .setStreamKeys(state.local?.streamKeys.orEmpty())
                     .build(),
             )
         // Side-load each VTT as its own SingleSampleMediaSource and merge.
@@ -835,7 +936,8 @@ private fun PlaybackSurface(
             //   "Legacy decoding is disabled, can't handle text/vtt
             //    samples (expected application/x-media3-cues)".
             val sideSources = sideSubs.map { cfg ->
-                androidx.media3.exoplayer.source.SingleSampleMediaSource.Factory(httpFactory)
+                // A download's subtitles are files beside it.
+                androidx.media3.exoplayer.source.SingleSampleMediaSource.Factory(state.local?.sidecarSources ?: httpFactory)
                     .createMediaSource(cfg, C.TIME_UNSET)
             }
             androidx.media3.exoplayer.source.MergingMediaSource(
@@ -1144,7 +1246,10 @@ private fun PlaybackSurface(
                 val credits = inCredits(state.segments, playedMs)
                 if (state.playerMode.watched && !markedWatched && reachedWatched(playedMs, durationMs, credits)) {
                     markedWatched = true
-                    container.appScope.launch { runCatching { container.chinoApi.postWatched(itemId) } }
+                    // Sent at once, or kept and sent once the server can be
+                    // reached: a title finished in its credits offline is
+                    // watched all the same (ProgressSync).
+                    container.progressSync.markWatched(itemId)
                     playbackEvent(
                         "mark_watched",
                         mapOf("at" to (playedMs / 1000).toString(), "via" to if (credits) "credits" else "p95"),

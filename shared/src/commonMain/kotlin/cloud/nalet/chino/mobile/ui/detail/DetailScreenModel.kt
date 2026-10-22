@@ -4,7 +4,11 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
+import cloud.nalet.chino.mobile.data.api.LoadFailure
+import cloud.nalet.chino.mobile.data.api.loadDetails
+import cloud.nalet.chino.mobile.data.api.loadFailure
 import cloud.nalet.chino.mobile.data.api.watchlistRefusal
+import cloud.nalet.chino.mobile.data.downloads.DownloadStatus
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -36,12 +40,34 @@ sealed interface DetailUiState {
         /** Series only: episodeId -> in-progress resume state derived from the
          *  continue-watching feed. Rows absent here have nothing to resume. */
         val episodeResume: Map<String, EpisodeResume> = emptyMap(),
+        /** The page built from what is on the phone, while the server cannot
+         *  be reached; null for the server's page. */
+        val offline: OfflineDetail? = null,
     ) : DetailUiState {
         /** The play button: what the player will do with [resumePositionSec]. */
         val playAction: PlayAction get() = playAction(resumePositionSec, (item.durationMs ?: 0L) / 1000.0)
     }
-    data class Error(val message: String) : DetailUiState
+    /** It couldn't load, and why: the design system's case ([failure], by
+     *  the answer's status) and what separates it ([details]). */
+    data class Error(val failure: LoadFailure, val details: String) : DetailUiState
 }
+
+/**
+ * A title's page from what the phone keeps of it (the downloads), for when
+ * the server cannot be reached: its artwork from the phone, where it resumes
+ * as played here or as saved when it was downloaded, the episodes on the
+ * phone by season. What needs the server - watchlist, lists, the watched
+ * toggle, the trailer, the people - is not there.
+ */
+data class OfflineDetail(
+    val posterUrl: String?,
+    val backdropUrl: String?,
+    /** Each episode's still, from the phone. */
+    val stills: Map<String, String?> = emptyMap(),
+    /** The titles that wait for their check with the server: they do not
+     *  play until it can be reached. The screen fills it as it stands. */
+    val waitingForCheck: Set<String> = emptySet(),
+)
 
 /** One episode row's in-progress state (from /me/continue-watching): where
  *  the player resumes it ([resumesAt]), not an up-next substitution. */
@@ -172,10 +198,92 @@ class DetailScreenModel(
         screenModelScope.launch {
             _state.value = try {
                 fetch()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                DetailUiState.Error(e.message ?: e::class.simpleName.orEmpty())
+                val failure = e.loadFailure(singleThing = true)
+                // No answer: the whole app hears the server can't be reached
+                // (the downloads waiting for their check say so). For a title
+                // on the phone, its page from what is kept of it; the
+                // couldn't-load screen only for one that is not.
+                if (failure == LoadFailure.NoAnswer) container.serverReach.report(answered = false)
+                (if (failure == LoadFailure.NoAnswer) offlinePage() else null)
+                    ?: DetailUiState.Error(failure, e.loadDetails())
             }
         }
+    }
+
+    /**
+     * The page from what is on the phone ([OfflineDetail]) - a film or an
+     * episode the account downloaded, or a series some of whose episodes it
+     * did (an episode opens its series, as with the server); null for a title
+     * that is not on the phone, or not all of it yet.
+     */
+    private suspend fun offlinePage(): DetailUiState.Ready? {
+        val downloads = container.downloads ?: return null
+        // Only what plays from the phone: one still on its way is not there.
+        val entries = downloads.entries.value.filter {
+            it.status is DownloadStatus.Downloaded || it.status is DownloadStatus.CheckNeeded
+        }
+        val mine = entries.firstOrNull { it.itemId == itemId }
+        val seriesId = when {
+            mine != null && mine.title.isEpisode -> mine.title.item.parentId
+            mine == null -> itemId.takeIf { id -> entries.any { it.title.item.parentId == id } }
+            else -> null
+        }
+        if (seriesId != null) {
+            val episodes = entries.filter { it.title.isEpisode && it.title.item.parentId == seriesId }
+            if (episodes.isEmpty()) return null
+            val first = episodes.first().title
+            val seasons = episodes
+                .groupBy { it.title.item.seasonNumber ?: 0 }
+                .entries
+                .sortedBy { it.key }
+                .map { (season, eps) ->
+                    cloud.nalet.chino.mobile.data.api.Season(
+                        season = season,
+                        episodes = eps.sortedBy { it.title.item.episodeNumber ?: 0 }.map { it.title.asEpisode() },
+                    )
+                }
+            val resume = buildMap {
+                for (e in episodes) {
+                    val at = container.progressSync.lastPlayedSec(e.itemId) ?: e.claim.savedPositionSec ?: 0
+                    val durationSec = ((e.title.info?.durationMs ?: e.title.item.durationMs ?: 0L) / 1000L).toInt()
+                    if (resumesAt(at, durationSec.toDouble())) put(e.itemId, EpisodeResume(at, durationSec))
+                }
+            }
+            return DetailUiState.Ready(
+                item = Item(id = seriesId, title = first.seriesTitle.orEmpty(), kind = "series"),
+                resumePositionSec = 0,
+                baseUrl = container.serverBase,
+                streamToken = "",
+                seasons = seasons,
+                focusEpisodeId = itemId.takeIf { mine != null },
+                episodeResume = resume,
+                offline = OfflineDetail(
+                    posterUrl = downloads.fileUrl(first.itemId, first.poster),
+                    backdropUrl = downloads.fileUrl(first.itemId, first.backdrop ?: first.poster),
+                    stills = episodes.associate { it.itemId to downloads.fileUrl(it.itemId, it.title.backdrop) },
+                ),
+            )
+        }
+        val t = mine?.title ?: return null
+        return DetailUiState.Ready(
+            item = t.item,
+            resumePositionSec = container.progressSync.lastPlayedSec(t.itemId) ?: mine.claim.savedPositionSec ?: 0,
+            baseUrl = container.serverBase,
+            streamToken = "",
+            offline = OfflineDetail(
+                posterUrl = downloads.fileUrl(t.itemId, t.poster),
+                backdropUrl = downloads.fileUrl(t.itemId, t.backdrop ?: t.poster),
+            ),
+        )
+    }
+
+    /** "try again" on the page that couldn't load: loads it again. */
+    fun retry() {
+        _state.value = DetailUiState.Loading
+        load()
     }
 
     /** The quiet refresh under way; one at a time. */
@@ -281,3 +389,16 @@ class DetailScreenModel(
         )
     }
 }
+
+/** A downloaded episode as the episodes list draws one. */
+private fun cloud.nalet.chino.mobile.data.downloads.DownloadedTitle.asEpisode() = cloud.nalet.chino.mobile.data.api.Episode(
+    id = itemId,
+    title = item.title,
+    seasonNumber = item.seasonNumber,
+    episodeNumber = item.episodeNumber,
+    parentId = item.parentId,
+    overview = item.overview,
+    durationMs = info?.durationMs ?: item.durationMs,
+    year = item.year,
+    episodeEnd = item.episodeEnd,
+)

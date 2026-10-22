@@ -56,6 +56,14 @@ import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.feedback.captureScreenshot
 import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
+import cloud.nalet.chino.mobile.ui.downloads.DownloadSettings
+import cloud.nalet.chino.mobile.ui.downloads.DownloadsGoQuestion
+import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
+import cloud.nalet.chino.mobile.ui.downloads.downloadsOf
+import cloud.nalet.chino.mobile.ui.downloads.signOutOfThisPhone
+import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
+import cloud.nalet.chino.mobile.data.downloads.SIGN_OUT_TITLE
+import cloud.nalet.chino.mobile.data.downloads.yourDownloadsGoSentence
 import cloud.nalet.chino.mobile.ui.feedback.BugReportDialog
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.profile.ProfileScreen
@@ -90,6 +98,20 @@ fun SettingsSection() {
     // it opened, held here so the dialog keeps naming it while it is signed
     // out underneath. Non-null = dialog open.
     var deleteTarget by remember { mutableStateOf<Account?>(null) }
+
+    // The question before a sign-out that deletes the account's downloads:
+    // what goes, non-null while it is open.
+    var signOutDownloads by remember { mutableStateOf<DownloadsSummary?>(null) }
+    val device = LocalDeviceKind.current
+    val signOut: () -> Unit = {
+        val id = activeAccount?.id
+        if (id != null) scope.launch {
+            signOutOfThisPhone(container, id)
+            val remaining = container.accountStore.snapshotBlocking().accounts
+            if (remaining.isEmpty()) nav.replaceAll(AuthScreen())
+            else nav.replaceAll(AccountPickerScreen())
+        }
+    }
 
     // Outer Box so the bug-report dialog can scrim the whole content area
     // (same overlay pattern as AccountPicker's ConfirmRemoveDialog).
@@ -136,13 +158,9 @@ fun SettingsSection() {
                 label = "Sign out",
                 subtitle = activeAccount?.displayName ?: "Sign out of this account",
                 onClick = {
-                    val id = activeAccount?.id
-                    if (id != null) scope.launch {
-                        container.accountStore.remove(id)
-                        val remaining = container.accountStore.snapshotBlocking().accounts
-                        if (remaining.isEmpty()) nav.replaceAll(AuthScreen())
-                        else nav.replaceAll(AccountPickerScreen())
-                    }
+                    // Its downloads go with it: asked first. None: as before.
+                    val summary = activeAccount?.id?.let { downloadsOf(container, it) }
+                    if (summary == null || summary.isEmpty) signOut() else signOutDownloads = summary
                 },
             )
             // Delete the active account on the server — asked first, in a
@@ -171,6 +189,10 @@ fun SettingsSection() {
                 value = s.autoPlayNext,
                 onChange = { v -> scope.launch { container.settings.setAutoPlayNext(v) } },
             )
+            // Downloads: their quality and whether they use mobile data -
+            // where the platform keeps downloads and the server offers them.
+            DownloadSettings()
+
             Box(modifier = Modifier.padding(top = 12.dp))
             SectionHeading("Server")
             // Change-server entry — re-opens Add-Server prefilled with the current
@@ -178,6 +200,8 @@ fun SettingsSection() {
             // accounts (their tokens are for the old issuer) and asks the host to
             // rebuild the app graph, then routes back to sign-in. Mirrors the TV's
             // Settings "change server" intent.
+            // A different server deletes this one's downloads: asked once the
+            // new server answers (AddServerScreen).
             ActionRow(
                 label = "Change server",
                 subtitle = serverHost ?: "Connect to a different Chino server",
@@ -245,6 +269,17 @@ fun SettingsSection() {
             )
         }
 
+        signOutDownloads?.let { summary ->
+            DownloadsGoQuestion(
+                title = SIGN_OUT_TITLE,
+                sentence = yourDownloadsGoSentence(summary, device),
+                onConfirm = {
+                    signOutDownloads = null
+                    signOut()
+                },
+                onDismiss = { signOutDownloads = null },
+            )
+        }
         deleteTarget?.let { account ->
             DeleteAccountDialog(
                 account = account,
@@ -268,7 +303,7 @@ private class BugReportDraft(val screenshot: ByteArray?)
 
 /** A section's title: the web's Section h2, in the heading face. */
 @Composable
-private fun SectionHeading(text: String) {
+internal fun SectionHeading(text: String) {
     Text(
         text = text,
         color = Color.White,
@@ -305,7 +340,7 @@ private fun ActionRow(
 }
 
 @Composable
-private fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

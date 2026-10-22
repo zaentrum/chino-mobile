@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.data.api
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import kotlinx.io.IOException
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -78,6 +79,9 @@ fun Throwable.catalogueMessage(): String {
     val status = when (this) {
         is ApiStatusException -> status
         is ResponseException -> response.status.value
+        // No answer - no connection, the server down or too slow: what to
+        // check, not the request it was.
+        is IOException -> return NO_ANSWER_SENTENCE
         else -> return message ?: this::class.simpleName.orEmpty()
     }
     return when {
@@ -89,6 +93,78 @@ fun Throwable.catalogueMessage(): String {
         else -> "The server answered HTTP $status."
     }
 }
+
+/** What a screen that needs the server says when no answer came: the
+ *  design system's "couldn't load" sentence for it. */
+const val NO_ANSWER_SENTENCE = "Check the connection to the server, then try again."
+
+/**
+ * Why a screen couldn't load, as the design system's table tells the cases
+ * apart: by the answer's status, never by its message. [singleThing]: the
+ * screen is about one thing - a title - where a 404 or 410 says it was
+ * removed; on a list they say the app and the server don't match.
+ */
+enum class LoadFailure {
+    /** No answer: the connection dropped, or the server didn't reply. */
+    NoAnswer,
+    ServerProblem,
+
+    /** 429, 503. */
+    Busy,
+
+    /** Any other refusal; a 404 or 410 on a list; an answer the app could
+     *  not read. */
+    NotAccepted,
+
+    /** 404 or 410 on a page about one thing. */
+    Removed,
+
+    /** 403. */
+    NoAccess,
+
+    /** 401, after the app's own renewal: no empty state - the sign-in. */
+    SignedOut,
+}
+
+fun Throwable.loadFailure(singleThing: Boolean): LoadFailure {
+    val status = when (this) {
+        is ApiStatusException -> status
+        is ResponseException -> response.status.value
+        is IOException -> return LoadFailure.NoAnswer
+        else -> return LoadFailure.NotAccepted
+    }
+    return when {
+        status == 401 -> LoadFailure.SignedOut
+        status == 403 -> LoadFailure.NoAccess
+        (status == 404 || status == 410) && singleThing -> LoadFailure.Removed
+        status == 429 || status == 503 -> LoadFailure.Busy
+        status >= 500 -> LoadFailure.ServerProblem
+        else -> LoadFailure.NotAccepted
+    }
+}
+
+/** The sentence under a couldn't-load title, where the case has one. */
+fun LoadFailure.sentence(): String? = when (this) {
+    LoadFailure.NoAnswer -> NO_ANSWER_SENTENCE
+    LoadFailure.ServerProblem -> "The server ran into a problem. Try again in a moment."
+    LoadFailure.Busy -> "The server is busy. Try again in a moment."
+    LoadFailure.NotAccepted -> "The server didn't accept the request. Check for an app update, then try again."
+    LoadFailure.Removed, LoadFailure.NoAccess, LoadFailure.SignedOut -> null
+}
+
+/** What separates the cases, for a couldn't-load screen's details: the
+ *  answer's status, or that none came. Never a message, an id or a path. */
+fun Throwable.loadDetails(): String = when (this) {
+    is ApiStatusException -> "HTTP $status"
+    is ResponseException -> "HTTP ${response.status.value}"
+    is IOException -> "no answer"
+    else -> "an answer the app could not read"
+}
+
+/** Whether the server answered that a title is not there (404, 410): it
+ *  was removed from the library. */
+val Throwable.titleGone: Boolean
+    get() = this is ApiStatusException && (status == 404 || status == 410)
 
 /**
  * The server refuses the person's sign-in: a 401 or 403 of chino-api, which a

@@ -66,6 +66,13 @@ import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
+import cloud.nalet.chino.mobile.ui.downloads.DownloadsGoQuestion
+import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
+import cloud.nalet.chino.mobile.ui.downloads.downloadsOf
+import cloud.nalet.chino.mobile.ui.downloads.signOutOfThisPhone
+import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
+import cloud.nalet.chino.mobile.data.downloads.SIGN_OUT_TITLE
+import cloud.nalet.chino.mobile.data.downloads.yourDownloadsGoSentence
 import cloud.nalet.chino.mobile.ui.components.Avatar
 import cloud.nalet.chino.mobile.ui.detail.DetailScreen
 import com.composables.icons.lucide.ArrowLeft
@@ -119,6 +126,18 @@ class ProfileScreen : Screen {
         // null == loading; emptyList == loaded-but-empty (distinct states so we
         // show a spinner before showing "nothing watched yet", same as web).
         var history by remember { mutableStateOf<List<Item>?>(null) }
+        // The question before a sign-out that deletes the account's
+        // downloads: what goes, non-null while it is open.
+        var signOutDownloads by remember { mutableStateOf<DownloadsSummary?>(null) }
+        val device = LocalDeviceKind.current
+        val signOut: () -> Unit = {
+            val id = activeAccount?.id
+            if (id != null) scope.launch {
+                signOutOfThisPhone(container, id)
+                val remaining = container.accountStore.snapshotBlocking().accounts
+                if (remaining.isEmpty()) nav.replaceAll(AuthScreen()) else nav.replaceAll(AccountPickerScreen())
+            }
+        }
         // parent_id -> series title, resolved after the history paints so
         // episode rows can show the series as the row title. Missing entries
         // fall back to the episode's own title.
@@ -184,22 +203,22 @@ class ProfileScreen : Screen {
                             displayName = activeAccount?.displayName ?: "Account",
                             email = activeAccount?.email.orEmpty(),
                             onSignOut = {
-                                val id = activeAccount?.id
-                                if (id != null) scope.launch {
-                                    container.accountStore.remove(id)
-                                    // remove() promotes the next most-recent
-                                    // account to active (or null when none
-                                    // remain); read the post-removal snapshot
-                                    // to pick the destination.
-                                    val remaining = container.accountStore.snapshotBlocking().accounts
-                                    if (remaining.isEmpty()) {
-                                        nav.replaceAll(AuthScreen())
-                                    } else {
-                                        nav.replaceAll(AccountPickerScreen())
-                                    }
-                                }
+                                // Its downloads go with it: asked first. None: as before.
+                                val summary = activeAccount?.id?.let { downloadsOf(container, it) }
+                                if (summary != null && !summary.isEmpty) signOutDownloads = summary else signOut()
                             },
                         )
+                        signOutDownloads?.let { summary ->
+                            DownloadsGoQuestion(
+                                title = SIGN_OUT_TITLE,
+                                sentence = yourDownloadsGoSentence(summary, device),
+                                onConfirm = {
+                                    signOutDownloads = null
+                                    signOut()
+                                },
+                                onDismiss = { signOutDownloads = null },
+                            )
+                        }
                         // The web's h2, in the heading face.
                         Text(
                             text = "Watch history",

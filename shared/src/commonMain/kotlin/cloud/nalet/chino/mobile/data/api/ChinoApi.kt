@@ -75,7 +75,7 @@ class ChinoApi(private val http: HttpClient) {
 
     suspend fun listGenres(): GenresResponse = http.get("v1/genres").body()
 
-    suspend fun getItem(id: String): Item = http.get("v1/items/$id").body()
+    suspend fun getItem(id: String, bearer: String? = null): Item = http.get("v1/items/$id") { bearer?.let { asAccount(it) } }.body()
 
     /** GET /v1/search?q=&types=&limit=&people=: one search of the catalogue,
      *  in the order to show it. The titles of [types] (sent comma separated)
@@ -183,19 +183,34 @@ class ChinoApi(private val http: HttpClient) {
     suspend fun continueWatching(): ContinueWatchingResponse =
         http.get("v1/me/continue-watching").body()
 
-    /** Upserts resume position. Called every ~10s + once on player dispose. */
-    suspend fun postProgress(id: String, body: ProgressBody) {
+    /** Upserts resume position. Called every ~10s + once on player dispose.
+     *  [bearer]: the account's own, for a position it played and the phone
+     *  sends later - not whoever is signed in by then. */
+    suspend fun postProgress(id: String, body: ProgressBody, bearer: String? = null) {
         http.post("v1/items/$id/progress") {
             contentType(ContentType.Application.Json)
             setBody(body)
+            bearer?.let { asAccount(it) }
         }
     }
+
+    /** POST /v1/me/available: which of [ids] the account signed in now -
+     *  the one [bearer] is, where given - may watch now, in one request: the
+     *  phone deletes its downloads of the others. Throws for any answer that
+     *  is no 2xx, a server without the route among them: no answer decides
+     *  nothing. */
+    suspend fun available(ids: List<String>, bearer: String? = null): List<String> =
+        http.post("v1/me/available") {
+            contentType(ContentType.Application.Json)
+            setBody(AvailableIds(ids))
+            bearer?.let { asAccount(it) }
+        }.body<AvailableIds>().ids
 
     /** Marks the item as fully watched — drives the green "watched" badge on
      *  posters + lets continue-watching substitute the next episode. Mirrors
      *  chino-web's useWatchedToggle POST branch. */
-    suspend fun postWatched(id: String) {
-        http.post("v1/me/items/$id/watched")
+    suspend fun postWatched(id: String, bearer: String? = null) {
+        http.post("v1/me/items/$id/watched") { bearer?.let { asAccount(it) } }
     }
 
     /** Clears the fully-watched flag (un-watch). Mirrors chino-web's
@@ -303,13 +318,17 @@ class ChinoApi(private val http: HttpClient) {
 
     /** Pre-playback probe: chino-stream's transcode decision + container/codec
      *  metadata + the ladder of qualities the server can serve. */
-    suspend fun playInfo(id: String, caps: String? = null): PlayInfo =
+    suspend fun playInfo(id: String, caps: String? = null, timeoutMs: Long = PLAY_INFO_TIMEOUT_MS): PlayInfo =
         http.get("v1/items/$id/play/info") {
             caps?.let { parameter("caps", it) }
             // The player's start waits for it: [PLAY_INFO_TIMEOUT_MS] in all,
             // a slow trickle of an answer included, then it starts without
-            // it, in Auto (qualityLadder).
-            timeout { requestTimeoutMillis = PLAY_INFO_TIMEOUT_MS }
+            // it, in Auto (qualityLadder). A download, which starts nothing
+            // on the screen, waits longer ([timeoutMs]).
+            timeout {
+                requestTimeoutMillis = timeoutMs
+                socketTimeoutMillis = timeoutMs
+            }
         }.body()
 
     /** Raw WebVTT trickplay (scrub-preview thumbnail) cue file for a
@@ -742,7 +761,24 @@ data class ProgressBody(
      *  marked watched - chino-api marks a title saved there watched
      *  otherwise. Sent only when true (ChinoJson leaves defaults out). */
     val dismiss: Boolean = false,
+    /** A position the phone kept while it had no connection: how long ago
+     *  it was played, as the phone sends it. chino-api writes it only over
+     *  an older one. Left out for a position played now. */
+    @SerialName("played_ms_ago") val playedMsAgo: Long? = null,
 )
+
+/** POST /v1/me/available's body and answer: `{"ids": [...]}`. */
+@Serializable
+data class AvailableIds(val ids: List<String> = emptyList())
+
+/** This request with [bearer] - an account's own - and not the one the
+ *  client holds for whoever is signed in now: the auth plugin leaves it be. */
+internal fun io.ktor.client.request.HttpRequestBuilder.asAccount(bearer: String) {
+    attributes.put(AccountBearer, bearer)
+    // A 401 for it is the answer: no renewal with another account's token.
+    attributes.put(io.ktor.client.plugins.auth.AuthCircuitBreaker, Unit)
+    headers[io.ktor.http.HttpHeaders.Authorization] = "Bearer $bearer"
+}
 
 @Serializable
 data class TelemetryEvent(

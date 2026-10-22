@@ -66,6 +66,12 @@ import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.data.auth.LocalSignInLauncher
 import cloud.nalet.chino.mobile.ui.components.Avatar
 import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
+import cloud.nalet.chino.mobile.ui.shell.Section
+import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
+import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
+import cloud.nalet.chino.mobile.data.downloads.Owner
+import cloud.nalet.chino.mobile.data.downloads.REMOVE_ACCOUNT_TITLE
+import cloud.nalet.chino.mobile.data.downloads.accountDownloadsGoSentence
 import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
 import com.composables.icons.lucide.LogOut
 import com.composables.icons.lucide.Lucide
@@ -94,7 +100,11 @@ import kotlinx.coroutines.launch
  * Reached from: the boot gate / sign-out (≥1 account remaining), and the
  * Profile screen's Sign out (it routes here when other accounts remain).
  */
-class AccountPickerScreen : Screen {
+class AccountPickerScreen(
+    /** Where the shell opens once an account is picked: its downloads, for
+     *  an offline start ("Who's watching?" works without the server). */
+    private val startSection: Section = Section.Home,
+) : Screen {
     override val key: ScreenKey = uniqueScreenKey
 
     @Composable
@@ -171,7 +181,7 @@ class AccountPickerScreen : Screen {
                         onSelect = {
                             scope.launch {
                                 store.setActive(account.id)
-                                nav.replaceAll(MainShellScreen())
+                                nav.replaceAll(MainShellScreen(startSection = startSection))
                             }
                         },
                         onRemove = { pendingRemoval = account },
@@ -188,10 +198,17 @@ class AccountPickerScreen : Screen {
         }
 
         pendingRemoval?.let { acct ->
+            // The account's downloads on this phone, which go with it.
+            val owner = Owner(container.serverBase, acct.id)
+            val summary = remember(acct.id) { container.downloads?.summaryOf(owner) ?: DownloadsSummary(0, 0L) }
             ConfirmRemoveDialog(
                 account = acct,
+                downloads = summary,
                 onConfirm = {
                     scope.launch {
+                        // An explicit removal on this phone: its downloads
+                        // go, as the question said.
+                        runCatching { container.downloads?.dropOwner(owner) }
                         store.remove(acct.id)
                         val remaining = store.snapshotBlocking().accounts
                         pendingRemoval = null
@@ -309,7 +326,8 @@ private fun AddAccountTile(signing: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ConfirmRemoveDialog(account: Account, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun ConfirmRemoveDialog(account: Account, downloads: DownloadsSummary, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val device = LocalDeviceKind.current
     // Drawn in the screen's own window: the system Back closes it, as a tap
     // on the scrim does, rather than going past it and leaving the screen.
     SystemBackHandler(onBack = onDismiss)
@@ -337,23 +355,47 @@ private fun ConfirmRemoveDialog(account: Account, onConfirm: () -> Unit, onDismi
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Avatar(displayName = account.displayName, email = account.email, size = 64.dp)
-            Text(
-                text = "Remove ${account.displayName}?",
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                style = ChinoHeading,
-            )
-            Text(
-                text = "You'll need to sign in again to use this account on this device.",
-                color = ChinoFg2,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DialogButton(label = "Cancel", containerColor = ChinoBorder2, onClick = onDismiss)
-                DialogButton(label = "Remove", containerColor = ChinoRed, onClick = onConfirm)
+            if (downloads.isEmpty) {
+                // No downloads: the question as it always was.
+                Text(
+                    text = "Remove ${account.displayName}?",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    style = ChinoHeading,
+                )
+                Text(
+                    text = "You'll need to sign in again to use this account on this device.",
+                    color = ChinoFg2,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DialogButton(label = "Cancel", containerColor = ChinoBorder2, onClick = onDismiss)
+                    DialogButton(label = "Remove", containerColor = ChinoRed, onClick = onConfirm)
+                }
+            } else {
+                // Its downloads go with it: the title is the action, the
+                // danger button repeats it, the sentence names what goes.
+                Text(
+                    text = REMOVE_ACCOUNT_TITLE,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    style = ChinoHeading,
+                )
+                Text(
+                    text = accountDownloadsGoSentence(downloads, account.displayName, device),
+                    color = ChinoFg2,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DialogButton(label = "cancel", containerColor = ChinoBorder2, onClick = onDismiss)
+                    DialogButton(label = REMOVE_ACCOUNT_TITLE, containerColor = ChinoRed, onClick = onConfirm)
+                }
             }
         }
     }

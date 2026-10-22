@@ -12,14 +12,34 @@ import cloud.nalet.chino.mobile.data.auth.PlatformTokenStoreFactory
 import cloud.nalet.chino.mobile.data.auth.StreamTokenManager
 import cloud.nalet.chino.mobile.data.auth.TokenManager
 import cloud.nalet.chino.mobile.data.auth.TokenStore
+import cloud.nalet.chino.mobile.data.downloads.DownloadPlanner
+import cloud.nalet.chino.mobile.data.downloads.DownloadStarts
+import cloud.nalet.chino.mobile.data.downloads.Downloads
+import cloud.nalet.chino.mobile.data.downloads.DownloadsPlatform
+import cloud.nalet.chino.mobile.data.downloads.MemoryProgressBookStore
+import cloud.nalet.chino.mobile.data.downloads.Owner
+import cloud.nalet.chino.mobile.data.downloads.PlanResult
+import cloud.nalet.chino.mobile.data.downloads.ProgressQueue
+import cloud.nalet.chino.mobile.data.downloads.ProgressSync
+import cloud.nalet.chino.mobile.data.downloads.ServerReach
 import cloud.nalet.chino.mobile.data.notices.NoticesRepository
 import cloud.nalet.chino.mobile.data.telemetry.Telemetry
 import cloud.nalet.chino.mobile.feedback.BugReporter
 import cloud.nalet.chino.mobile.feedback.PendingReportStore
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -50,6 +70,9 @@ class AppContainer(
     /** Hosts the Add-Server probe may reach over plain http (iOS: localhost
      *  only — see [ServerBootstrap]); every other host is https only. */
     private val allowPlainHttp: (host: String) -> Boolean = { true },
+    /** Downloads and playing without the server, where the platform has
+     *  them (Android); null: none ([DownloadsPlatform]). */
+    private val downloadsPlatform: DownloadsPlatform? = null,
 ) {
     /** Application-lifetime scope for fire-and-forget POSTs (progress,
      *  watched, telemetry) that must outlive a screen-model's onCleared —
@@ -226,6 +249,8 @@ class AppContainer(
      * watchlist, likes and lists cached for it.
      */
     suspend fun forgetDeletedAccount(accountId: String) {
+        // Its downloads on this phone go too, as Delete Account said.
+        runCatching { downloads?.dropOwner(Owner(serverBase, accountId)) }
         accountStore.remove(accountId)
         http.forgetBearer()
         streamTokenManager.invalidate()
@@ -242,5 +267,135 @@ class AppContainer(
             staticContext = deviceStaticContext,
             pendingStore = pendingReportStore,
         )
+    }
+
+    // ---- Downloads and playing without the server ------------------------
+
+    /** The connected server's API base, without the trailing slash: what
+     *  downloads and queued positions belong to. */
+    val serverBase: String get() = config.apiBaseUrl.trimEnd('/')
+
+    /** Whether this platform keeps downloads - without building them. */
+    val downloadsSupported: Boolean get() = downloadsPlatform != null
+
+    /** Titles kept on the phone, where the platform keeps them; null where
+     *  it does not (no download control then). */
+    val downloads: Downloads? by lazy { downloadsPlatform?.downloads(this) }
+
+    /** Works a download out before it starts: whether the title can come
+     *  along, what it keeps and what that comes to. */
+    val downloadPlanner: DownloadPlanner by lazy {
+        DownloadPlanner(
+            api = chinoApi,
+            streamToken = { streamTokenManager.valid() },
+            apiBase = { serverBase },
+            caps = { downloadsPlatform?.downloadCaps().orEmpty() },
+        )
+    }
+
+    /** Downloads asked for on a page: worked out and started in the app's
+     *  scope, so leaving the page stops none of them. */
+    val downloadStarts: DownloadStarts by lazy {
+        DownloadStarts(appScope) { itemId ->
+            val d = downloads ?: return@DownloadStarts null
+            val prefs = settings.flow.first()
+            when (
+                val r = downloadPlanner.plan(
+                    itemId = itemId,
+                    quality = d.preferences.value.quality,
+                    audioPref = prefs.preferredAudioLang,
+                    subtitlePref = prefs.preferredSubLang,
+                )
+            ) {
+                is PlanResult.Ready -> {
+                    d.start(r.plan)
+                    null
+                }
+                is PlanResult.NotPossible -> r.reason
+            }
+        }
+    }
+
+    /** Whether the server answers, and what its /api/config says it
+     *  offers (features.downloads). */
+    val serverReach: ServerReach by lazy {
+        ServerReach(
+            fetch = {
+                val resp = probeHttp.get("$serverBase/config") {
+                    timeout {
+                        connectTimeoutMillis = REACH_CONNECT_TIMEOUT_MS
+                        requestTimeoutMillis = REACH_TIMEOUT_MS
+                    }
+                }
+                if (resp.status.isSuccess()) resp.bodyAsText() else null
+            },
+            networkUp = { downloadsPlatform?.networkUp() },
+        )
+    }
+
+    /** Who the downloads shown now are for: the account signed in now, by
+     *  its subject, on the connected server; null for nobody. */
+    val activeOwner: StateFlow<Owner?> by lazy {
+        accountStore.activeAccountId
+            .map { id -> id?.let { Owner(serverBase, it) } }
+            .stateIn(appScope, SharingStarted.Eagerly, accountStore.snapshotBlocking().activeAccount?.let { Owner(serverBase, it.id) })
+    }
+
+    /** Item ids the server's word took off the phone just now (POST
+     *  /me/available left them out): a player playing one of them from the
+     *  phone stops, and says why. */
+    val downloadsTaken = MutableSharedFlow<List<String>>(extraBufferCapacity = 8)
+
+    /**
+     * Whether playback goes to another screen now - a Cast session: Play on
+     * a downloaded title then plays from the server there, and nothing on
+     * the phone goes to it. Set by the platform that casts; false without.
+     */
+    var playsOnAnotherScreen: () -> Boolean = { false }
+
+    /** The player's positions: sent at once, or kept and sent once the
+     *  server can be reached again - with their age, and with the bearer of
+     *  the account that played them. */
+    val progressSync: ProgressSync by lazy {
+        ProgressSync(
+            queue = ProgressQueue(downloadsPlatform?.progressBookStore ?: MemoryProgressBookStore()),
+            post = { id, body, bearer -> chinoApi.postProgress(id, body, bearer) },
+            account = { accountStore.snapshotBlocking().activeAccount?.id },
+            server = { serverBase },
+            scope = appScope,
+            postWatched = { id, bearer -> chinoApi.postWatched(id, bearer) },
+            bearerOf = { accountId ->
+                // The token of the account signed in now, renewed if it must
+                // be - and only while it is still the one asked about.
+                val token = tokenManager.validAccessToken()
+                token.takeIf { accountStore.snapshotBlocking().activeAccount?.id == accountId }
+            },
+            onPhone = { accountId, itemId ->
+                downloads?.isOnPhone(Owner(serverBase, accountId), itemId) ?: false
+            },
+            // A title's progress refused as not there (404, 410) for the
+            // account, of a title on the phone: the server is asked whether
+            // the account may still watch it - and the download goes if not.
+            onRefused = { accountId, itemId ->
+                val owner = Owner(serverBase, accountId)
+                if (downloads?.isOnPhone(owner, itemId) == true && activeOwner.value == owner) {
+                    appScope.launch { runCatching { downloads?.checkAvailability(listOf(itemId)) } }
+                }
+            },
+            onQueued = { downloadsPlatform?.scheduleProgressFlush() },
+            // A position the server answered is the server reached. One it
+            // did not answer is a reason to look, not a verdict: a single
+            // failed POST does not make the downloads ignore the server.
+            onReach = { answered ->
+                if (answered) serverReach.report(true) else appScope.launch { runCatching { serverReach.check() } }
+            },
+        )
+    }
+
+    private companion object {
+        /** How long a look at the server waits: the app's start waits for
+         *  it before it opens on the downloads. */
+        const val REACH_CONNECT_TIMEOUT_MS = 3_000L
+        const val REACH_TIMEOUT_MS = 4_000L
     }
 }

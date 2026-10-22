@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The notification channel downloads show their progress in. -->
+    <string name="chino_downloads_channel">Downloads</string>
+</resources>

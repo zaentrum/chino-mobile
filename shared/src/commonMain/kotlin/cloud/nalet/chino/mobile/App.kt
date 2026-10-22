@@ -21,8 +21,13 @@ import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.auth.AccountStore
 import cloud.nalet.chino.mobile.data.auth.LocalSignInLauncher
 import cloud.nalet.chino.mobile.data.auth.SignInLauncher
+import cloud.nalet.chino.mobile.data.downloads.Reach
+import cloud.nalet.chino.mobile.data.downloads.StartScreen
+import cloud.nalet.chino.mobile.data.downloads.startScreen
 import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
+import cloud.nalet.chino.mobile.ui.downloads.ProvideDeviceKind
+import cloud.nalet.chino.mobile.ui.shell.Section
 import cloud.nalet.chino.mobile.ui.notices.NoticesPolling
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.player.AutoCloseGuard
@@ -33,6 +38,7 @@ import cloud.nalet.chino.mobile.ui.shell.MainShellScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoTheme
 import cloud.nalet.chino.mobile.ui.theme.SignedAppImages
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** App-scoped DI handle. Screens access this via [current] rather than
@@ -101,7 +107,17 @@ fun App(
                 container.serverConfigStore.save(container.buildDefaultServerConfig())
                 configured = true
             }
-            BootState(accounts = accts, serverConfigured = configured)
+            // Whether the server answers, where the phone keeps downloads:
+            // without it the app opens on them (startScreen).
+            val reach = if (configured && container.downloadsSupported) container.serverReach.check() else Reach.Unknown
+            if (reach == Reach.Reachable) {
+                container.appScope.launch {
+                    runCatching { container.progressSync.flush() }
+                    // Only the titles on the phone keep their last position.
+                    runCatching { container.progressSync.forgetLastOfTitlesNotOnThePhone() }
+                }
+            }
+            BootState(accounts = accts, serverConfigured = configured, reach = reach)
         }
     }
     // The player tells it how it closed; after it closed by itself, the
@@ -117,6 +133,7 @@ fun App(
         // Images signed with a stream token valid as they are fetched.
         SignedAppImages(container)
         ChinoTheme {
+          ProvideDeviceKind {
             val snapshot = boot
             Box(modifier = Modifier.fillMaxSize()) {
                 if (snapshot == null) {
@@ -124,14 +141,25 @@ fun App(
                 } else {
                     // Start-destination gate (mirrors the TV NavHost):
                     //  - no server configured              -> Add-Server (neutral first run)
+                    //  - server it cannot reach             -> the account's downloads,
+                    //                                          after the picker for several
                     //  - server, no active account          -> Auth (sign in)
                     //  - server + >=2 accounts              -> "Who's watching?" picker
                     //  - server + exactly one active account -> MainShell
-                    val initialScreen = when {
-                        !snapshot.serverConfigured -> AddServerScreen()
-                        snapshot.accounts.activeAccount == null -> AuthScreen()
-                        snapshot.accounts.accounts.size >= 2 -> AccountPickerScreen()
-                        else -> MainShellScreen()
+                    val start = startScreen(
+                        serverConfigured = snapshot.serverConfigured,
+                        accounts = snapshot.accounts.accounts.size,
+                        hasActiveAccount = snapshot.accounts.activeAccount != null,
+                        reach = snapshot.reach,
+                        downloadsSupported = container.downloadsSupported,
+                    )
+                    val initialScreen = when (start) {
+                        StartScreen.AddServer -> AddServerScreen()
+                        StartScreen.SignIn -> AuthScreen()
+                        StartScreen.AccountPicker -> AccountPickerScreen()
+                        StartScreen.Home -> MainShellScreen()
+                        StartScreen.Downloads -> MainShellScreen(startSection = Section.Downloads)
+                        StartScreen.AccountPickerThenDownloads -> AccountPickerScreen(startSection = Section.Downloads)
                     }
                     // Around the navigator: a Back, a tap or an accessibility
                     // action meant for the player as it closed by itself does
@@ -152,6 +180,7 @@ fun App(
                 // it's the outermost Box's last child.
                 StatusBarAccent()
             }
+          }
         }
     }
 }
@@ -163,6 +192,8 @@ fun App(
 private data class BootState(
     val accounts: AccountStore.Snapshot,
     val serverConfigured: Boolean,
+    /** Whether the server answered as the app started. */
+    val reach: Reach = Reach.Unknown,
 )
 
 @Composable
