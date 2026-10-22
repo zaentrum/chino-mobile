@@ -290,6 +290,9 @@ private fun ShellLayout(
         Column(modifier = Modifier.fillMaxHeight().weight(1f)) {
             TopBar(searchQuery = searchQuery, onSearchChange = onSearchChange)
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) { content() }
+            // The bar while casting: above the bottom navigation, never over
+            // it; wide, at the foot of the content.
+            cloud.nalet.chino.mobile.cast.CastBar(padNavigationBar = isWide)
             if (!isWide) BottomNav(active = section, onChange = onChange)
         }
     }

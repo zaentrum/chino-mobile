@@ -4,7 +4,7 @@
          since the app is dark-only either way. Kept around so the
          dark-mode resource resolution doesn't fall back to the platform
          default. -->
-    <style name="Theme.ChinoMobile" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.ChinoMobile" parent="Theme.Chino.Cast">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>

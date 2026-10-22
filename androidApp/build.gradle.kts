@@ -45,6 +45,10 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.lifecycle.runtime.ktx)
             implementation(libs.androidx.browser)
+            // MainActivity is a FragmentActivity on an AppCompat theme: the
+            // Cast button's device chooser and the mini controller are
+            // fragments, and Google's Cast widgets are AppCompat widgets.
+            implementation(libs.androidx.appcompat)
             implementation(libs.appauth)
             implementation(compose.runtime)
             implementation(compose.foundation)

@@ -91,6 +91,8 @@ import cafe.adriel.voyager.core.screen.uniqueScreenKey
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
+import cloud.nalet.chino.mobile.cast.CastButton
+import cloud.nalet.chino.mobile.cast.CastEvents
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.player.LocalAutoCloseGuard
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
@@ -144,6 +146,14 @@ class DetailScreen(private val itemId: String) : Screen {
             } else {
                 delay(REFRESH_ON_RETURN_DELAY_MS)
                 model.refresh()
+            }
+        }
+        // Casting stopped, or the title ended on the TV: the position the TV
+        // played is the one kept, and the page's play button reads it again.
+        LaunchedEffect(model) {
+            CastEvents.positionKept.collect { id ->
+                val shown = model.state.value as? DetailUiState.Ready ?: return@collect
+                if (shown.item.id == id || shown.seasons.any { s -> s.episodes.any { it.id == id } }) model.refresh()
             }
         }
         val state by model.state.collectAsState()
@@ -509,6 +519,17 @@ private fun ReadyContent(
                 onClick = onHome,
             )
         }
+        // The Cast button, on the right of the same row: Google's icon in the
+        // overlay buttons' square, there while a device is on the network.
+        CastButton(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(end = 16.dp, top = HERO_BUTTONS_TOP)
+                .size(HERO_BUTTON_SIZE)
+                .clip(RectangleShape)
+                .background(Color(0x80000000)),
+        )
     }
 }
 

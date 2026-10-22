@@ -9,8 +9,11 @@
          #161B22 status-bar accent strip. Forcing the dark Material
          parent + `windowLight*=false` gives us white system-bar icons
          that read against the chrome canvas, matching the dark
-         values-night variant. -->
-    <style name="Theme.ChinoMobile" parent="android:Theme.Material.NoActionBar">
+         values-night variant. The parent is the shared module's dark
+         AppCompat theme (cast_styles.xml): Google's Cast widgets - the
+         Cast button's device chooser, the bar while casting - are AppCompat
+         widgets, drawn in the design system's colours. -->
+    <style name="Theme.ChinoMobile" parent="Theme.Chino.Cast">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
