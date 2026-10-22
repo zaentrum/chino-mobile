@@ -797,6 +797,19 @@ private fun subtitleMenuOf(tracks: List<SubtitleTrack>, subtitlePref: String, se
         picture = { it.image },
     )
 
+/** Why a failure made the player step down, as its notice says it: a load
+ *  that ran out of time or a connection that dropped is a connection that
+ *  can't keep up; anything else - an error answer, what came not playable -
+ *  a quality that couldn't be streamed. */
+private fun stepDownCause(e: androidx.media3.common.PlaybackException): StepDownCause = when (e.errorCode) {
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+    androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+    androidx.media3.common.PlaybackException.ERROR_CODE_TIMEOUT,
+    androidx.media3.common.PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW,
+    -> StepDownCause.Slow
+    else -> StepDownCause.NotStreamed
+}
+
 private fun applyAudioSelection(player: ExoPlayer, track: AudioTrack) {
     val params = player.trackSelectionParameters
     player.trackSelectionParameters = params.buildUpon()
@@ -1349,6 +1362,20 @@ private fun PlaybackSurface(
                             playbackEvent(
                                 "quality_fallback",
                                 mapOf("from" to currentQuality, "to" to recovery.quality, "error" to e.errorCodeName),
+                            )
+                            // The player says what it did and why, each
+                            // quality by the server's name; the error's
+                            // code stays in the playback report above.
+                            container.toasts.tryEmit(
+                                Toast(
+                                    stepDownNotice(
+                                        label = qualityNameOf(recovery.quality, state.qualities),
+                                        previous = qualityNameOf(currentQuality, state.qualities),
+                                        fromOriginal = playsOriginal(state.info?.mode, currentQuality, state.qualities),
+                                        cause = stepDownCause(e),
+                                    ),
+                                    ToastKind.Information,
+                                ),
                             )
                             // As a quality switch: rebuilt at the new rung,
                             // seeked to where this one failed.

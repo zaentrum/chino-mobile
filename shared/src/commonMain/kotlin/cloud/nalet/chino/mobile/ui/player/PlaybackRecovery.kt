@@ -63,6 +63,48 @@ fun playbackRecovery(
     return PlaybackRecovery.StepDown(ON_THE_FLY_LADDER[rung + 1])
 }
 
+/** Why playback stepped down by itself, as its notice says it (docs/chino
+ *  playback, "When the quality changes by itself"). */
+enum class StepDownCause {
+    /** The connection can't keep up: a load that ran out of time, a
+     *  connection that dropped. */
+    Slow,
+
+    /** The quality couldn't be streamed: the server answered with an error,
+     *  or what came could not be played. */
+    NotStreamed,
+}
+
+/** The name of quality [q] as the quality menu reads it: the server's, from
+ *  /play/info's list ([listed]) - "Medium (720p)", "Original" - else the
+ *  word for a `q` an older server names none for ([labelForQuality]). */
+fun qualityNameOf(q: String, listed: List<cloud.nalet.chino.mobile.data.api.QualityRung>): String =
+    listed.firstOrNull { it.name.equals(q, ignoreCase = true) }?.label?.trim()?.takeIf { it.isNotEmpty() }?.let(::namedQuality)
+        ?: labelForQuality(q)
+
+/** Whether [q] of a title in [mode] plays the original as it is: the one the
+ *  server names "Original", or a direct stream's (passthrough, remux)
+ *  `high`, which the server copies - chino-web's playsOriginal. */
+fun playsOriginal(mode: String?, q: String, listed: List<cloud.nalet.chino.mobile.data.api.QualityRung>): Boolean {
+    if (qualityNameOf(q, listed) == "Original") return true
+    val direct = mode.equals("passthrough", ignoreCase = true) || mode.equals("remux", ignoreCase = true)
+    return direct && q.equals("high", ignoreCase = true)
+}
+
+/**
+ * What the player says when it stepped the quality down by itself - the
+ * four sentences of docs/chino playback - [label] the quality it went to
+ * and [previous] the one it left, both named as the menu names them
+ * ([qualityNameOf]); off the original ([fromOriginal]) said as such. No
+ * status code: those go into the playback report.
+ */
+fun stepDownNotice(label: String, previous: String, fromOriginal: Boolean, cause: StepDownCause): String = when {
+    fromOriginal && cause == StepDownCause.Slow -> "Switched to $label quality: the connection can't keep up with the original."
+    fromOriginal -> "Switched to $label quality: the original couldn't be streamed."
+    cause == StepDownCause.Slow -> "Switched to $label quality: the connection can't keep up."
+    else -> "Switched to $label quality: $previous couldn't be streamed."
+}
+
 /** Playback that has got this far past the previous failure counts as having
  *  recovered: the in-place retries start again. */
 const val RECOVERED_AFTER_MS = 30_000L

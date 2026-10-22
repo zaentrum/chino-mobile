@@ -77,4 +77,51 @@ class PlaybackRecoveryTest {
         assertEquals(PlaybackRecovery.StepDown("low"), r.next("transcode", "medium", 121_000))
         assertEquals(PlaybackRecovery.GiveUp, r.next("transcode", "low", 122_000))
     }
+
+    /** The four step-down notices of docs/chino playback, each quality by
+     *  the server's name, never a status code. */
+    @Test
+    fun aStepDownSaysWhatItDidAndWhyInTheSpecsWords() {
+        val listed = listOf(
+            cloud.nalet.chino.mobile.data.api.QualityRung("high", "High (1080p)"),
+            cloud.nalet.chino.mobile.data.api.QualityRung("medium", "Medium (720p)"),
+            cloud.nalet.chino.mobile.data.api.QualityRung("low", "Low (480p)"),
+        )
+        fun notice(mode: String?, from: String, to: String, cause: StepDownCause, list: List<cloud.nalet.chino.mobile.data.api.QualityRung> = listed) =
+            stepDownNotice(qualityNameOf(to, list), qualityNameOf(from, list), playsOriginal(mode, from, list), cause)
+        // Off the original: a direct stream's high is the file as it is.
+        assertEquals(
+            "Switched to Medium quality: the connection can't keep up with the original.",
+            notice("passthrough", "high", "medium", StepDownCause.Slow, emptyList()),
+        )
+        assertEquals(
+            "Switched to Medium quality: the original couldn't be streamed.",
+            notice("remux", "high", "medium", StepDownCause.NotStreamed, emptyList()),
+        )
+        // The one the server names "Original".
+        val withOriginal = listOf(cloud.nalet.chino.mobile.data.api.QualityRung("high", "Original")) + listed.drop(1)
+        assertEquals(
+            "Switched to Medium (720p) quality: the original couldn't be streamed.",
+            notice("transcode", "high", "medium", StepDownCause.NotStreamed, withOriginal),
+        )
+        // One step down between qualities.
+        assertEquals(
+            "Switched to Medium (720p) quality: the connection can't keep up.",
+            notice("transcode", "high", "medium", StepDownCause.Slow),
+        )
+        assertEquals(
+            "Switched to Low (480p) quality: Medium (720p) couldn't be streamed.",
+            notice("transcode", "medium", "low", StepDownCause.NotStreamed),
+        )
+        // An older server's bare heights by the table; nothing listed, the word.
+        val old = listOf(cloud.nalet.chino.mobile.data.api.QualityRung("medium", "720p"))
+        assertEquals("Medium (720p)", qualityNameOf("medium", old))
+        assertEquals("Low", qualityNameOf("low", old))
+        // A transcode's high is no original.
+        assertEquals(false, playsOriginal("transcode", "high", emptyList()))
+        for (line in listOf(
+            notice("transcode", "medium", "low", StepDownCause.NotStreamed),
+            notice("passthrough", "high", "medium", StepDownCause.Slow, emptyList()),
+        )) assertEquals(false, Regex("""\b[1-5]\d\d\b|HTTP|ERROR""").containsMatchIn(line), line)
+    }
 }
