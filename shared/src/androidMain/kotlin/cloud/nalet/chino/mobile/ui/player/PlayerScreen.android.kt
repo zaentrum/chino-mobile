@@ -815,6 +815,9 @@ private fun subtitleMenuOf(tracks: List<SubtitleTrack>, subtitlePref: String, se
         own = { it.key.contains(SIDECAR_ID_PREFIX + EMBEDDED_SUBTITLE_PREFIX) },
         ai = { isAiSubtitle(it.title) },
         picture = { it.image },
+        // An untagged track shown for its twin is listed, and comes on, in
+        // the twin's language.
+        retag = { kept, twin -> kept.copy(tag = twin.tag, language = twin.language) },
     )
 
 /** Why playback stopped for good, in the design system's cases: the answer's

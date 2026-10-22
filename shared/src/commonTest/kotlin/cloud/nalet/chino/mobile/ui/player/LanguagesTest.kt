@@ -67,8 +67,8 @@ class LanguagesTest {
         assertEquals("Spanish (Latin America)", languageName("spa-419"))
         assertEquals("English (New Zealand)", languageName("en-NZ"))
         assertEquals("Serbian (Latin, Serbia)", languageName("sr-Latn-RS"))
-        // A region the table has no name for: its code.
-        assertEquals("English (GU)", languageName("en-GU"))
+        // A region the table has no name for: the platform's, as Intl's.
+        assertEquals("English (Guam)", languageName("en-GU"))
         // A variant or an extension names nothing.
         assertEquals("German", languageName("de-1901"))
         assertEquals("English (United States)", languageName("en-US-x-custom"))
@@ -195,23 +195,23 @@ class LanguagesTest {
     }
 
     @Test
-    fun theSameLabelTwiceIsNumberedTheServersNumberNoMore() {
+    fun theSameLabelTwiceReadsTheSameNeverNumberedTheServersNumberGoes() {
         assertEquals(
             listOf(
                 "English",
-                "English (2)",
-                "English (3)",
+                "English",
+                "English",
                 "English · for deaf and hard of hearing",
-                "English · for deaf and hard of hearing (2)",
+                "English · for deaf and hard of hearing",
                 "German · foreign-language parts only",
-                "German · foreign-language parts only (2)",
+                "German · foreign-language parts only",
                 "Unknown",
             ),
             subtitleLabels(
                 listOf(
                     SubtitleLabelInput("eng", title = "eng"),
                     SubtitleLabelInput("eng", title = "English"),
-                    // chino-stream's unique NAME: numbered by the menu, once.
+                    // chino-stream's unique NAME: its number says nothing of the track.
                     SubtitleLabelInput("eng", title = "English (2)"),
                     SubtitleLabelInput("eng", title = "SDH"),
                     SubtitleLabelInput("eng", title = "English · SDH (2)"),
@@ -228,12 +228,12 @@ class LanguagesTest {
         assertEquals(
             listOf(
                 "No dialogue",
-                "No dialogue (2)",
+                "No dialogue",
                 "No dialogue · Signs",
                 "Signs & Songs",
                 "Unknown",
                 "Unknown · foreign-language parts only",
-                "Unknown (2)",
+                "Unknown",
             ),
             subtitleLabels(
                 listOf(

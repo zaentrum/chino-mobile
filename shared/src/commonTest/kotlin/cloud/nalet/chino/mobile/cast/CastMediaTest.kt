@@ -204,6 +204,32 @@ class CastMediaTest {
     }
 
     @Test
+    fun twoThatReadTheSameGoToTheTvOnceNeverNumbered() {
+        // The file's own English, the server's English sidecar, and the
+        // file's untagged one titled "German" beside the German sidecar.
+        val subs = listOf(
+            sub("s1", "en"),
+            sub("emb-3", "eng"),
+            sub("s2", "ger"),
+            sub("emb-4", "und", label = "German"),
+            sub("s5", "eng", label = "English (2)"),
+        )
+        val tracks = castTextTracks(subs)
+        // Once each, the file's own kept, in its twin's language.
+        assertEquals(listOf("emb-3", "emb-4"), tracks.map { it.sidecarId })
+        assertEquals(listOf("English", "German"), tracks.map { it.name })
+        assertEquals(listOf("en", "de"), tracks.map { it.language })
+        assertEquals(listOf(1000L, 1001L), tracks.map { it.id })
+        for (t in tracks) assertFalse(Regex("""\(\d+\)""").containsMatchIn(t.name), t.name)
+        // The one the phone had on goes, whichever it is.
+        assertEquals(listOf("s1", "emb-4"), castTextTracks(subs, on = "s1").map { it.sidecarId })
+        val start = CastSubtitleStart.Sidecar("s1", "en", forced = false)
+        val media = castMediaFor(input(subs = subs, start = start))
+        assertEquals(listOf("s1", "emb-4"), media.textTracks.map { it.sidecarId })
+        assertEquals(1000L, media.activeTextTrackId)
+    }
+
+    @Test
     fun aTrackInNoLanguageIsUnd() {
         assertEquals("und", castTextTracks(listOf(sub("s9", "", label = "Commentary"))).single().language)
     }

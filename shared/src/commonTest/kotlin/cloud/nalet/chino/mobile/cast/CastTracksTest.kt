@@ -179,6 +179,21 @@ class CastTracksTest {
     }
 
     @Test
+    fun theTvsSubtitlesThatReadTheSameAreNamedOnceNeverNumbered() {
+        val tv = listOf(
+            video,
+            TvTrack(5, TvTrackType.Text, "en", "English"),
+            // chino-stream's unique NAME for a second English rendition.
+            TvTrack(6, TvTrackType.Text, "en", "English (2)"),
+            TvTrack(7, TvTrackType.Text, "de", "German"),
+        )
+        // One "English", the first; the chooser lists the named ones.
+        assertEquals(mapOf(5L to "English", 7L to "German"), tvSubtitleNames(tv))
+        // The one on stays, whichever it is.
+        assertEquals(mapOf(6L to "English", 7L to "German"), tvSubtitleNames(tv, active = listOf(6L)))
+    }
+
+    @Test
     fun theMastersRenditionOfTheViewersSdhIsTheSdhOne() {
         val tracks = listOf(
             TvTrack(2, TvTrackType.Audio, "en", "English"),

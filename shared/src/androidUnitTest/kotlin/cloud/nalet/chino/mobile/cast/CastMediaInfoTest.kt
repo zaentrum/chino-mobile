@@ -214,6 +214,13 @@ class CastMediaInfoTest {
         assertEquals(listOf(null, null, listOf(MediaTrack.ROLE_FORCED_SUBTITLE), null), named.map { it.roles })
         // The TV's own media stays as the TV reported it.
         assertEquals("English SDH", info.mediaTracks.orEmpty()[1].name)
+        // Two that read the same: listed once, the one on where it is one of them.
+        val twice = MediaInfo.Builder("m1").setStreamType(MediaInfo.STREAM_TYPE_BUFFERED).setMediaTracks(
+            tracks + MediaTrack.Builder(8, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English (2)").build(),
+        ).build()
+        assertEquals(listOf(2L, 5L, 6L, 7L), twice.withSubtitleNames().mediaTracks.orEmpty().map { it.id })
+        assertEquals(listOf(2L, 5L, 6L, 8L), twice.withSubtitleNames(longArrayOf(8L)).mediaTracks.orEmpty().map { it.id })
+        assertEquals("English", twice.withSubtitleNames(longArrayOf(8L)).mediaTracks.orEmpty().last().name)
     }
 
     @Test

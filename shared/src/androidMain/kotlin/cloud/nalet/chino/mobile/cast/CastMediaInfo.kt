@@ -170,14 +170,23 @@ internal fun MediaTrack.toTvTrack(): TvTrack = TvTrack(
 )
 
 /** The TV's tracks of [this] media, its subtitles named as the phone names a
- *  subtitle ([tvSubtitleNames]): what the chooser of the TV's tracks lists.
+ *  subtitle ([tvSubtitleNames]): what the chooser of the TV's tracks lists -
+ *  of two that read the same one, the one [active] where it is one of them.
  *  Nothing else of the media is in it. */
-internal fun MediaInfo.withSubtitleNames(): MediaInfo {
+internal fun MediaInfo.withSubtitleNames(active: LongArray = LongArray(0)): MediaInfo {
     val tracks = mediaTracks.orEmpty()
-    val names = tvSubtitleNames(tracks.map { it.toTvTrack() })
+    val names = tvSubtitleNames(tracks.map { it.toTvTrack() }, active.toList())
     return MediaInfo.Builder(contentId.orEmpty())
         .setStreamType(streamType)
-        .setMediaTracks(tracks.map { t -> names[t.id]?.let { t.named(it) } ?: t })
+        .setMediaTracks(
+            tracks.mapNotNull { t ->
+                when {
+                    names[t.id] != null -> t.named(names.getValue(t.id))
+                    t.type == MediaTrack.TYPE_TEXT -> null
+                    else -> t
+                }
+            },
+        )
         .build()
 }
 

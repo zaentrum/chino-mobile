@@ -95,7 +95,7 @@ class CastExpandedControlsActivity : ExpandedControllerActivity() {
         // The one way to hand it names of our own; it reads the TV's tracks
         // itself otherwise.
         @Suppress("DEPRECATION")
-        val chooser = TracksChooserDialogFragment.newInstance(info.withSubtitleNames(), active)
+        val chooser = TracksChooserDialogFragment.newInstance(info.withSubtitleNames(active), active)
         chooser.show(supportFragmentManager, TRACKS_TAG)
     }
 

@@ -20,3 +20,8 @@ internal expect fun platformRegionName(code: String, inLocale: String): String?
 /** [text] in Unicode's canonical decomposition (NFD): an accented letter as
  *  its letter and its accent. */
 internal expect fun decomposed(text: String): String
+
+/** [a] before [b] (negative), after it (positive) or alike (0), as English
+ *  orders names alphabetically - a collator, so an accented letter sorts
+ *  with its letter ("Māori" among the M's) and case does not split them. */
+internal expect fun compareNames(a: String, b: String): Int

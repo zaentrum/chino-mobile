@@ -17,3 +17,7 @@ internal actual fun platformRegionName(code: String, inLocale: String): String? 
 }.getOrNull()
 
 internal actual fun decomposed(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFD)
+
+private val ENGLISH_ORDER: java.text.Collator = java.text.Collator.getInstance(Locale.ENGLISH)
+
+internal actual fun compareNames(a: String, b: String): Int = synchronized(ENGLISH_ORDER) { ENGLISH_ORDER.compare(a, b) }

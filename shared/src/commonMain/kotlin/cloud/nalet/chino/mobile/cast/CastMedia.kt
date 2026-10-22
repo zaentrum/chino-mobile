@@ -14,7 +14,10 @@ import cloud.nalet.chino.mobile.ui.player.isSdhSubtitle
 import cloud.nalet.chino.mobile.ui.player.languageTag
 import cloud.nalet.chino.mobile.ui.player.sidecarForced
 import cloud.nalet.chino.mobile.ui.player.subtitleKind
-import cloud.nalet.chino.mobile.ui.player.subtitleLabels
+import cloud.nalet.chino.mobile.ui.player.EMBEDDED_SUBTITLE_PREFIX
+import cloud.nalet.chino.mobile.ui.player.distinctSubtitles
+import cloud.nalet.chino.mobile.ui.player.subtitleLabel
+import cloud.nalet.chino.mobile.ui.player.subtitleLanguage
 
 /*
  * What a TV is told to play when the phone casts a title: the receiver's own
@@ -242,7 +245,7 @@ internal fun castMediaFor(input: CastMediaInput, token: CastToken, master: HlsMa
         input.sidecars.map { it.copy(url = withStreamToken(it.url, token.token)) },
         master?.subtitles.orEmpty(),
     )
-    val tracks = castTextTracks(sidecars)
+    val tracks = castTextTracks(sidecars, on = (input.subtitleStart as? CastSubtitleStart.Sidecar)?.sidecarId)
     return CastMedia(
         itemId = input.itemId,
         extraId = input.extraId,
@@ -348,18 +351,28 @@ private fun castImages(input: CastMediaInput, token: String): List<CastImage> {
 
 /**
  * The sidecars the TV can show: the text ones, as WebVTT, each named as the
- * app's subtitle menus name it. A picture format (PGS, VobSub, DVB) has no
- * place on the receiver and is left out.
+ * app's subtitle menus name it, never numbered - two that read the same go
+ * once, as the phone's menu shows them ([distinctSubtitles]): the one on
+ * ([on], a sidecar's id), else the file's own before one the server adds,
+ * else the first; an untagged one in its twin's language. A picture format
+ * (PGS, VobSub, DVB) has no place on the receiver and is left out.
  */
-fun castTextTracks(sidecars: List<SidecarSubtitle>): List<CastTextTrack> {
-    val text = sidecars.filter { it.id.isNotBlank() && it.url.isNotBlank() && subtitleKind(it.format) == SubtitleKind.Text }
-    val names = subtitleLabels(text.map { SubtitleLabelInput(it.lang, it.label, sidecarForced(it)) })
+fun castTextTracks(sidecars: List<SidecarSubtitle>, on: String? = null): List<CastTextTrack> {
+    val name = { s: SidecarSubtitle -> subtitleLabel(SubtitleLabelInput(s.lang, s.label, sidecarForced(s), isSdhSubtitle(s.label))) }
+    val text = distinctSubtitles(
+        sidecars.filter { it.id.isNotBlank() && it.url.isNotBlank() && subtitleKind(it.format) == SubtitleKind.Text },
+        label = name,
+        tag = { subtitleLanguage(it.lang, it.label) },
+        on = { it.id == on },
+        own = { it.id.startsWith(EMBEDDED_SUBTITLE_PREFIX) },
+        retag = { kept, twin -> kept.copy(lang = twin.lang) },
+    )
     return text.mapIndexed { i, s ->
         CastTextTrack(
             id = CAST_TEXT_TRACK_FIRST_ID + i,
             url = s.url,
             language = languageTag(s.lang).ifEmpty { "und" },
-            name = names[i],
+            name = name(s),
             forced = sidecarForced(s),
             sidecarId = s.id,
             sdh = isSdhSubtitle(s.label),
