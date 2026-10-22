@@ -70,6 +70,9 @@ kotlin {
             // Needed at runtime so the test APK can launch composables in
             // an empty ComponentActivity host.
             implementation(libs.compose.ui.test.manifest)
+            // Google's Cast widgets, driven on the device (CastWidgetsInstrumentedTest).
+            implementation(libs.play.services.cast.framework)
+            implementation(libs.androidx.mediarouter)
         }
     }
 }

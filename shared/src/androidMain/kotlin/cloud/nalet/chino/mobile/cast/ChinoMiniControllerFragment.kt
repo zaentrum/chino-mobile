@@ -1,7 +1,10 @@
 package cloud.nalet.chino.mobile.cast
 
+import android.content.Context
 import android.os.Bundle
 import android.text.TextUtils
+import android.util.AttributeSet
+import android.util.Xml
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -11,6 +14,7 @@ import cloud.nalet.chino.mobile.shared.R
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.media.uicontroller.UIController
 import com.google.android.gms.cast.framework.media.widget.MiniControllerFragment
+import org.xmlpull.v1.XmlPullParser
 import com.google.android.gms.cast.framework.R as CastR
 
 /**
@@ -20,9 +24,22 @@ import com.google.android.gms.cast.framework.R as CastR
  * {device}", the device's own name. Google's draws the metadata's subtitle
  * there, so that line is put in its place, the same view in the same spot;
  * should the layout ever lack it, Google's line stays.
+ *
+ * Google's fragment reads its style - its buttons, its colours - as it is
+ * inflated from a layout (onInflate). Compose adds it in code (CastBar's
+ * AndroidFragment), so it is inflated here first, with no attributes of its
+ * own: the theme's castMiniControllerStyle is its look.
  */
 class ChinoMiniControllerFragment : MiniControllerFragment() {
+    private var inflated = false
+
+    override fun onInflate(context: Context, attrs: AttributeSet, savedInstanceState: Bundle?) {
+        inflated = true
+        super.onInflate(context, attrs, savedInstanceState)
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        if (!inflated) inflateFromTheme(requireContext(), savedInstanceState)
         val root = super.onCreateView(inflater, container, savedInstanceState)
         val inter = CastFonts.inter(root.context)
         root.findViewById<TextView>(CastR.id.title_view)?.let { title -> inter?.let { title.typeface = it } }
@@ -44,6 +61,14 @@ class ChinoMiniControllerFragment : MiniControllerFragment() {
             controller.bindViewToUIController(line, DeviceLine(line))
         }
         return root
+    }
+
+    /** onInflate with the empty attributes of res/xml/chino_cast_bar.xml. */
+    private fun inflateFromTheme(context: Context, savedInstanceState: Bundle?) {
+        context.resources.getXml(R.xml.chino_cast_bar).use { parser ->
+            while (parser.next() != XmlPullParser.START_TAG && parser.eventType != XmlPullParser.END_DOCUMENT) Unit
+            onInflate(context, Xml.asAttributeSet(parser), savedInstanceState)
+        }
     }
 }
 

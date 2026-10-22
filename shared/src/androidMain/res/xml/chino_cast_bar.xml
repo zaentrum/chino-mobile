@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The bar's attributes when it is added in code (ChinoMiniControllerFragment):
+     none of its own - its look is the theme's castMiniControllerStyle. -->
+<bar />
