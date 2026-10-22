@@ -1,5 +1,8 @@
 package cloud.nalet.chino.mobile.ui.settings
 
+import androidx.compose.foundation.border
+import cloud.nalet.chino.mobile.ui.theme.SwitchKnobOff
+import cloud.nalet.chino.mobile.ui.theme.SwitchEdgeOff
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
@@ -393,7 +396,7 @@ private fun LangPickerRow(
     }
 }
 
-/** Pill toggle. 40×22 with an 18×18 thumb that shifts left/right. Used by
+/** Pill toggle. 40×22 with a 16×16 knob that shifts left/right. Used by
  *  the settings ToggleRows (the bug-report dialog, now in ui/feedback,
  *  carries its own per-file copy — same idiom as the DialogButtons). */
 @Composable
@@ -403,16 +406,21 @@ private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit) {
             .width(40.dp)
             .height(22.dp)
             .clip(RectangleShape)
-            .background(if (value) ChinoCloudBlue else ChinoBorder)
+            // The design system's switch: on, the blue track with the dark
+            // knob; off, the dark track, its edge, the dim knob.
+            .background(if (value) ChinoCloudBlue else ChinoBg2)
+            .border(1.dp, if (value) ChinoCloudBlue else SwitchEdgeOff, RectangleShape)
             .clickable { onChange(!value) },
         contentAlignment = if (value) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
+        // Inside the track's 1dp edge and 2dp of room, as the design
+        // system's switch has it.
         Box(
             modifier = Modifier
-                .padding(2.dp)
-                .size(18.dp)
+                .padding(3.dp)
+                .size(16.dp)
                 .clip(RectangleShape)
-                .background(Color.White),
+                .background(if (value) ChinoOnFill else SwitchKnobOff),
         )
     }
 }

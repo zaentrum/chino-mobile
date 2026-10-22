@@ -17,8 +17,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
-import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
-import cloud.nalet.chino.mobile.ui.theme.avatarColor
+import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import coil3.compose.AsyncImage
 
 /** Faces sit in the upper part of a portrait: keep them in the crop
@@ -47,14 +47,15 @@ internal fun PersonAvatar(
         modifier = modifier
             .size(width, if (portrait) width * 1.5f else width)
             .clip(RectangleShape)
-            .background(avatarColor(name))
+            // On the neutral surface, as chino-web and the TV app draw a
+            // person (an account's avatar is the one with a colour).
+            .background(ChinoSurface)
             .clearAndSetSemantics {},
         contentAlignment = Alignment.Center,
     ) {
-        // Dark on its colour, as the account avatars' initials are.
         Text(
             text = initialsOf(name),
-            color = ChinoOnFill,
+            color = ChinoFg2,
             fontSize = (width.value * 0.36f).sp,
             fontWeight = FontWeight.SemiBold,
         )

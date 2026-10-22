@@ -1,5 +1,8 @@
 package cloud.nalet.chino.mobile.ui.feedback
 
+import cloud.nalet.chino.mobile.ui.theme.SwitchKnobOff
+import cloud.nalet.chino.mobile.ui.theme.SwitchEdgeOff
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
@@ -338,16 +341,21 @@ private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit) {
             .width(40.dp)
             .height(22.dp)
             .clip(RectangleShape)
-            .background(if (value) ChinoCloudBlue else ChinoBorder)
+            // The design system's switch: on, the blue track with the dark
+            // knob; off, the dark track, its edge, the dim knob.
+            .background(if (value) ChinoCloudBlue else ChinoBg2)
+            .border(1.dp, if (value) ChinoCloudBlue else SwitchEdgeOff, RectangleShape)
             .clickable { onChange(!value) },
         contentAlignment = if (value) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
+        // Inside the track's 1dp edge and 2dp of room, as the design
+        // system's switch has it.
         Box(
             modifier = Modifier
-                .padding(2.dp)
-                .size(18.dp)
+                .padding(3.dp)
+                .size(16.dp)
                 .clip(RectangleShape)
-                .background(Color.White),
+                .background(if (value) ChinoOnFill else SwitchKnobOff),
         )
     }
 }

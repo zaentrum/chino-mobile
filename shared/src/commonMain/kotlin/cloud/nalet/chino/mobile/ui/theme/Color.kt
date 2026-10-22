@@ -26,10 +26,17 @@ internal val ChinoWarningBg = Color(0xFF24211A)
 internal val ChinoWarningBorder = Color(0xFF846B3B)
 
 // A label or an icon on a filled colour - cloud-blue, green, red, amber, an
-// avatar's - is the darkest background colour: the design system's rule.
+// account avatar's - is the darkest background colour: the design system's
+// rule.
 // On blue 7.58:1 (white was 2.53), green 5.68 (3.37), red 5.71 (3.35), amber
 // 10.21 (1.88); on the avatars' twelve colours 5.68 to 10.99 (1.74 to 3.37).
 internal val ChinoOnFill = ChinoBg
+
+// The design system's switch, off: its dim knob (the design system's fg-dim)
+// and its track's edge (border-control), on the dark track (bg-2). On, the
+// knob is ChinoOnFill on the cloud-blue track.
+internal val SwitchKnobOff = Color(0xFF7B8597)
+internal val SwitchEdgeOff = Color(0xFF646C7A)
 
 /** The design system's filled colours, on which a label is [ChinoOnFill]. */
 private val Fills = setOf(ChinoCloudBlue, ChinoGreen, ChinoRed, ChinoWarning)
@@ -41,10 +48,11 @@ internal fun contentOn(fill: Color, otherwise: Color = Color.White): Color =
     if (fill in Fills) ChinoOnFill else otherwise
 
 /**
- * The account and person avatars' twelve colours, picked by a hash of the
- * seed - an account's email, else its name; a person's name - as the TV app
- * picks them, so a person's avatar is the same colour on the phone and the
- * TV. Their initials are [ChinoOnFill].
+ * The account avatars' twelve colours, picked by a hash of the seed - the
+ * account's email, else its name - as the TV app picks them, so an account
+ * has the same colour on the phone and the TV. Their initials are
+ * [ChinoOnFill]. A catalogue person (cast and crew) has no colour: the
+ * neutral surface, as on the TV and the web.
  */
 internal fun avatarColor(seed: String): Color {
     val hash = seed.fold(0) { acc, c -> acc * 31 + c.code }

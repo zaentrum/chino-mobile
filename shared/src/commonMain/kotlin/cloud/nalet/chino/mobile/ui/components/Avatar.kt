@@ -57,8 +57,8 @@ fun Avatar(
     val bg = avatarColor(seed)
     // Match chino-web's Avatar.tsx initial calc: split on whitespace /
     // dot / underscore / hyphen, take the first two non-empty words,
-    // first letter of each uppercased. "Andreas Meinen" → "AM",
-    // "andreas.meinen" → "AM", single-word "andreas" → "A". Web fallback
+    // first letter of each uppercased. "Demo User" → "DU",
+    // "demo.user" → "DU", single-word "demo" → "D". Web fallback
     // is "?" when the name is empty.
     val initial = displayName
         .split(Regex("[\\s._-]+"))

@@ -9,8 +9,8 @@ import kotlin.test.assertTrue
 /**
  * A label or an icon on a filled colour is dark (ChinoOnFill): the design
  * system's rule, with its numbers - on blue 7.58:1, green 5.68, red 5.71,
- * amber 10.21 - and the avatars' twelve colours, which are the TV app's,
- * picked as it picks them.
+ * amber 10.21 - and the account avatars' twelve colours, which are the TV
+ * app's, picked as it picks them.
  */
 class FillsContrastTest {
     /** WCAG 2's contrast ratio of two opaque colours. */
@@ -47,11 +47,11 @@ class FillsContrastTest {
     }
 
     @Test
-    fun aPersonsAvatarIsTheColourTheTvAppGivesIt() {
+    fun anAccountsAvatarIsTheColourTheTvAppGivesIt() {
         // String.hashCode, floorMod 12, as chino-androidtv's avatarColor.
         assertEquals(ChinoCloudBlue, avatarColor("Demo User"))
-        assertEquals(Color(0xFFF472B6), avatarColor("andreas@example.com"))
-        assertEquals(Color(0xFF9E86FF), avatarColor("Sintel Lee"))
+        assertEquals(Color(0xFFEAB308), avatarColor("viewer@example.com"))
+        assertEquals(Color(0xFF4ADE80), avatarColor("someone@example.org"))
         assertEquals(ChinoCloudBlue, avatarColor(""))
     }
 }
