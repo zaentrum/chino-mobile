@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.ui.search
 
+import cloud.nalet.chino.mobile.ui.components.CardStatusMarks
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
@@ -300,25 +301,8 @@ private fun SearchCard(
                     .fillMaxSize()
                     .background(ChinoBg2),
             )
-            // Watched badge — same emerald check overlay as Home/Browse.
-            if (item.watchedAt != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .size(20.dp)
-                        .clip(RectangleShape)
-                        .background(ChinoGreen),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Lucide.Check,
-                        contentDescription = "Watched",
-                        tint = ChinoOnFill,
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            }
+            // Its status marks: in the Watchlist, watched.
+            CardStatusMarks(itemId = item.id, watched = item.watchedAt != null)
         }
         Column(
             modifier = Modifier.padding(12.dp),

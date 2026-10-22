@@ -36,6 +36,39 @@ private fun lucide(name: String, paths: List<String>): ImageVector =
         }
     }.build()
 
+/** [lucide], its shapes filled as well as stroked: an "on" state's icon
+ *  (a bookmark in the Watchlist, a heart liked). */
+private fun lucideFilled(name: String, paths: List<String>): ImageVector =
+    ImageVector.Builder(
+        name = "Lucide.$name",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        for (d in paths) {
+            addPath(
+                pathData = PathParser().parsePathString(d).toNodes(),
+                fill = SolidColor(Color(0xFF000000)),
+                stroke = SolidColor(Color(0xFF000000)),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+            )
+        }
+    }.build()
+
+private const val BOOKMARK_PATH = "M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"
+private const val HEART_PATH = "M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"
+
+private var _bookmarkFilled: ImageVector? = null
+public val Lucide.BookmarkFilled: ImageVector
+    get() = _bookmarkFilled ?: lucideFilled("BookmarkFilled", listOf(BOOKMARK_PATH)).also { _bookmarkFilled = it }
+
+private var _heartFilled: ImageVector? = null
+public val Lucide.HeartFilled: ImageVector
+    get() = _heartFilled ?: lucideFilled("HeartFilled", listOf(HEART_PATH)).also { _heartFilled = it }
+
 private var _arrowLeft: ImageVector? = null
 public val Lucide.ArrowLeft: ImageVector
     get() = _arrowLeft ?: lucide("ArrowLeft", listOf("m12 19-7-7 7-7", "M19 12H5")).also { _arrowLeft = it }

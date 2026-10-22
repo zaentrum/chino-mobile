@@ -165,7 +165,8 @@ class PersonScreen(private val personId: String, private val initialName: String
                         .padding(start = 16.dp, top = 16.dp)
                         .size(40.dp)
                         .clip(RectangleShape)
-                        .background(Color(0x80000000))
+                        // Solid over the picture, as DetailScreen's.
+                        .background(cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi)
                         .clickable(role = Role.Button) { nav.pop() },
                     contentAlignment = Alignment.Center,
                 ) {

@@ -52,13 +52,10 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import com.composables.icons.lucide.BookmarkCheck
+import com.composables.icons.lucide.BookmarkFilled
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Clapperboard
-import com.composables.icons.lucide.EllipsisVertical
-import com.composables.icons.lucide.Eye
-import com.composables.icons.lucide.EyeOff
 import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Play
@@ -187,7 +184,9 @@ fun HeroBanner(
                                 .size(8.dp)
                                 .clip(RectangleShape)
                                 .background(
-                                    if (isActive) Color.White else Color.White.copy(alpha = 0.3f),
+                                    // Solid over the artwork, as nothing
+                                    // translucent is.
+                                    if (isActive) Color.White else cloud.nalet.chino.mobile.ui.theme.ChinoBorderControl,
                                 )
                                 .clickable { scope.launch { pagerState.animateScrollToPage(i) } },
                         )
@@ -287,7 +286,7 @@ private fun HeroContentNarrow(
             HeroButton(
                 label = "More Info",
                 icon = Lucide.Info,
-                background = Color.White.copy(alpha = 0.2f),
+                background = ChinoSurfaceHi,
                 contentColor = Color.White,
                 compact = true,
                 onClick = { onMoreInfo?.invoke(item.id) },
@@ -420,7 +419,7 @@ private fun HeroContentWide(
             HeroButton(
                 label = "More Info",
                 icon = Lucide.Info,
-                background = Color.White.copy(alpha = 0.2f),
+                background = ChinoSurfaceHi,
                 contentColor = Color.White,
                 onClick = { onMoreInfo?.invoke(item.id) },
             )
@@ -433,7 +432,7 @@ private fun HeroContentWide(
  * The hero title's Trailer, after Play and More Info (web: HeroSection.tsx),
  * by its page's rule (trailerChoice): the clapperboard plays this server's
  * trailer, the YouTube mark opens the title's link; without either, no
- * button. Translucent, as More Info.
+ * button. Solid over the artwork, as More Info.
  */
 @Composable
 private fun HeroTrailerButton(item: Item, compact: Boolean, onTrailer: ((String, TrailerChoice) -> Unit)?) {
@@ -441,7 +440,7 @@ private fun HeroTrailerButton(item: Item, compact: Boolean, onTrailer: ((String,
     HeroButton(
         label = "Trailer",
         icon = if (choice is TrailerChoice.Local) Lucide.Clapperboard else Lucide.Youtube,
-        background = Color.White.copy(alpha = 0.2f),
+        background = ChinoSurfaceHi,
         contentColor = Color.White,
         compact = compact,
         onClick = { onTrailer?.invoke(item.id, choice) },
@@ -553,9 +552,6 @@ fun MediaRow(
     // view the trailing See-all tile does. Home rails leave this null and
     // the title stays inert.
     onTitleClick: (() -> Unit)? = null,
-    // Watchlist hub: every tile on a list shelf is by definition saved, so
-    // the hub turns the bookmark badge on for the whole row.
-    saved: Boolean = false,
     // Watchlist hub: list shelves can contain EPISODES; when true, episode
     // items swap the year•rating subtitle for the SxxEyy badge (same idiom
     // as the Continue Watching cards). Home rails leave this off.
@@ -598,7 +594,6 @@ fun MediaRow(
                         onClick = onItemClick?.let { cb -> { cb(item.id) } },
                         episodeBadge = if (episodeBadges) episodeBadgeFor(item) else null,
                         cardWidth = cardWidth,
-                        saved = saved,
                         onToggleWatched = onToggleWatched?.let { cb -> { cb(item.id) } },
                     )
                 }
@@ -706,23 +701,18 @@ fun MediaCard(
     progress: Float? = null,
     episodeBadge: EpisodeBadge? = null,
     cardWidth: Dp = 208.dp,
-    // When true, overlays a small bookmark badge on the poster — the "saved"
-    // signal, now meaning "in the default list OR any named list" (#110).
-    // Sits top-LEFT so it never collides with the top-right watched badge.
-    saved: Boolean = false,
     // When set, the card surfaces a "Remove from Continue Watching" action
-    // via a small ⋮ overflow button on the poster + a long-press on the card
-    // body. Only the in-progress Continue Watching rail wires this (web:
+    // in its menu, on a long-press of the card body. Only the in-progress Continue Watching rail wires this (web:
     // MediaCard.tsx `onRemoveFromContinueWatching`); other rails leave it
     // null and the affordance never appears.
     onRemoveFromContinueWatching: (() -> Unit)? = null,
     // #188: when set, the card's overflow menu gains a watched toggle. The
-    // label/icon flip on `item.watchedAt`: set → "Mark as unwatched" (EyeOff),
-    // else → "Mark as watched" (Eye). The callback reuses the same watched
-    // POST/DELETE the detail-page eye uses; the caller owns the optimistic
-    // update (drop from a Home rail / flip the Browse badge). Available on ALL
-    // card surfaces, not just Continue Watching — so wiring this is what makes
-    // the ⋮ / long-press menu appear on rails that don't dismiss.
+    // label flips on `item.watchedAt`: "Mark as unwatched" / "Mark as
+    // watched", by the check that means watched. The callback reuses the
+    // watched POST/DELETE of the title page's watched button; the caller owns
+    // the optimistic update (drop from a Home rail / flip the Browse badge).
+    // Available on ALL card surfaces, not just Continue Watching — wiring this
+    // is what gives a rail that doesn't dismiss its long-press menu.
     onToggleWatched: (() -> Unit)? = null,
     // A line under the year/rating naming someone's credit on the title — a
     // person's roles on a filmography card ("Director · Writer"). chino-web
@@ -733,8 +723,8 @@ fun MediaCard(
     // Either action wires the overflow affordance. When ONLY the watched
     // toggle is wired (Home rails / Browse grid), the menu still appears.
     val hasMenu = onRemoveFromContinueWatching != null || onToggleWatched != null
-    // Drives the overflow dropdown. Opened by either the ⋮ button or a
-    // long-press on the card body — both feed the same single-item menu.
+    // Drives the card's menu, opened by a long-press on the card (no button
+    // drawn over the artwork).
     var menuOpen by remember { mutableStateOf(false) }
     // CDP-verified: web's MediaCard is `relative rounded-lg overflow-
     // hidden bg-[#161B22]`. The OUTER card carries the 8dp radius +
@@ -761,6 +751,7 @@ fun MediaCard(
                         base.combinedClickable(
                             onClick = onClick,
                             onLongClick = { menuOpen = true },
+                            onLongClickLabel = "More options",
                         )
                     onClick != null -> base.clickable(onClick = onClick)
                     else -> base
@@ -779,78 +770,14 @@ fun MediaCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-            // Watched badge — top-end emerald square with a dark check.
-            // Mirrors the TV PosterCard badge (RectangleShape, #2EA043). Shown
-            // when chino-api reports a watched_at timestamp for the item.
-            if (item.watchedAt != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .size(20.dp)
-                        .clip(RectangleShape)
-                        .background(ChinoGreen),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Lucide.Check,
-                        contentDescription = "Watched",
-                        tint = ChinoOnFill,
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            }
-            // Saved badge — top-LEFT bookmark, shown when the item is in at
-            // least one watchlist. Mirrors the TV/web "saved" poster badge.
-            if (saved) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(6.dp)
-                        .size(20.dp)
-                        .clip(RectangleShape)
-                        .background(ChinoSurface.copy(alpha = 0.8f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Lucide.BookmarkCheck,
-                        contentDescription = "Saved",
-                        tint = ChinoCloudBlue,
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            }
-            // ⋮ overflow + dropdown — top-right of the poster. Present on ANY
-            // card that wires a menu action (#188: the watched toggle makes
-            // this appear on Home rails + Browse, not just Continue Watching).
-            // Tap opens the same menu a long-press does. Web: MediaCard.tsx
-            // 3-dot menu.
+            // Its status marks: in the Watchlist, watched.
+            CardStatusMarks(itemId = item.id, watched = item.watchedAt != null)
+            // The card's menu - mark watched, take off Continue Watching - on
+            // a long-press of the card: nothing is drawn over the artwork but
+            // its status marks, the saved bookmark, the watched check and the
+            // progress bar (the design system's title actions).
             if (hasMenu) {
-                // Offset the ⋮ below the watched badge when both want the
-                // top-right corner (web: the menu button sits clear of the
-                // watched badge). The badge is 6dp inset + 20dp tall, so a
-                // 32dp top inset clears it; otherwise hug the corner.
-                val menuTopInset = if (item.watchedAt != null) 32.dp else 6.dp
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = menuTopInset, end = 6.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(RectangleShape)
-                            .background(Color(0x99000000))
-                            .clickable { menuOpen = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Lucide.EllipsisVertical,
-                            contentDescription = "More options",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
+                Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)) {
                     DropdownMenu(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
@@ -866,7 +793,7 @@ fun MediaCard(
                                 },
                                 leadingIcon = {
                                     Icon(
-                                        imageVector = if (isWatched) Lucide.EyeOff else Lucide.Eye,
+                                        imageVector = Lucide.Check,
                                         contentDescription = null,
                                         modifier = Modifier.size(18.dp),
                                     )

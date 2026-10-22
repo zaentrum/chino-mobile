@@ -253,7 +253,6 @@ private fun WatchlistHub(
                     onItemClick = onItemClick,
                     onSeeAll = { onOpenList(list) },
                     onTitleClick = { onOpenList(list) },
-                    saved = true,
                     // Saved EPISODES carry their SxxEyy badge (CW-rail idiom).
                     episodeBadges = true,
                 )
@@ -374,8 +373,14 @@ private fun ListMoreView(
         when {
             loading -> Center { CircularProgressIndicator() }
             items.isEmpty() -> Center {
+                // Where titles come from, by the control that adds them: the
+                // bookmark for the Watchlist, the arrow beside it for a list.
                 Text(
-                    "This list is empty. Add things from a title's page.",
+                    if (list.isDefault) {
+                        "Add titles with the bookmark on a movie's or a show's page."
+                    } else {
+                        "Add titles with the arrow beside the bookmark on a movie's or a show's page."
+                    },
                     color = ChinoMuted,
                 )
             }
@@ -394,9 +399,6 @@ private fun ListMoreView(
                         // Saved EPISODES carry their SxxEyy badge (CW-rail idiom).
                         episodeBadge = episodeBadgeFor(item),
                         cardWidth = 110.dp,
-                        // Every tile here is, by definition, in the open
-                        // list — surface the "saved" badge (in >=1 list).
-                        saved = true,
                     )
                 }
             }

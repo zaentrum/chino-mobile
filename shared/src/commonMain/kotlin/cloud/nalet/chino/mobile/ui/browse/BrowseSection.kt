@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.ui.browse
 
+import cloud.nalet.chino.mobile.ui.components.CardStatusMarks
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
@@ -69,9 +70,6 @@ import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.theme.PosterImage
 import com.composables.icons.lucide.Check
-import com.composables.icons.lucide.EllipsisVertical
-import com.composables.icons.lucide.Eye
-import com.composables.icons.lucide.EyeOff
 import com.composables.icons.lucide.Lucide
 import kotlinx.coroutines.flow.first
 
@@ -201,20 +199,16 @@ fun BrowseSection(
         }
 
         when {
+            // The design system's "couldn't load", as Home says it: what,
+            // why, and "try again" - one line of each.
             state.error != null -> item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Failed to load: ${state.error}",
-                        color = MaterialTheme.colorScheme.error,
-                        fontSize = 14.sp,
-                    )
-                    Text(
-                        text = "Tap to retry.",
-                        color = ChinoCloudBlue,
-                        fontSize = 13.sp,
-                        modifier = Modifier.clickable(onClick = model::retry).padding(vertical = 4.dp),
-                    )
-                }
+                cloud.nalet.chino.mobile.ui.components.CouldntLoad(
+                    title = "couldn't load the titles",
+                    sentence = state.error,
+                    action = "try again",
+                    onAction = model::retry,
+                    modifier = Modifier.padding(vertical = 32.dp),
+                )
             }
             state.items.isEmpty() && state.loading -> item(span = { GridItemSpan(maxLineSpan) }) {
                 Box(
@@ -286,11 +280,11 @@ private fun BrowseCard(
     streamToken: String,
     onClick: () -> Unit,
     // #188: when set, the card surfaces a Mark-watched/Mark-unwatched toggle
-    // via a ⋮ overflow button + long-press, same overflow idiom + wording as
-    // the Home rail cards (MediaCard). null leaves the menu off.
+    // in its menu, on a long-press, the same idiom and wording as the Home
+    // rail cards (MediaCard). null leaves the menu off.
     onToggleWatched: (() -> Unit)? = null,
 ) {
-    // Drives the overflow dropdown — opened by the ⋮ button or a long-press.
+    // Drives the card's menu, opened by a long-press.
     var menuOpen by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
@@ -298,7 +292,7 @@ private fun BrowseCard(
             .background(ChinoSurface)
             .let { base ->
                 if (onToggleWatched != null) {
-                    base.combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
+                    base.combinedClickable(onClick = onClick, onLongClick = { menuOpen = true }, onLongClickLabel = "More options")
                 } else {
                     base.clickable(onClick = onClick)
                 }
@@ -318,49 +312,13 @@ private fun BrowseCard(
                     .fillMaxSize()
                     .background(ChinoBg2),
             )
-            // Watched badge — same emerald check overlay as Home/Search.
-            if (item.watchedAt != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .size(20.dp)
-                        .clip(RectangleShape)
-                        .background(ChinoGreen),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Lucide.Check,
-                        contentDescription = "Watched",
-                        tint = ChinoOnFill,
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            }
-            // ⋮ overflow + watched-toggle dropdown. Offset below the watched
-            // badge when both want the top-right corner.
+            // Its status marks: in the Watchlist, watched.
+            CardStatusMarks(itemId = item.id, watched = item.watchedAt != null)
+            // The card's menu - mark watched - on a long-press: nothing is
+            // drawn over the artwork but its status marks (the design
+            // system's title actions).
             if (onToggleWatched != null) {
-                val menuTopInset = if (item.watchedAt != null) 32.dp else 6.dp
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = menuTopInset, end = 6.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(RectangleShape)
-                            .background(Color(0x99000000))
-                            .clickable { menuOpen = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Lucide.EllipsisVertical,
-                            contentDescription = "More options",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
+                Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)) {
                     DropdownMenu(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
@@ -370,7 +328,7 @@ private fun BrowseCard(
                             text = { Text(if (isWatched) "Mark as unwatched" else "Mark as watched") },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = if (isWatched) Lucide.EyeOff else Lucide.Eye,
+                                    imageVector = Lucide.Check,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp),
                                 )

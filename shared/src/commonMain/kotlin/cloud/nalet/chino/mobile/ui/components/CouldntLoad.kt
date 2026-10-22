@@ -27,7 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cloud.nalet.chino.mobile.ui.theme.ChinoBg
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMono
@@ -70,7 +70,7 @@ fun CouldntLoad(
                 Button(
                     onClick = onAction,
                     shape = RectangleShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = ChinoCloudBlue, contentColor = ChinoBg),
+                    colors = ButtonDefaults.buttonColors(containerColor = ChinoCloudBlue, contentColor = ChinoOnFill),
                     modifier = Modifier.padding(top = 4.dp),
                 ) { Text(text = action, style = ChinoMono, fontWeight = FontWeight.SemiBold) }
             }

@@ -9,6 +9,12 @@ import cloud.nalet.chino.mobile.data.model.fileEntries
 import cloud.nalet.chino.mobile.ui.components.CouldntLoad
 import cloud.nalet.chino.mobile.ui.downloads.EpisodeDownloadControl
 import cloud.nalet.chino.mobile.ui.downloads.SeasonDownloadControl
+import cloud.nalet.chino.mobile.ui.components.AddToListControl
+import cloud.nalet.chino.mobile.ui.components.LikedButton
+import cloud.nalet.chino.mobile.ui.components.TITLE_ACTION_GAP
+import cloud.nalet.chino.mobile.ui.components.TitleActionButton
+import cloud.nalet.chino.mobile.ui.components.WatchedButton
+import cloud.nalet.chino.mobile.ui.downloads.OfflineSeriesSummary
 import cloud.nalet.chino.mobile.ui.downloads.SeriesDownloadSummary
 import cloud.nalet.chino.mobile.ui.downloads.InformationBanner
 import cloud.nalet.chino.mobile.data.downloads.Reach
@@ -212,8 +218,12 @@ class DetailScreen(private val itemId: String) : Screen {
         // watchlist / like / add-to-list controls operate on THIS id so they
         // reflect (and mutate) the shown item, not the source episode.
         val effectiveId = (state as? DetailUiState.Ready)?.item?.id ?: itemId
-        val itemMemberships = memberships[effectiveId] ?: emptySet()
-        val inAnyList = effectiveId in watchlist || itemMemberships.isNotEmpty()
+        // Add to list's main part shows and toggles the Watchlist alone (the
+        // default list); the picker holds the others.
+        val listState = TitleListState(
+            inWatchlistOf = { id -> id in watchlist },
+            toggleWatchlist = { id -> container.userFlags.setWatchlist(id, id !in watchlist) },
+        )
         // Controls the add-to-list picker (long-press / caret on the action-
         // row toggle, or an episode row's "+"). Holds the TARGET id the sheet
         // mutates — the displayed item for the action row, the EPISODE id for
@@ -258,7 +268,7 @@ class DetailScreen(private val itemId: String) : Screen {
                     val watched = watchedOverride ?: (s.item.watchedAt != null)
                     ReadyContent(
                         ready = s.offline?.let { o -> s.copy(offline = o.copy(waitingForCheck = waitingForCheck)) } ?: s,
-                        inWatchlist = inAnyList,
+                        listState = listState,
                         liked = effectiveId in likes,
                         watched = watched,
                         episodeWatched = episodeWatched,
@@ -350,7 +360,8 @@ class DetailScreen(private val itemId: String) : Screen {
 @Composable
 private fun ReadyContent(
     ready: DetailUiState.Ready,
-    inWatchlist: Boolean,
+    /** The viewer's lists, for the title's and its episodes' add to list. */
+    listState: TitleListState,
     liked: Boolean,
     watched: Boolean,
     episodeWatched: Map<String, Boolean>,
@@ -398,6 +409,16 @@ private fun ReadyContent(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
+            // From the phone: the server can't be reached, the downloads play
+            // all the same - on top, under the Back / Home row.
+            if (ready.offline != null) {
+                InformationBanner(
+                    UNREACHABLE_BANNER,
+                    modifier = Modifier
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(start = 16.dp, end = 16.dp, top = HERO_BUTTONS_TOP + HERO_BUTTON_SIZE + 12.dp, bottom = 12.dp),
+                )
+            }
             // Backdrop hero — web uses `aspect-[21/9] max-h-[60vh]`.
             Box(modifier = Modifier.fillMaxWidth().height(backdropH)) {
                 AsyncImage(
@@ -443,9 +464,6 @@ private fun ReadyContent(
                 }
                 val content: @Composable (Modifier, androidx.compose.ui.unit.TextUnit) -> Unit = { mod, titleSize ->
                     Column(modifier = mod, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        // From the phone: the server can't be reached, the
-                        // downloads play all the same.
-                        if (ready.offline != null) InformationBanner(UNREACHABLE_BANNER)
                         // The web's h1: the heading face.
                         Text(
                             text = item.title,
@@ -469,7 +487,7 @@ private fun ReadyContent(
                         }
                         ActionRow(
                             playAction = ready.playAction,
-                            inWatchlist = inWatchlist,
+                            inWatchlist = listState.inWatchlistOf(item.id),
                             liked = liked,
                             watched = watched,
                             isSeries = item.kind == "series",
@@ -481,6 +499,18 @@ private fun ReadyContent(
                             playEnabled = ready.offline?.waitingForCheck?.contains(item.id) != true,
                             download = when {
                                 hasDownloadControl(item.kind) -> { { TitleDownloadControl(item.id, item.durationMs) } }
+                                // From the phone: how many of its episodes
+                                // are on it, not how far it is downloaded.
+                                item.kind == "series" && ready.offline != null && ready.seasons.isNotEmpty() -> {
+                                    {
+                                        val offline = ready.offline
+                                        val ids = ready.seasons.flatMap { s -> s.episodes.map { it.id } }
+                                        OfflineSeriesSummary(
+                                            episodes = ids.size,
+                                            anyWaitsForCheck = ids.any { it in offline.waitingForCheck },
+                                        )
+                                    }
+                                }
                                 item.kind == "series" && ready.seasons.isNotEmpty() -> {
                                     { SeriesDownloadSummary(ready.seasons.flatMap { fileEntries(it.episodes) }) }
                                 }
@@ -555,6 +585,7 @@ private fun ReadyContent(
             ) {
                 if (ready.seasons.isNotEmpty()) {
                     EpisodesSection(
+                        listState = listState,
                         seasons = ready.seasons,
                         baseUrl = ready.baseUrl,
                         streamToken = ready.streamToken,
@@ -612,7 +643,7 @@ private fun ReadyContent(
                 .padding(end = 16.dp, top = HERO_BUTTONS_TOP)
                 .size(HERO_BUTTON_SIZE)
                 .clip(RectangleShape)
-                .background(Color(0x80000000)),
+                .background(ChinoSurfaceHi),
         )
     }
 }
@@ -641,9 +672,9 @@ internal fun heroOverlap(backdropHeight: Dp, topInset: Dp): Dp {
     return (backdropHeight - belowButtons).coerceIn(0.dp, 128.dp)
 }
 
-/** Dark translucent square icon chip used for the detail backdrop overlay
- *  affordances (Back / Home). Matches web's `p-2 rounded bg-black/50` with
- *  the app's square-corner tokens. */
+/** The square icon chip of the detail backdrop's overlay affordances (Back
+ *  / Home): nothing translucent over a picture - the surface colour, solid,
+ *  with the app's square-corner tokens. */
 @Composable
 private fun OverlayIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -654,7 +685,7 @@ private fun OverlayIconButton(
         modifier = Modifier
             .size(HERO_BUTTON_SIZE)
             .clip(RectangleShape)
-            .background(Color(0x80000000))
+            .background(ChinoSurfaceHi)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -749,13 +780,14 @@ private fun Bullet() {
 @Composable
 private fun ActionRow(
     playAction: PlayAction,
+    /** Whether the title is in the Watchlist ([AddToListControl]). */
     inWatchlist: Boolean,
     liked: Boolean,
     watched: Boolean,
     isSeries: Boolean = false,
     /** The Trailer pill's choice; null: no pill. */
     trailer: TrailerChoice? = null,
-    /** The download control, next to "play" (ui/downloads); null: none. */
+    /** The download control (ui/downloads), last; null: none. */
     download: (@Composable () -> Unit)? = null,
     /** Watchlist, lists, watched, like: false from the phone, where they
      *  would need the server. */
@@ -771,11 +803,13 @@ private fun ActionRow(
     onToggleWatched: () -> Unit,
     onToggleLike: () -> Unit,
 ) {
-    // Wraps onto a second line where a phone is too narrow for the pills and
-    // the circles together, as the web's `flex flex-wrap gap-3` does.
+    // The design system's title actions, in its order - Play (or Resume) ·
+    // Start over · Trailer, then add to list · watched · liked · download -
+    // each one action tall, 8 dp apart; where a phone is too narrow for
+    // them, the row wraps between controls, never inside one.
     FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+        verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
     ) {
         when {
             // Series: no series-level Play — its episodes play.
@@ -784,171 +818,47 @@ private fun ActionRow(
             // players' own rule): a finished title starts over, as the
             // player would start it.
             playAction is PlayAction.Resume -> {
-                PillButton(
+                TitleActionButton(
                     label = "Resume ${fmtDur(playAction.sec)}",
                     icon = Lucide.Play,
                     primary = true,
                     onClick = onResume,
                     enabled = playEnabled,
                 )
-                PillButton(label = "Start over", icon = null, primary = false, onClick = onStartOver, enabled = playEnabled)
+                TitleActionButton(label = "Start over", icon = null, primary = false, onClick = onStartOver, enabled = playEnabled)
             }
             else -> {
-                PillButton(label = "Play", icon = Lucide.Play, primary = true, onClick = onPlay, enabled = playEnabled)
+                TitleActionButton(label = "Play", icon = Lucide.Play, primary = true, onClick = onPlay, enabled = playEnabled)
             }
         }
-        download?.invoke()
         // Trailer, for movies and series alike (web: DetailPage.tsx): the
         // clapperboard plays this server's trailer in the app, the YouTube
         // mark opens the link.
         trailer?.let { choice ->
-            PillButton(
+            TitleActionButton(
                 label = "Trailer",
                 icon = if (choice is TrailerChoice.Local) Lucide.Clapperboard else Lucide.Youtube,
                 primary = false,
                 onClick = { onTrailer(choice) },
             )
         }
-        // Circular icon-only buttons. Web: `p-2.5 rounded-full bg-white/10`,
-        // pressed state recolours to emerald (watchlist/watched) or rose (like).
-        // The watchlist button is now an ADD-TO-LIST control: plain tap adds to
-        // the default list (filled = in >=1 list), long-press OR the trailing
-        // caret opens the per-list picker. None from the phone.
-        if (!serverActions) return@FlowRow
-        WatchlistButton(
-            inAnyList = inWatchlist,
-            onToggle = onToggleWatchlist,
-            onOpenPicker = onOpenAddToList,
-        )
-        // Real watched TOGGLE (web: useWatchedToggle). Filled emerald +
-        // Check when watched, neutral Eye outline when not — tap flips it
-        // (POST to mark, DELETE to un-mark).
-        CircleIconButton(
-            icon = if (watched) Lucide.Check else Lucide.Eye,
-            tint = if (watched) ChinoOnFill else Color.White,
-            background = if (watched) ChinoGreen else Color.White.copy(alpha = 0.1f),
-            onClick = onToggleWatched,
-        )
-        // Liked: the design system's red, the heart dark on it.
-        CircleIconButton(
-            icon = Lucide.Heart,
-            tint = if (liked) ChinoOnFill else Color.White,
-            background = if (liked) ChinoRed else Color.White.copy(alpha = 0.1f),
-            onClick = onToggleLike,
-        )
+        // The Watchlist toggled, the lists chosen; watched; liked. None from
+        // the phone.
+        if (serverActions) {
+            AddToListControl(inWatchlist = inWatchlist, onToggle = onToggleWatchlist, onChoose = onOpenAddToList)
+            WatchedButton(watched = watched, onToggle = onToggleWatched)
+            LikedButton(liked = liked, onToggle = onToggleLike)
+        }
+        download?.invoke()
     }
 }
 
-@Composable
-private fun PillButton(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector?,
-    primary: Boolean,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-) {
-    Row(
-        modifier = Modifier
-            // Not there yet - a download waiting for its check: the whole
-            // pill dimmed, its fill with its label.
-            .alpha(if (enabled) 1f else 0.4f)
-            .clip(RectangleShape)
-            .background(if (primary) ChinoCloudBlue else Color.White.copy(alpha = 0.1f))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        // On the blue fill, dark; on the neutral one, white.
-        val content = if (primary) ChinoOnFill else Color.White
-        if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = content,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        Text(
-            text = label,
-            color = content,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-        )
-    }
-}
-
-@Composable
-private fun CircleIconButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-    background: Color,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(RectangleShape)
-            .background(background)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
-/** Add-to-list control. Plain tap toggles the default list; a long-press on
- *  the circle OR a tap on the trailing caret opens the per-list picker. Filled
- *  emerald + Check when the item is in at least one list, neutral Plus when
- *  not — matching the other action-row toggles. */
-@Composable
-private fun WatchlistButton(
-    inAnyList: Boolean,
-    onToggle: () -> Unit,
-    onOpenPicker: () -> Unit,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RectangleShape)
-                .background(if (inAnyList) ChinoGreen else Color.White.copy(alpha = 0.1f))
-                .combinedClickable(onClick = onToggle, onLongClick = onOpenPicker),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = if (inAnyList) Lucide.Check else Lucide.Plus,
-                contentDescription = if (inAnyList) "In your lists" else "Add to watchlist",
-                tint = if (inAnyList) ChinoOnFill else Color.White,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        // Caret affordance so the picker is discoverable without a long-press.
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(RectangleShape)
-                .background(Color.White.copy(alpha = 0.1f))
-                .clickable(onClick = onOpenPicker),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Lucide.ChevronDown,
-                contentDescription = "Add to list",
-                tint = Color.White,
-                modifier = Modifier.size(16.dp),
-            )
-        }
-    }
-}
+/** The Watchlist as a page's add-to-list controls read it: whether a title
+ *  is in it, and it toggled for one. */
+private class TitleListState(
+    val inWatchlistOf: (String) -> Boolean,
+    val toggleWatchlist: (String) -> Unit,
+)
 
 private fun fmtDur(s: Int): String {
     if (s < 0) return "0:00"
@@ -994,6 +904,7 @@ private fun GenreChips(genres: List<String>) {
  *  chino-web's EpisodesList.tsx layout. */
 @Composable
 private fun EpisodesSection(
+    listState: TitleListState,
     seasons: List<cloud.nalet.chino.mobile.data.api.Season>,
     baseUrl: String,
     streamToken: String,
@@ -1026,6 +937,7 @@ private fun EpisodesSection(
             // its own when a refresh brings another season.
             key(season.season) {
                 SeasonRow(
+                    listState = listState,
                     season = season,
                     baseUrl = baseUrl,
                     streamToken = streamToken,
@@ -1046,6 +958,7 @@ private fun EpisodesSection(
 
 @Composable
 private fun SeasonRow(
+    listState: TitleListState,
     season: cloud.nalet.chino.mobile.data.api.Season,
     baseUrl: String,
     streamToken: String,
@@ -1094,8 +1007,15 @@ private fun SeasonRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.align(Alignment.CenterVertically),
                 )
+                // From the phone, which has only some of them: how many of
+                // the season's are on it.
+                val device = cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind.current
                 Text(
-                    text = if (season.episodes.size == 1) "1 episode" else "${season.episodes.size} episodes",
+                    text = when {
+                        offline != null -> cloud.nalet.chino.mobile.data.downloads.episodesOnThePhoneLabel(season.episodes.size, device)
+                        season.episodes.size == 1 -> "1 episode"
+                        else -> "${season.episodes.size} episodes"
+                    },
                     color = ChinoMuted,
                     fontSize = 14.sp,
                     maxLines = 1,
@@ -1160,6 +1080,8 @@ private fun SeasonRow(
                             compact = compact,
                             onClick = { onEpisodePlay(ep.id) },
                             onToggleWatched = { onToggleEpisodeWatched(ep.id, epWatched) },
+                            inWatchlist = listState.inWatchlistOf(ep.id),
+                            onToggleWatchlist = { listState.toggleWatchlist(ep.id) },
                             onAddToList = { onEpisodeAddToList(ep.id) },
                         )
                     }
@@ -1201,6 +1123,9 @@ private fun EpisodeRow(
     compact: Boolean = false,
     onClick: () -> Unit,
     onToggleWatched: () -> Unit,
+    /** Whether the episode is in the Watchlist; the Watchlist toggled for it. */
+    inWatchlist: Boolean = false,
+    onToggleWatchlist: () -> Unit = {},
     onAddToList: () -> Unit = {},
 ) {
     // Effective resume duration: the continue-watching feed's duration when
@@ -1208,6 +1133,8 @@ private fun EpisodeRow(
     // Null when neither exists — then the row shows a plain "Resume" line
     // and no bar (nothing to compute a fraction against).
     val several = held.size > 1
+    // A download that waits for its check with the server does not play.
+    val waitsForCheck = offline?.waitingForCheck?.contains(episode.id) == true
     // The entry's length is the file's: for a file of several, its measured
     // length where chino-api says it, else what its episodes' runtimes come to.
     val fileDurationMs: Long? = if (several) {
@@ -1250,17 +1177,14 @@ private fun EpisodeRow(
             },
         )
         // A download waiting for its check does not play: its control says why.
-        .clickable(enabled = offline?.waitingForCheck?.contains(episode.id) != true, onClick = onClick)
+        .clickable(enabled = !waitsForCheck, onClick = onClick)
         .padding(
             horizontal = if (several) EPISODE_ROW_PADDING - EPISODE_BOX_INSET else EPISODE_ROW_PADDING,
             vertical = 12.dp,
         )
-    // On a phone as wide as a phone's poster card, and tall enough to keep
-    // the watched and add-to-list chips apart.
+    // On a phone as wide as a phone's poster card.
     val stillWidth = if (compact) 128.dp else 160.dp
-    // The still, and its chips over it: beside it rather than in it, as
-    // the still clips and their touch targets reach past it
-    // (EpisodeStillChip). The box is the still's size.
+    // The still, with its progress bar: a status mark, nothing to press.
     val still: @Composable () -> Unit = {
         Box {
             Box(
@@ -1301,32 +1225,8 @@ private fun EpisodeRow(
                     }
                 }
             }
-            // Per-episode watched toggle (web: EpisodesList.tsx watched pip).
-            // Always rendered so a watched episode keeps a visible green
-            // check; unwatched rows get a subtle dark Eye chip the user can
-            // tap to mark watched. The tap is consumed here so it doesn't
-            // also fire the row's open-player click. Not from the phone: both
-            // chips need the server.
-            if (offline == null) EpisodeStillChip(
-                icon = if (watched) Lucide.Check else Lucide.Eye,
-                contentDescription = if (watched) "Mark episode as unwatched" else "Mark episode as watched",
-                background = if (watched) ChinoGreen else Color(0x99000000),
-                top = true,
-                onClick = onToggleWatched,
-                modifier = Modifier.align(Alignment.TopEnd),
-            )
-            // Per-episode add-to-list "+" chip (bottom-end, mirroring the
-            // watched pip's styling). Opens the add-to-list picker targeting
-            // THIS episode; the tap is consumed here so it doesn't also fire
-            // the row's open-player click.
-            if (offline == null) EpisodeStillChip(
-                icon = Lucide.Plus,
-                contentDescription = "Add episode to list",
-                background = Color(0x99000000),
-                top = false,
-                onClick = onAddToList,
-                modifier = Modifier.align(Alignment.BottomEnd),
-            )
+            // Nothing drawn over the still (the design system's title
+            // actions): watched and add to list are in the row's actions line.
         }
     }
     val details: @Composable (Modifier) -> Unit = { modifier ->
@@ -1439,11 +1339,14 @@ private fun EpisodeRow(
                 val remainingMin = effectiveDurationSec?.let { dur ->
                     ((dur - resume.positionSec + 59) / 60).coerceAtLeast(1)
                 }
+                // Dimmed as the film's Play is, for a download waiting for
+                // its check: the row does not play.
                 Text(
                     text = if (remainingMin != null) "Resume · ${remainingMin}m left" else "Resume",
                     color = ChinoCloudBlue,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
+                    modifier = Modifier.alpha(if (waitsForCheck) 0.4f else 1f),
                 )
             }
             // A box lists its episodes; one episode's overview is not the file's.
@@ -1459,11 +1362,22 @@ private fun EpisodeRow(
             }
         }
     }
-    // The episode's own download control - the file's, for a box - across
-    // the row's whole width, under the still and the text: its label stays
-    // on one line ("can't be downloaded").
+    // The row's actions line, under the still and the text, across the
+    // row's width: add to list and watched - the title actions, one action
+    // tall, not from the phone - then the episode's own download control,
+    // the file's for a box; wrapping between controls where the row is narrow.
     val download: @Composable () -> Unit = {
-        EpisodeDownloadControl(episode.id, fileDurationMs, modifier = Modifier.fillMaxWidth())
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+            verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+        ) {
+            if (offline == null) {
+                AddToListControl(inWatchlist = inWatchlist, onToggle = onToggleWatchlist, onChoose = onAddToList)
+                WatchedButton(watched = watched, onToggle = onToggleWatched)
+            }
+            EpisodeDownloadControl(episode.id, fileDurationMs)
+        }
     }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         // Large text on a narrow phone: the still above the text, which then
@@ -1501,52 +1415,6 @@ private val EPISODE_ROW_PADDING = 16.dp
 private val EPISODE_BOX_INSET = 8.dp
 private val EPISODE_ROW_GAP = 12.dp
 private val EPISODE_TITLE_SIZE = 14.sp
-
-/**
- * One of an episode still's chips (web: EpisodesList.tsx's pips): 24dp, 6dp
- * in from the still's [top] end corner, else its bottom end one — and a 48dp
- * touch target. On a phone's 72dp still the two chips' centres are 36dp
- * apart, so each target is the chip's 48dp square moved 6dp away from the
- * other: the two meet halfway and never overlap, reaching 12dp past the
- * still into the row's padding and 6dp past its end edge, short of the text.
- * The ripple stays on the chip, as before.
- */
-@Composable
-private fun EpisodeStillChip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
-    background: Color,
-    top: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    Box(
-        modifier = modifier
-            .offset(x = 6.dp, y = if (top) (-12).dp else 12.dp)
-            .size(48.dp)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .offset(y = if (top) 6.dp else (-6).dp)
-                .size(24.dp)
-                .clip(RectangleShape)
-                .background(background)
-                .indication(interaction, LocalIndication.current),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                // Dark on the watched green, white on the dark chip.
-                tint = contentOn(background),
-                modifier = Modifier.size(14.dp),
-            )
-        }
-    }
-}
 
 /** "More like this" — horizontal poster shelf below the episodes
  *  accordion. Mirrors web's MoreLikeThis section. */

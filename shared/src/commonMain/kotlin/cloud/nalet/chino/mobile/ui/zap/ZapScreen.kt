@@ -10,6 +10,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
@@ -81,7 +82,7 @@ import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.player.PlayerScreen
 import coil3.compose.AsyncImage
 import com.composables.icons.lucide.Bookmark
-import com.composables.icons.lucide.BookmarkCheck
+import com.composables.icons.lucide.BookmarkFilled
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Maximize
 import com.composables.icons.lucide.Zap
@@ -374,17 +375,20 @@ private fun ZapColdStartBackdrop(
     }
 }
 
-/** Save and Watch, one over the other at the card's right edge: translucent
- *  squares, their icons alone, as the web's card has its buttons — no label
+/** Save and Watch, one over the other at the card's right edge: solid
+ *  squares - nothing translucent over the picture - their icons alone, as the web's card has its buttons — no label
  *  under them. Each has its own clickable, so a tap on one doesn't reach the
  *  card's tap-to-watch (which Watch also is). */
 @Composable
 private fun ZapRail(saved: Boolean, onWatch: () -> Unit, onToggleSave: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        // The Watchlist's bookmark, as add to list draws it everywhere: a
+        // dark, filled one on blue while the title is in it.
         ZapRailButton(
-            icon = if (saved) Lucide.BookmarkCheck else Lucide.Bookmark,
-            label = if (saved) "Saved" else "Save",
-            tint = if (saved) ChinoCloudBlue else Color.White,
+            icon = if (saved) Lucide.BookmarkFilled else Lucide.Bookmark,
+            label = if (saved) "in your Watchlist" else "add to Watchlist",
+            tint = if (saved) ChinoOnFill else Color.White,
+            fill = if (saved) ChinoCloudBlue else cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi,
             onClick = onToggleSave,
         )
         ZapRailButton(icon = Lucide.Maximize, label = "Watch", onClick = onWatch)
@@ -398,13 +402,14 @@ private fun ZapRailButton(
      *  description, not drawn. */
     label: String,
     tint: Color = Color.White,
+    fill: Color = cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .size(48.dp)
             .clip(RectangleShape)
-            .background(Color.White.copy(alpha = 0.12f))
+            .background(fill)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

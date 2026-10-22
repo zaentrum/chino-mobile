@@ -174,7 +174,7 @@ private fun NoticesHeader(unread: Int, onBack: () -> Unit, onReadAll: () -> Unit
             modifier = Modifier
                 .size(40.dp)
                 .clip(RectangleShape)
-                .background(Color(0x80000000))
+                .background(cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi)
                 .clickable(onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {

@@ -40,6 +40,10 @@ import com.composables.icons.lucide.Lucide
 fun NoticesBell(onClick: () -> Unit) {
     val container = LocalAppContainer.current
     val state by container.notices.state.collectAsState()
+    // Not while the server can't be reached: its notices can't be read, on
+    // any screen.
+    val reach by container.serverReach.state.collectAsState()
+    if (reach == cloud.nalet.chino.mobile.data.downloads.Reach.Unreachable) return
     val list = state.list ?: return
     val badge = badgeText(list.unread)
     // The top bar's icon cell: 36dp, a 20dp glyph.
