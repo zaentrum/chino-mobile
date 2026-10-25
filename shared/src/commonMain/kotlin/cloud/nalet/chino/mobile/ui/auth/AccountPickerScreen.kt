@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,8 +77,10 @@ import cloud.nalet.chino.mobile.data.downloads.accountDownloadsGoSentence
 import cloud.nalet.chino.mobile.data.downloads.accountRemovedSentence
 import cloud.nalet.chino.mobile.data.downloads.castingStopsSentence
 import cloud.nalet.chino.mobile.data.downloads.pickerHintLine
-import cloud.nalet.chino.mobile.ui.downloads.leaveCastingOf
+import cloud.nalet.chino.mobile.ui.downloads.removeFromThisPhone
+import cloud.nalet.chino.mobile.ui.downloads.switchAccount
 import cloud.nalet.chino.mobile.ui.components.QuestionDialog
+import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
 import com.composables.icons.lucide.X
@@ -129,6 +132,11 @@ class AccountPickerScreen(
         val authModel = remember { AuthScreenModel(container) }
         val authState by authModel.state.collectAsState()
         var pendingRemoval by remember { mutableStateOf<Account?>(null) }
+        // A switch or a removal on its way - it waits for the TV's last
+        // position while the account casts: the account it is for, its tile
+        // busy, no tile takes a tap, and Back waits for it.
+        var leaving by remember { mutableStateOf<String?>(null) }
+        SystemBackHandler(enabled = leaving != null) { }
 
         // When the Add-account sign-in completes, the new account is already
         // persisted + set active by AuthScreenModel; jump to the shell.
@@ -139,6 +147,7 @@ class AccountPickerScreen(
         }
 
         val signing = authState is AuthUiState.Signing
+        val busy = signing || leaving != null
 
         BoxWithConstraints(
             modifier = Modifier
@@ -182,15 +191,19 @@ class AccountPickerScreen(
                     AccountTile(
                         account = account,
                         isActive = account.id == activeId,
-                        enabled = !signing,
+                        enabled = !busy,
+                        switching = leaving == account.id && pendingRemoval == null,
                         onSelect = {
-                            scope.launch {
-                                // Another account in its place: the one casting
-                                // stops, its last position written first, and a
-                                // toast says so - the switch asks nothing.
-                                activeId?.takeIf { it != account.id }?.let { leaveCastingOf(container, it) }
-                                store.setActive(account.id)
-                                nav.replaceAll(MainShellScreen(startSection = startSection))
+                            if (leaving == null) {
+                                leaving = account.id
+                                scope.launch {
+                                    // Another account in its place: the one
+                                    // casting stops, its last position written
+                                    // first, and a toast says so - the switch
+                                    // asks nothing.
+                                    switchAccount(container, from = activeId, to = account.id)
+                                    nav.replaceAll(MainShellScreen(startSection = startSection))
+                                }
                             }
                         },
                         onRemove = { pendingRemoval = account },
@@ -200,7 +213,8 @@ class AccountPickerScreen(
                 item(key = "__add_account__") {
                     AddAccountTile(
                         signing = signing,
-                        onClick = { if (!signing) scope.launch { authModel.signIn(launcher) } },
+                        enabled = !busy,
+                        onClick = { if (!busy) scope.launch { authModel.signIn(launcher) } },
                     )
                 }
             }
@@ -216,19 +230,22 @@ class AccountPickerScreen(
                 account = acct,
                 downloads = summary,
                 castingTo = castingTo,
-                busy = false,
+                busy = leaving == acct.id,
                 onConfirm = {
-                    scope.launch {
-                        // An explicit removal on this phone: casting stops,
-                        // its downloads go, as the question said.
-                        leaveCastingOf(container, acct.id, castingSaid = castingTo != null)
-                        runCatching { container.downloads?.dropOwner(owner) }
-                        store.remove(acct.id)
-                        val remaining = store.snapshotBlocking().accounts
-                        pendingRemoval = null
-                        // Removing the last account leaves nobody to pick —
-                        // fall through to Auth, matching App.kt's boot gate.
-                        if (remaining.isEmpty()) nav.replaceAll(AuthScreen())
+                    if (leaving == null) {
+                        leaving = acct.id
+                        scope.launch {
+                            // An explicit removal on this phone: casting
+                            // stops, its downloads go, as the question said.
+                            removeFromThisPhone(container, acct.id, castingSaid = castingTo != null)
+                            val remaining = store.snapshotBlocking().accounts
+                            pendingRemoval = null
+                            leaving = null
+                            // Removing the last account leaves nobody to
+                            // pick — fall through to Auth, matching App.kt's
+                            // boot gate.
+                            if (remaining.isEmpty()) nav.replaceAll(AuthScreen())
+                        }
                     }
                 },
                 onDismiss = { pendingRemoval = null },
@@ -242,6 +259,8 @@ private fun AccountTile(
     account: Account,
     isActive: Boolean,
     enabled: Boolean,
+    /** The switch to it is on its way: a spinner over its avatar. */
+    switching: Boolean,
     onSelect: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -252,6 +271,7 @@ private fun AccountTile(
             .fillMaxWidth()
             .clip(RectangleShape)
             .clickable(enabled = enabled, onClick = onSelect)
+            .semantics { if (switching) stateDescription = "busy" }
             .padding(8.dp),
     ) {
         Box(contentAlignment = Alignment.TopEnd) {
@@ -267,6 +287,11 @@ private fun AccountTile(
                 contentAlignment = Alignment.Center,
             ) {
                 Avatar(displayName = account.displayName, email = account.email, size = 88.dp)
+                if (switching) {
+                    Box(modifier = Modifier.size(88.dp).background(Color(0x99000000)), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(36.dp), color = Color.White)
+                    }
+                }
             }
             // The remove badge: a ✕ on the tile's corner, "remove account"
             // to a screen reader - removing an account, not signing out of
@@ -303,14 +328,14 @@ private fun AccountTile(
 }
 
 @Composable
-private fun AddAccountTile(signing: Boolean, onClick: () -> Unit) {
+private fun AddAccountTile(signing: Boolean, enabled: Boolean, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RectangleShape)
-            .clickable(enabled = !signing, onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(8.dp),
     ) {
         Box(
