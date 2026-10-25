@@ -122,26 +122,60 @@ class DownloadBookTest {
     }
 
     @Test
-    fun anAnswerThatLeavesOutEveryTitleAskedIsNone() {
+    fun anAnswerThatLeavesOutEveryTitleAskedNeedsADayUnlessTheServerSaysItsLibraryHoldsTitles() {
         val hour = GONE_CONFIRM_MS
+        val day = EMPTY_ANSWER_CONFIRM_MS
         var book = claim(emptyMap(), title("film"), child, now = 1, savedPositionSec = null).titles
         book = claim(book, title("kids"), child, now = 1, savedPositionSec = null).titles
+        val asked = listOf("film", "kids")
         // A library imported anew, or reset: the server knows none of them
-        // for a while. Twice, an hour apart: nothing goes, nothing is marked,
-        // no check counts - it is no answer.
-        val first = applyAvailability(book, child, listOf("film", "kids"), emptySet(), now = 10 * hour)
-        val second = applyAvailability(first.change.titles, child, listOf("film", "kids"), emptySet(), now = 12 * hour)
-        for (c in listOf(first, second)) {
-            assertFalse(c.answered)
-            assertTrue(c.deleted.isEmpty())
-            assertTrue(c.marked.isEmpty())
-            assertTrue(c.change.removed.isEmpty())
-        }
-        assertEquals(book, second.change.titles)
-        // An account with one download: the server leaving it out is all of
-        // them, and says nothing.
+        // for a while, and says nothing of its library. One answer marks
+        // them, nothing more; a second an hour later takes nothing either.
+        val first = applyAvailability(book, child, asked, emptySet(), now = 10 * hour)
+        assertTrue(first.deleted.isEmpty())
+        assertEquals(setOf("film", "kids"), first.marked.map { it.itemId }.toSet())
+        assertEquals(1, first.change.titles.getValue(title("film").key).claimOf("child")?.checkedAtMs)
+        val second = applyAvailability(first.change.titles, child, asked, emptySet(), now = 12 * hour)
+        assertTrue(second.deleted.isEmpty())
+        assertTrue(second.change.removed.isEmpty())
+        // The library back meanwhile: the marks go, as for any answer.
+        val back = applyAvailability(second.change.titles, child, asked, setOf("film", "kids"), now = 13 * hour)
+        assertTrue(back.marked.isEmpty())
+        assertNull(back.change.titles.getValue(title("film").key).claimOf("child")?.goneAtMs)
+        // Still leaving them out a day after the first: they go - all of
+        // them, even where they are all the account has.
+        val later = applyAvailability(second.change.titles, child, asked, emptySet(), now = 10 * hour + day)
+        assertEquals(setOf("film", "kids"), later.deleted.map { it.itemId }.toSet())
+        assertTrue(visibleTo(later.change.titles, child).isEmpty())
+    }
+
+    @Test
+    fun anAccountsOnlyDownloadAboveItsLoweredCapGoes() {
+        val hour = GONE_CONFIRM_MS
         val one = claim(emptyMap(), title("film"), child, now = 1, savedPositionSec = null).titles
-        assertFalse(applyAvailability(one, child, listOf("film"), emptySet(), now = hour).answered)
+        val key = title("film").key
+        // The server says its library holds titles for the child (POST
+        // /me/available's "titles"): two answers an hour apart take it.
+        val first = applyAvailability(one, child, listOf("film"), emptySet(), now = hour, libraryTitles = 3)
+        assertEquals(listOf("film"), first.marked.map { it.itemId })
+        assertTrue(first.deleted.isEmpty())
+        val soon = applyAvailability(first.change.titles, child, listOf("film"), emptySet(), now = 2 * hour - 1, libraryTitles = 3)
+        assertTrue(soon.deleted.isEmpty())
+        val second = applyAvailability(soon.change.titles, child, listOf("film"), emptySet(), now = 2 * hour, libraryTitles = 3)
+        assertEquals(listOf("film"), second.deleted.map { it.itemId })
+        assertEquals(listOf(key), second.change.removed)
+        // A library that shows the child nothing, or a server that does not
+        // say: an hour is not enough, a day is.
+        for (said in listOf(0, null)) {
+            val f = applyAvailability(one, child, listOf("film"), emptySet(), now = hour, libraryTitles = said)
+            assertTrue(applyAvailability(f.change.titles, child, listOf("film"), emptySet(), now = 2 * hour, libraryTitles = said).deleted.isEmpty())
+            assertEquals(
+                listOf("film"),
+                applyAvailability(f.change.titles, child, listOf("film"), emptySet(), now = hour + EMPTY_ANSWER_CONFIRM_MS, libraryTitles = said)
+                    .deleted.map { it.itemId },
+                "titles $said",
+            )
+        }
     }
 
     @Test
@@ -232,7 +266,10 @@ class AskAvailableTest {
                 // The child's cap is 12; the parent has none.
                 val cap = if (request.headers[HttpHeaders.Authorization] == "Bearer child") 12 else Int.MAX_VALUE
                 val allowed = asked.filter { (ages[it] ?: return@filter false) <= cap }
-                respondJson("""{"ids":[${allowed.joinToString(",") { "\"$it\"" }}]}""")
+                // An answer that leaves out every id asked says how many
+                // titles of the library the account may watch.
+                val titles = if (allowed.isEmpty() && asked.isNotEmpty()) ""","titles":${ages.values.count { it <= cap }}""" else ""
+                respondJson("""{"ids":[${allowed.joinToString(",") { "\"$it\"" }}]$titles}""")
             }
             else -> respondText("not found", HttpStatusCode.NotFound)
         }
@@ -240,8 +277,8 @@ class AskAvailableTest {
 
     @Test
     fun aCappedAccountsAnswerLeavesOutWhatItsCapDoesNotAllow() = runTest {
-        assertEquals(setOf("kid", "teen"), askAvailable(server.api, listOf("kid", "teen", "adult", "gone"), "child"))
-        assertEquals(setOf("kid", "teen", "adult"), askAvailable(server.api, listOf("kid", "teen", "adult", "gone"), "parent"))
+        assertEquals(setOf("kid", "teen"), askAvailable(server.api, listOf("kid", "teen", "adult", "gone"), "child")?.ids)
+        assertEquals(setOf("kid", "teen", "adult"), askAvailable(server.api, listOf("kid", "teen", "adult", "gone"), "parent")?.ids)
         // With the account's own bearer, not the one signed in now's.
         assertEquals(listOf<String?>("Bearer child", "Bearer parent"), bearers)
 
@@ -252,12 +289,26 @@ class AskAvailableTest {
         book = claim(book, title("kid"), child, 1, null).titles
         val ids = visibleTo(book, child).map { it.itemId }
         // Two answers an hour apart: the first marks it, the second deletes it.
-        val first = applyAvailability(book, child, ids, askAvailable(server.api, ids, "child")!!, now = 9)
+        val first = applyAvailability(book, child, ids, askAvailable(server.api, ids, "child")!!.ids, now = 9)
         assertEquals(listOf("adult"), first.marked.map { it.itemId })
         assertTrue(first.deleted.isEmpty())
-        val change = applyAvailability(first.change.titles, child, ids, askAvailable(server.api, ids, "child")!!, now = 9 + GONE_CONFIRM_MS)
+        val change = applyAvailability(first.change.titles, child, ids, askAvailable(server.api, ids, "child")!!.ids, now = 9 + GONE_CONFIRM_MS)
         assertEquals(listOf("adult"), change.deleted.map { it.itemId })
         assertEquals(listOf("adult"), visibleTo(change.change.titles, parent).map { it.itemId })
+    }
+
+    @Test
+    fun aChildsOnlyDownloadAboveItsCapGoesOnTheServersWord() = runTest {
+        // The child's cap is 12 now; its one download is the 16 one.
+        val answer = askAvailable(server.api, listOf("adult"), "child")
+        assertEquals(AvailableAnswer(emptySet(), libraryTitles = 2), answer)
+        val book = claim(emptyMap(), title("adult"), child, 1, null).titles
+        val first = applyAvailability(book, child, listOf("adult"), answer!!.ids, now = 9, libraryTitles = answer.libraryTitles)
+        val again = askAvailable(server.api, listOf("adult"), "child")!!
+        val change = applyAvailability(first.change.titles, child, listOf("adult"), again.ids, now = 9 + GONE_CONFIRM_MS, libraryTitles = again.libraryTitles)
+        assertEquals(listOf("adult"), change.deleted.map { it.itemId })
+        // An answer with ids in it carries no count.
+        assertEquals(AvailableAnswer(setOf("kid")), askAvailable(server.api, listOf("kid", "adult"), "child"))
     }
 
     @Test
@@ -276,11 +327,12 @@ class AskAvailableTest {
                 else -> respondText("not found", HttpStatusCode.NotFound)
             }
         }
-        assertEquals(setOf("kid"), askAvailable(old.api, listOf("kid", "adult"), "child"))
+        assertEquals(AvailableAnswer(setOf("kid")), askAvailable(old.api, listOf("kid", "adult"), "child"))
         assertEquals(listOf("Bearer child"), asked)
-        // Every title answered 404: that says nothing of any of them - a
-        // library being imported anew - and is no answer.
-        assertNull(askAvailable(old.api, listOf("adult", "gone"), "child"))
+        // Every title answered 404: an answer that leaves out all of them,
+        // which such a server never vouches for - its titles go only after
+        // two such answers a day apart.
+        assertEquals(AvailableAnswer(emptySet(), libraryTitles = null), askAvailable(old.api, listOf("adult", "gone"), "child"))
         // Its title route failing: no answer.
         val failing = FakeServer { request ->
             if (request.url.encodedPath.endsWith("/v1/me/available")) {
@@ -306,6 +358,35 @@ class AskAvailableTest {
     }
 
     @Test
+    fun aCheckForOneTitleAsksAboutThatTitleAlone() = runTest {
+        // Forty downloads of the child's and one of the parent's.
+        var book = claim(emptyMap(), title("parents"), parent, 1, null).titles
+        for (n in 1..40) book = claim(book, title("t$n"), child, 1, null).titles
+        val mine = visibleTo(book, child)
+        assertEquals(listOf("t7"), availabilityAsked(mine, listOf("t7")))
+        // Never another account's title, nor one not on the phone.
+        assertEquals(emptyList(), availabilityAsked(mine, listOf("parents", "elsewhere")))
+        // None named: all of the account's.
+        assertEquals(40, availabilityAsked(mine, null).size)
+        // A server from before the route, asked title by title: pressing
+        // play on one download is one request, not forty.
+        val gets = mutableListOf<String>()
+        val old = FakeServer { request ->
+            val path = request.url.encodedPath
+            when {
+                path.endsWith("/v1/me/available") -> respondText("404 page not found", HttpStatusCode.NotFound)
+                path.contains("/v1/items/") -> {
+                    gets += path.substringAfterLast('/')
+                    respondJson("""{"id":"t7","title":"t7","type":"movie"}""")
+                }
+                else -> respondText("not found", HttpStatusCode.NotFound)
+            }
+        }
+        assertEquals(AvailableAnswer(setOf("t7")), askAvailable(old.api, availabilityAsked(mine, listOf("t7")), "child"))
+        assertEquals(listOf("t7"), gets)
+    }
+
+    @Test
     fun manyTitlesAreAskedAboutInChunks() = runTest {
         val ids = (1..1_200).map { "t$it" }
         val chunks = mutableListOf<Int>()
@@ -315,7 +396,7 @@ class AskAvailableTest {
             chunks += asked.size
             respondJson("""{"ids":${asked}}""")
         }
-        assertEquals(ids.toSet(), askAvailable(counting.api, ids, "parent"))
+        assertEquals(ids.toSet(), askAvailable(counting.api, ids, "parent")?.ids)
         assertEquals(listOf(500, 500, 200), chunks)
     }
 }

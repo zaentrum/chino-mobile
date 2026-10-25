@@ -17,7 +17,9 @@ enum class ManagerState { Queued, Stopped, Downloading, Completed, Failed, Remov
  * nothing is waiting its turn. One stopped for room or by the server's
  * switch is a failure the control names. A download whose media is in but
  * whose subtitles are not is not on the phone yet: still on its way (99 %),
- * or failed for why its subtitles did not come.
+ * whatever held its subtitles up - never a failed title that keeps its
+ * media; a subtitle the server keeps refusing is left out after a few tries
+ * ([SIDECAR_TRIES]), and the title is on the phone without it.
  */
 fun downloadStatus(
     state: ManagerState?,
@@ -37,11 +39,15 @@ fun downloadStatus(
         STOP_SERVER_OFF -> DownloadStatus.Failed(DownloadFailure.ServerOff)
         else -> waiting(waitsForNetwork, wifiOnly)
     }
-    ManagerState.Queued, ManagerState.Restarting, ManagerState.Removing -> waiting(waitsForNetwork, wifiOnly)
+    ManagerState.Queued, ManagerState.Restarting -> waiting(waitsForNetwork, wifiOnly)
+    // Its media being freed: one that failed - out of room, the server's
+    // switch, the manager's failure - says so all along, never a moment of
+    // "queued"; one going for another reason (deleted, its last claim gone)
+    // has left the list already.
+    ManagerState.Removing -> if (failure != null) DownloadStatus.Failed(failure) else waiting(waitsForNetwork, wifiOnly)
     ManagerState.Downloading -> DownloadStatus.Downloading(wholePercent(percent))
     ManagerState.Completed -> when {
         extrasDone -> if (checkNeeded) DownloadStatus.CheckNeeded(bytes) else DownloadStatus.Downloaded(bytes)
-        failure != null -> DownloadStatus.Failed(failure)
         else -> DownloadStatus.Downloading(99)
     }
     ManagerState.Failed -> DownloadStatus.Failed(failure ?: DownloadFailure.Stopped)

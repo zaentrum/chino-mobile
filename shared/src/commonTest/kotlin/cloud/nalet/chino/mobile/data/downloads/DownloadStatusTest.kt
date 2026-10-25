@@ -4,6 +4,7 @@ import cloud.nalet.chino.mobile.data.model.Item
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** One status per title, from the download manager's state, in the words the
  *  control shows. */
@@ -42,12 +43,23 @@ class DownloadStatusTest {
     fun onThePhoneOnceItsSubtitlesAreThereToo() {
         assertEquals(DownloadStatus.Downloaded(1_400_000_000), status(ManagerState.Completed))
         assertEquals(DownloadStatus.Downloading(99), status(ManagerState.Completed, extrasDone = false))
+        // Its media in, its subtitles held up: still on its way, never a
+        // failed title that keeps its media.
         assertEquals(
-            DownloadStatus.Failed(DownloadFailure.NoAnswer),
+            DownloadStatus.Downloading(99),
             status(ManagerState.Completed, extrasDone = false, failure = DownloadFailure.NoAnswer),
         )
         // Not checked for 30 days, the server out of reach: it waits for it.
         assertEquals(DownloadStatus.CheckNeeded(1_400_000_000), status(ManagerState.Completed, checkNeeded = true))
+    }
+
+    @Test
+    fun aFailedDownloadWhoseMediaIsFreedReadsFailedAllAlong() {
+        // Out of room, the server's switch, the manager's failure: its media
+        // goes, and it says why the whole time - never a moment of "queued".
+        assertEquals(DownloadStatus.Failed(DownloadFailure.NoSpace), status(ManagerState.Removing, failure = DownloadFailure.NoSpace))
+        assertEquals(DownloadStatus.Failed(DownloadFailure.ServerOff), status(ManagerState.Removing, failure = DownloadFailure.ServerOff))
+        assertEquals(DownloadStatus.Queued, status(ManagerState.Removing))
     }
 
     @Test
@@ -95,10 +107,9 @@ class DownloadWordsTest {
         assertEquals("downloading 15% · 281\u00A0MB", rowLabel(DownloadStatus.Downloading(15), 281_000_000))
         // There: what it takes, once.
         assertEquals("downloaded · 22\u00A0MB", rowLabel(DownloadStatus.Downloaded(22_000_000), 22_000_000))
-        // Failed: nothing kept, no size - but what it keeps where its media
-        // came in whole and the rest of it did not.
+        // Failed: nothing kept, no size, whatever size it is given.
         assertEquals("couldn't download", rowLabel(DownloadStatus.Failed(DownloadFailure.NoSpace), null))
-        assertEquals("couldn't download · 49\u00A0MB", rowLabel(DownloadStatus.Failed(DownloadFailure.ServerProblem), 49_000_000))
+        assertEquals("couldn't download", rowLabel(DownloadStatus.Failed(DownloadFailure.ServerProblem), 49_000_000))
         assertEquals("queued", rowLabel(DownloadStatus.Queued, null))
     }
 
@@ -205,6 +216,22 @@ class DownloadWordsTest {
     }
 
     @Test
+    fun theAccountPickerSaysRemoveAndThisPhoneNeverThisDevice() {
+        assertEquals("Tap to switch. Tap ✕ to remove an account from this phone.", pickerHintLine(DeviceKind.Phone))
+        assertEquals("Tap to switch. Tap ✕ to remove an account from this tablet.", pickerHintLine(DeviceKind.Tablet))
+        assertEquals("remove account", REMOVE_ACCOUNT_LABEL)
+        assertEquals(
+            "This removes Anna from this phone. You'll need to sign in again to use the account.",
+            accountRemovedSentence("Anna", DeviceKind.Phone),
+        )
+        // Beside "Casting on Living Room TV stops.": the phone is "this
+        // phone" or "this tablet", "the device" is the TV.
+        for (text in listOf(accountRemovedSentence("Anna", DeviceKind.Tablet), pickerHintLine(DeviceKind.Phone))) {
+            assertEquals(false, "this device" in text, text)
+        }
+    }
+
+    @Test
     fun whatTheServersDecisionTookOffThePhone() {
         assertEquals(
             "This title isn't available to this account anymore, so it was deleted from this phone.",
@@ -250,6 +277,125 @@ class DownloadWordsTest {
                 assertEquals(false, Regex("\\b$word\\b", RegexOption.IGNORE_CASE).containsMatchIn(text), "\"$text\" says $word")
             }
         }
+    }
+}
+
+/** A sidecar subtitle that does not come: tried again where the server
+ *  answered, left out after a few such answers, waited for where it did
+ *  not answer - never a failed title that keeps its media. */
+class SidecarMissTest {
+    @Test
+    fun aSubtitleTheServerKeepsRefusingIsLeftOutAfterAFewTries() {
+        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(503, triesSoFar = 0))
+        assertEquals(SidecarMiss.TryAgain(2), sidecarMiss(500, triesSoFar = 1))
+        assertEquals(SidecarMiss.LeaveOut, sidecarMiss(502, triesSoFar = SIDECAR_TRIES - 1))
+        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(403, triesSoFar = 0))
+    }
+
+    @Test
+    fun noAnswerCountsNothingAndAGoneOneAsksTheServerAboutTheTitle() {
+        assertEquals(SidecarMiss.WaitForTheServer, sidecarMiss(null, triesSoFar = SIDECAR_TRIES))
+        assertEquals(SidecarMiss.AskWhetherTheTitleIsStillTheAccounts, sidecarMiss(404, triesSoFar = 0))
+        assertEquals(SidecarMiss.AskWhetherTheTitleIsStillTheAccounts, sidecarMiss(410, triesSoFar = 5))
+    }
+
+    @Test
+    fun aSizeTheServerDidNotSayIsLeftOutNotTheBytesSoFar() {
+        val claim = OwnerClaim("anna", addedAtMs = 1, checkedAtMs = 1)
+        fun entry(estimated: Long?) = DownloadEntry(
+            title = DownloadedTitle(
+                itemId = "film",
+                item = Item(id = "film", title = "A Film", kind = "movie"),
+                quality = "Medium (720p)",
+                estimatedBytes = estimated,
+                server = "s",
+                owners = listOf(claim),
+            ),
+            status = DownloadStatus.Downloading(40),
+            onPhoneBytes = 120_000_000,
+            claim = claim,
+            mediaBytes = 119_800_000,
+        )
+        assertNull(entry(null).size)
+        assertEquals("downloading 40%", rowLabel(entry(null).status, entry(null).size))
+        assertEquals("downloading 40% · 300\u00A0MB", rowLabel(entry(300_000_000).status, entry(300_000_000).size))
+    }
+
+    @Test
+    fun aFailedTitleShowsNoSizeOnItsRow() {
+        val claim = OwnerClaim("anna", addedAtMs = 1, checkedAtMs = 1)
+        val entry = DownloadEntry(
+            title = DownloadedTitle(
+                itemId = "film",
+                item = Item(id = "film", title = "A Film", kind = "movie"),
+                quality = "Medium (720p)",
+                estimatedBytes = 1_400_000_000,
+                server = "s",
+                owners = listOf(claim),
+            ),
+            status = DownloadStatus.Failed(DownloadFailure.ServerProblem),
+            onPhoneBytes = 1_400_000_000,
+            claim = claim,
+            mediaBytes = 1_400_000_000,
+        )
+        assertNull(entry.size)
+        assertEquals("couldn't download", rowLabel(entry.status, entry.size))
+    }
+}
+
+/** "delete all", the storage line and the questions before a sign-out
+ *  count the same titles as their size: those with some of their media on
+ *  the phone. */
+class OnThePhoneTest {
+    private fun entry(id: String, status: DownloadStatus, mediaBytes: Long, folderBytes: Long = 200_000): DownloadEntry {
+        val claim = OwnerClaim("anna", addedAtMs = 1, checkedAtMs = 1)
+        return DownloadEntry(
+            title = DownloadedTitle(
+                itemId = id,
+                item = Item(id = id, title = id, kind = "episode", parentId = "series"),
+                quality = "Medium (720p)",
+                estimatedBytes = 450_000_000,
+                server = "s",
+                owners = listOf(claim),
+            ),
+            status = status,
+            onPhoneBytes = if (status is DownloadStatus.Failed) 0 else mediaBytes + folderBytes,
+            claim = claim,
+            mediaBytes = mediaBytes,
+        )
+    }
+
+    @Test
+    fun aQueuedTitleWithOnlyItsArtworkIsNotCountedAPartlyDownloadedOneIs() {
+        val entries = listOf(
+            entry("e1", DownloadStatus.Downloaded(450_000_000), mediaBytes = 449_800_000),
+            entry("e2", DownloadStatus.Downloading(20), mediaBytes = 68_800_000),
+            // Queued: their posters only.
+            entry("e3", DownloadStatus.Queued, mediaBytes = 0),
+            entry("e6", DownloadStatus.WaitingForWifi, mediaBytes = 0),
+            entry("e7", DownloadStatus.Failed(DownloadFailure.NoSpace), mediaBytes = 0),
+        )
+        val there = onThePhone(entries)
+        assertEquals(DownloadsSummary(2, 519_000_000), there)
+        assertEquals("This removes 2 downloads, 519\u00A0MB, from this phone.", deleteAllSentence(there.titles, there.bytes, DeviceKind.Phone))
+        assertEquals("Your 2 downloads, 519\u00A0MB, are deleted from this phone.", yourDownloadsGoSentence(there, DeviceKind.Phone))
+        assertEquals(
+            "519\u00A0MB used by downloads · 18\u00A0GB free on this phone",
+            storageLine(StorageUse(there.bytes, 18_000_000_000), DeviceKind.Phone, anythingOnThePhone = !there.isEmpty),
+        )
+    }
+
+    @Test
+    fun onlyQueuedOrFailedTitlesLeftClearTheList() {
+        val entries = listOf(
+            entry("e3", DownloadStatus.Queued, mediaBytes = 0),
+            entry("e6", DownloadStatus.WaitingForConnection, mediaBytes = 0),
+            entry("e7", DownloadStatus.Failed(DownloadFailure.Stopped), mediaBytes = 0),
+        )
+        val there = onThePhone(entries)
+        assertTrue(there.isEmpty)
+        assertEquals("This clears the list of downloads.", deleteAllSentence(there.titles, there.bytes, DeviceKind.Phone))
+        assertEquals("18\u00A0GB free on this phone", storageLine(StorageUse(there.bytes, 18_000_000_000), DeviceKind.Phone, anythingOnThePhone = !there.isEmpty))
     }
 }
 

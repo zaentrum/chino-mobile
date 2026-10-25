@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.cast
 
+import cloud.nalet.chino.mobile.data.api.ApiStatusException
 import cloud.nalet.chino.mobile.data.api.FakeServer
 import cloud.nalet.chino.mobile.data.api.respondJson
 import cloud.nalet.chino.mobile.data.api.respondText
@@ -150,6 +151,74 @@ class CastAndQueuedPositionsTest {
         reachable = true
         assertEquals(1, sync.flush()?.sent)
         assertEquals(1_500, stored.getValue("film").positionSec)
+    }
+
+    @Test
+    fun theTvsLastPositionThatDidNotReachTheServerIsKeptAndSentLaterWithItsAge() = runTest {
+        val sync = sync()
+        // Stop casting at 21:00 as the phone's Wi-Fi drops: the last write
+        // gets no answer.
+        val last = CastProgressWrite(ME.accountId, "film", positionSec = 1_260, durationSec = 1_800, final = true)
+        assertFalse(writeCastProgress(last, { _, _ -> throw IOException("no connection") }, sync))
+        assertTrue(sync.hasUnsent("film"))
+        // The download resumes here where the TV stopped.
+        assertEquals(1_260, sync.lastPlayedSec("film"))
+        // Ten minutes later the server answers again: it goes, with its age.
+        nowMs += 10 * 60 * 1000
+        reachable = true
+        assertEquals(1, sync.flush()?.sent)
+        val sent = Json.parseToJsonElement(bodies.last()).jsonObject
+        assertEquals(1_260, sent.getValue("position_sec").jsonPrimitive.int)
+        assertEquals(10L * 60 * 1000, sent.getValue("played_ms_ago").jsonPrimitive.long)
+        assertEquals(1_260, stored.getValue("film").positionSec)
+    }
+
+    @Test
+    fun theTvsLastPositionSentLateNeverGoesOverANewerOne() = runTest {
+        val sync = sync()
+        val last = CastProgressWrite(ME.accountId, "film", positionSec = 1_260, durationSec = 1_800, final = true)
+        assertFalse(writeCastProgress(last, { _, _ -> throw IOException("no connection") }, sync))
+        // Meanwhile another phone of the account cast it on to 25:00.
+        nowMs += 5 * 60 * 1000
+        castAndStop(sync = null, fromSec = 1_440, seconds = 60)
+        assertEquals(1_500, stored.getValue("film").positionSec)
+        // The kept 21:00 goes with its age, and the server keeps the newer.
+        nowMs += 5 * 60 * 1000
+        reachable = true
+        assertEquals(1, sync.flush()?.sent)
+        assertEquals(1_500, stored.getValue("film").positionSec)
+    }
+
+    @Test
+    fun onlyTheLastPositionIsKeptAndNotOneTheServerRefusedForGood() = runTest {
+        val sync = sync()
+        // A write while the TV plays: the next one, ten seconds on, says more.
+        val playing = CastProgressWrite(ME.accountId, "film", positionSec = 600, durationSec = 1_800, final = false)
+        assertFalse(writeCastProgress(playing, { _, _ -> throw IOException("no connection") }, sync))
+        assertFalse(sync.hasUnsent("film"))
+        // The server refused the last one for good (the title is gone): dropped.
+        val refused = CastProgressWrite(ME.accountId, "film", positionSec = 610, durationSec = 1_800, final = true)
+        val gone = ApiStatusException(404, "/v1/items/film/progress", null)
+        assertFalse(writeCastProgress(refused, { _, _ -> throw gone }, sync))
+        assertFalse(sync.hasUnsent("film"))
+        // The server down behind its proxy: kept.
+        val down = ApiStatusException(503, "/v1/items/film/progress", null)
+        assertFalse(writeCastProgress(refused, { _, _ -> throw down }, sync))
+        assertTrue(sync.hasUnsent("film"))
+    }
+
+    @Test
+    fun theLastPositionWithNoBearerToSendItWithIsKeptForItsAccount() = runTest {
+        val sync = sync()
+        // No bearer as casting stops (a renewal without an answer): kept.
+        keepForLater(CastProgressWrite(ME.accountId, "film", positionSec = 900, durationSec = 1_800, final = true), sync)
+        assertTrue(sync.hasUnsent("film"))
+        // A write while the TV plays: not kept.
+        keepForLater(CastProgressWrite(ME.accountId, "other", positionSec = 60, durationSec = 1_800, final = false), sync)
+        assertFalse(sync.hasUnsent("other"))
+        reachable = true
+        assertEquals(1, sync.flush()?.sent)
+        assertEquals(900, stored.getValue("film").positionSec)
     }
 
     private companion object {

@@ -3,10 +3,8 @@ package cloud.nalet.chino.mobile.ui.auth
 import androidx.compose.ui.graphics.RectangleShape
 
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg
-import cloud.nalet.chino.mobile.ui.theme.contentOn
 import cloud.nalet.chino.mobile.ui.theme.ChinoBg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
-import cloud.nalet.chino.mobile.ui.theme.ChinoBorder2
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoDim
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
@@ -14,8 +12,6 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
-import cloud.nalet.chino.mobile.ui.theme.ChinoRed
-import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
 
 import androidx.compose.foundation.background
@@ -52,6 +48,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,14 +71,19 @@ import cloud.nalet.chino.mobile.ui.shell.Section
 import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
 import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
 import cloud.nalet.chino.mobile.data.downloads.Owner
+import cloud.nalet.chino.mobile.data.downloads.REMOVE_ACCOUNT_LABEL
 import cloud.nalet.chino.mobile.data.downloads.REMOVE_ACCOUNT_TITLE
 import cloud.nalet.chino.mobile.data.downloads.accountDownloadsGoSentence
+import cloud.nalet.chino.mobile.data.downloads.accountRemovedSentence
 import cloud.nalet.chino.mobile.data.downloads.castingStopsSentence
-import cloud.nalet.chino.mobile.ui.downloads.leaveCastingOf
+import cloud.nalet.chino.mobile.data.downloads.pickerHintLine
+import cloud.nalet.chino.mobile.ui.downloads.removeFromThisPhone
+import cloud.nalet.chino.mobile.ui.downloads.switchAccount
+import cloud.nalet.chino.mobile.ui.components.QuestionDialog
 import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
-import com.composables.icons.lucide.LogOut
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Plus
+import com.composables.icons.lucide.X
 import kotlinx.coroutines.launch
 
 /**
@@ -127,6 +132,11 @@ class AccountPickerScreen(
         val authModel = remember { AuthScreenModel(container) }
         val authState by authModel.state.collectAsState()
         var pendingRemoval by remember { mutableStateOf<Account?>(null) }
+        // A switch or a removal on its way - it waits for the TV's last
+        // position while the account casts: the account it is for, its tile
+        // busy, no tile takes a tap, and Back waits for it.
+        var leaving by remember { mutableStateOf<String?>(null) }
+        SystemBackHandler(enabled = leaving != null) { }
 
         // When the Add-account sign-in completes, the new account is already
         // persisted + set active by AuthScreenModel; jump to the shell.
@@ -137,6 +147,7 @@ class AccountPickerScreen(
         }
 
         val signing = authState is AuthUiState.Signing
+        val busy = signing || leaving != null
 
         BoxWithConstraints(
             modifier = Modifier
@@ -168,7 +179,7 @@ class AccountPickerScreen(
                             style = ChinoHeading,
                         )
                         Text(
-                            text = "Tap to switch. Tap the sign-out badge to remove an account.",
+                            text = pickerHintLine(LocalDeviceKind.current),
                             color = ChinoMuted,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
@@ -180,15 +191,19 @@ class AccountPickerScreen(
                     AccountTile(
                         account = account,
                         isActive = account.id == activeId,
-                        enabled = !signing,
+                        enabled = !busy,
+                        switching = leaving == account.id && pendingRemoval == null,
                         onSelect = {
-                            scope.launch {
-                                // Another account in its place: the one casting
-                                // stops, its last position written first, and a
-                                // toast says so - the switch asks nothing.
-                                activeId?.takeIf { it != account.id }?.let { leaveCastingOf(container, it) }
-                                store.setActive(account.id)
-                                nav.replaceAll(MainShellScreen(startSection = startSection))
+                            if (leaving == null) {
+                                leaving = account.id
+                                scope.launch {
+                                    // Another account in its place: the one
+                                    // casting stops, its last position written
+                                    // first, and a toast says so - the switch
+                                    // asks nothing.
+                                    switchAccount(container, from = activeId, to = account.id)
+                                    nav.replaceAll(MainShellScreen(startSection = startSection))
+                                }
                             }
                         },
                         onRemove = { pendingRemoval = account },
@@ -198,7 +213,8 @@ class AccountPickerScreen(
                 item(key = "__add_account__") {
                     AddAccountTile(
                         signing = signing,
-                        onClick = { if (!signing) scope.launch { authModel.signIn(launcher) } },
+                        enabled = !busy,
+                        onClick = { if (!busy) scope.launch { authModel.signIn(launcher) } },
                     )
                 }
             }
@@ -214,18 +230,22 @@ class AccountPickerScreen(
                 account = acct,
                 downloads = summary,
                 castingTo = castingTo,
+                busy = leaving == acct.id,
                 onConfirm = {
-                    scope.launch {
-                        // An explicit removal on this phone: casting stops,
-                        // its downloads go, as the question said.
-                        leaveCastingOf(container, acct.id, castingSaid = castingTo != null)
-                        runCatching { container.downloads?.dropOwner(owner) }
-                        store.remove(acct.id)
-                        val remaining = store.snapshotBlocking().accounts
-                        pendingRemoval = null
-                        // Removing the last account leaves nobody to pick —
-                        // fall through to Auth, matching App.kt's boot gate.
-                        if (remaining.isEmpty()) nav.replaceAll(AuthScreen())
+                    if (leaving == null) {
+                        leaving = acct.id
+                        scope.launch {
+                            // An explicit removal on this phone: casting
+                            // stops, its downloads go, as the question said.
+                            removeFromThisPhone(container, acct.id, castingSaid = castingTo != null)
+                            val remaining = store.snapshotBlocking().accounts
+                            pendingRemoval = null
+                            leaving = null
+                            // Removing the last account leaves nobody to
+                            // pick — fall through to Auth, matching App.kt's
+                            // boot gate.
+                            if (remaining.isEmpty()) nav.replaceAll(AuthScreen())
+                        }
                     }
                 },
                 onDismiss = { pendingRemoval = null },
@@ -239,6 +259,8 @@ private fun AccountTile(
     account: Account,
     isActive: Boolean,
     enabled: Boolean,
+    /** The switch to it is on its way: a spinner over its avatar. */
+    switching: Boolean,
     onSelect: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -249,6 +271,7 @@ private fun AccountTile(
             .fillMaxWidth()
             .clip(RectangleShape)
             .clickable(enabled = enabled, onClick = onSelect)
+            .semantics { if (switching) stateDescription = "busy" }
             .padding(8.dp),
     ) {
         Box(contentAlignment = Alignment.TopEnd) {
@@ -264,22 +287,29 @@ private fun AccountTile(
                 contentAlignment = Alignment.Center,
             ) {
                 Avatar(displayName = account.displayName, email = account.email, size = 88.dp)
+                if (switching) {
+                    Box(modifier = Modifier.size(88.dp).background(Color(0x99000000)), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(36.dp), color = Color.White)
+                    }
+                }
             }
-            // Per-account remove / sign-out badge — a small touch target on the
-            // tile corner (the TV uses long-press; phones get an explicit tap
-            // target since there's no remote long-press affordance).
+            // The remove badge: a ✕ on the tile's corner, "remove account"
+            // to a screen reader - removing an account, not signing out of
+            // it (the TV uses long-press; a phone gets a tap target, with no
+            // remote's long press to offer).
             Box(
                 modifier = Modifier
                     .size(28.dp)
                     .clip(RectangleShape)
                     .background(ChinoBg2)
                     .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
-                    .clickable(enabled = enabled, onClick = onRemove),
+                    .clickable(enabled = enabled, onClickLabel = REMOVE_ACCOUNT_LABEL, role = Role.Button, onClick = onRemove)
+                    .semantics { contentDescription = REMOVE_ACCOUNT_LABEL },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Lucide.LogOut,
-                    contentDescription = "Remove ${account.displayName}",
+                    imageVector = Lucide.X,
+                    contentDescription = null,
                     tint = ChinoFg2,
                     modifier = Modifier.size(14.dp),
                 )
@@ -298,14 +328,14 @@ private fun AccountTile(
 }
 
 @Composable
-private fun AddAccountTile(signing: Boolean, onClick: () -> Unit) {
+private fun AddAccountTile(signing: Boolean, enabled: Boolean, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RectangleShape)
-            .clickable(enabled = !signing, onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(8.dp),
     ) {
         Box(
@@ -336,102 +366,36 @@ private fun AddAccountTile(signing: Boolean, onClick: () -> Unit) {
     }
 }
 
+/**
+ * The question before an account goes from the phone: the one question the
+ * app asks before what can't be undone ([QuestionDialog]) - "remove
+ * account", what goes ("The 23 downloads of Anna, 12.4 GB, are deleted from
+ * this phone.", or with none "This removes Anna from this phone. ..."), that
+ * casting stops while it casts, "cancel" and "remove account". [busy]: the
+ * removal runs, and the question stays until it is done.
+ */
 @Composable
 private fun ConfirmRemoveDialog(
     account: Account,
     downloads: DownloadsSummary,
     /** The device the account casts to now, if it does: casting stops. */
     castingTo: String?,
+    busy: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val casting = castingTo?.let { " " + castingStopsSentence(it) }.orEmpty()
     val device = LocalDeviceKind.current
-    // Drawn in the screen's own window: the system Back closes it, as a tap
-    // on the scrim does, rather than going past it and leaving the screen.
-    SystemBackHandler(onBack = onDismiss)
-    // Full-screen scrim + centered card. Compose-MP has no Material AlertDialog
-    // in commonMain without pulling the material3 Dialog (which works, but a
-    // hand-rolled scrim keeps the dark-canvas styling consistent with the rest
-    // of the app and matches the TV's pattern). Scrim click = dismiss; the card
-    // swallows its own clicks.
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xCC000000))
-            .clickable(onClick = onDismiss),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(24.dp)
-                .clip(RectangleShape)
-                .background(ChinoSurface)
-                .border(width = 1.dp, color = ChinoBorder, shape = RectangleShape)
-                .clickable(enabled = false) {}
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Avatar(displayName = account.displayName, email = account.email, size = 64.dp)
-            if (downloads.isEmpty) {
-                // No downloads: the question as it always was.
-                Text(
-                    text = "Remove ${account.displayName}?",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    style = ChinoHeading,
-                )
-                Text(
-                    text = "You'll need to sign in again to use this account on this device.$casting",
-                    color = ChinoFg2,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DialogButton(label = "Cancel", containerColor = ChinoBorder2, onClick = onDismiss)
-                    DialogButton(label = "Remove", containerColor = ChinoRed, onClick = onConfirm)
-                }
-            } else {
-                // Its downloads go with it: the title is the action, the
-                // danger button repeats it, the sentence names what goes.
-                Text(
-                    text = REMOVE_ACCOUNT_TITLE,
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    style = ChinoHeading,
-                )
-                Text(
-                    text = accountDownloadsGoSentence(downloads, account.displayName, device) + casting,
-                    color = ChinoFg2,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                )
-                // In this dialog's own style: its buttons as the one above.
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DialogButton(label = "Cancel", containerColor = ChinoBorder2, onClick = onDismiss)
-                    DialogButton(label = "Remove account", containerColor = ChinoRed, onClick = onConfirm)
-                }
-            }
-        }
+    val goes = if (downloads.isEmpty) {
+        accountRemovedSentence(account.displayName, device)
+    } else {
+        accountDownloadsGoSentence(downloads, account.displayName, device)
     }
-}
-
-@Composable
-private fun DialogButton(label: String, containerColor: Color, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RectangleShape)
-            .background(containerColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        // Dark on a filled colour (Remove's red), light on a neutral one.
-        Text(text = label, color = contentOn(containerColor), fontSize = 14.sp)
-    }
+    QuestionDialog(
+        title = REMOVE_ACCOUNT_TITLE,
+        body = listOfNotNull(goes, castingTo?.let(::castingStopsSentence)).joinToString(" "),
+        action = REMOVE_ACCOUNT_TITLE,
+        onAction = onConfirm,
+        onDismiss = onDismiss,
+        busy = busy,
+    )
 }

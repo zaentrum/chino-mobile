@@ -35,10 +35,14 @@ import cloud.nalet.chino.mobile.data.downloads.ManagerState
 import cloud.nalet.chino.mobile.data.downloads.Owner
 import cloud.nalet.chino.mobile.data.downloads.PlanResult
 import cloud.nalet.chino.mobile.data.downloads.Reach
+import cloud.nalet.chino.mobile.data.downloads.SIDECAR_TRIES
+import cloud.nalet.chino.mobile.data.downloads.SidecarMiss
+import cloud.nalet.chino.mobile.data.downloads.sidecarMiss
 import cloud.nalet.chino.mobile.data.downloads.STOP_NONE
 import cloud.nalet.chino.mobile.data.downloads.StorageUse
 import cloud.nalet.chino.mobile.data.downloads.applyAvailability
 import cloud.nalet.chino.mobile.data.downloads.askAvailable
+import cloud.nalet.chino.mobile.data.downloads.availabilityAsked
 import cloud.nalet.chino.mobile.data.downloads.checkDue
 import cloud.nalet.chino.mobile.data.downloads.claim
 import cloud.nalet.chino.mobile.data.downloads.downloadKey
@@ -59,6 +63,7 @@ import cloud.nalet.chino.mobile.feedback.CurrentActivity
 import cloud.nalet.chino.mobile.ui.player.sidecarForced
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -227,6 +232,7 @@ internal class AndroidDownloads(
                     ),
                     onPhoneBytes = bytes,
                     claim = claim,
+                    mediaBytes = mediaBytesOf(d),
                 )
             }
             .sortedByDescending { it.addedAtMs }
@@ -457,10 +463,9 @@ internal class AndroidDownloads(
 
     override suspend fun storage(): StorageUse = withContext(Dispatchers.IO) {
         engine.titles.awaitReady()
-        // The account's titles as the engine counts them: the sum the rows
-        // and "delete all" make.
-        val onPhone = engine.onPhone.value
-        val used = visibleTo(engine.titles.titles.value, container.activeOwner.value).sumOf { onPhone[it.key] ?: 0L }
+        // The account's titles as the engine counts them: the sum "delete
+        // all" makes, of the same titles.
+        val used = summaryOfTitles(visibleTo(engine.titles.titles.value, container.activeOwner.value)).bytes
         StorageUse(usedBytes = used, freeBytes = engine.freeBytes())
     }
 
@@ -471,12 +476,15 @@ internal class AndroidDownloads(
     override fun summaryOfServer(server: String): DownloadsSummary =
         summaryOfTitles(engine.titles.titles.value.values.filter { it.server == server })
 
-    /** What of [titles] is on the phone: how many, and what they take - the
-     *  engine's one figure ([DownloadEngine.onPhone]), as the downloads
-     *  screen counts it. */
+    /** What of [titles] is on the phone, as the downloads screen counts it
+     *  ([onThePhone]): the titles with some of their media there - a queued
+     *  one with only its artwork doesn't count - and, of the same titles,
+     *  what they take on the phone now: the engine's one figure
+     *  ([DownloadEngine.onPhone]), never the sizes the server said. */
     private fun summaryOfTitles(titles: List<DownloadedTitle>): DownloadsSummary {
         val onPhone = engine.onPhone.value
-        val there = titles.filter { (onPhone[it.key] ?: 0L) > 0L }
+        val downloads = engine.downloads.value
+        val there = titles.filter { countsAsOnThePhone(downloads[it.key]) }
         return DownloadsSummary(there.size, there.sumOf { onPhone[it.key] ?: 0L })
     }
 
@@ -492,20 +500,26 @@ internal class AndroidDownloads(
     }
 
     /**
-     * Asks the server about every download of the account signed in now -
-     * whichever [itemIds] the caller is after: an answer that leaves out all
-     * of them is no answer (a library being imported anew, a reset), and a
-     * title is only ever taken off the phone where the server still knows
-     * others of the account's ([applyAvailability]). What the answer took or
-     * marked is in the result; a title it answered for again that had
-     * stopped as gone (404, 410) is a download that stopped before it was
-     * done, which "try again" works out anew.
+     * Asks the server about the downloads of the account signed in now:
+     * [itemIds] of them, or all of them ([availabilityAsked]) - the
+     * play-time check and a subtitle the server no longer has ask about
+     * their own title alone, one quick request even on a server asked title
+     * by title, inside the seconds the play-time check waits; the background
+     * check asks about all. A title goes after two answers
+     * that it is not the account's ([applyAvailability]): an hour apart where
+     * the answer is the library's word - it still answers for others of the
+     * account's, or says the library holds titles for it - else a day apart
+     * (a library imported anew or reset leaves out everything for a while),
+     * so an account's only download, or all of them, goes too. What the
+     * answer took or marked is in the result; a title it answered for again
+     * that had stopped as gone (404, 410) is a download that stopped before
+     * it was done, which "try again" works out anew.
      */
     override suspend fun checkAvailability(itemIds: List<String>?): AvailabilityCheck {
         val owner = container.activeOwner.value ?: return AvailabilityCheck.NotAnswered
         if (owner.server != container.serverBase) return AvailabilityCheck.NotAnswered
         engine.titles.awaitReady()
-        val ids = visibleTo(engine.titles.titles.value, owner).map { it.itemId }.distinct()
+        val ids = availabilityAsked(visibleTo(engine.titles.titles.value, owner), itemIds)
         if (ids.isEmpty()) return AvailabilityCheck.Done(emptyList())
         // With the owner's own bearer, and only while it is signed in.
         val bearer = container.tokenManager.validAccessToken()
@@ -513,21 +527,20 @@ internal class AndroidDownloads(
             ?: return AvailabilityCheck.NotAnswered
         // No answer, a refusal of the request, a server without the route:
         // none of them says a title is not the account's.
-        val available = withTimeoutOrNull(CHECK_WAIT_MS) { askAvailable(container.chinoApi, ids, bearer) }
+        val answer = withTimeoutOrNull(CHECK_WAIT_MS) { askAvailable(container.chinoApi, ids, bearer) }
             ?: return AvailabilityCheck.NotAnswered
         // The account changed meanwhile: the answer is not the one signed in now's.
         if (container.activeOwner.value != owner) return AvailabilityCheck.NotAnswered
         var result: AvailabilityChange? = null
         val change = engine.titles.change { titles ->
-            val c = applyAvailability(titles, owner, ids, available, currentTimeMillis())
+            val c = applyAvailability(titles, owner, ids, answer.ids, currentTimeMillis(), libraryTitles = answer.libraryTitles)
             result = c
             c.change
         }
         val c = result ?: return AvailabilityCheck.NotAnswered
-        if (!c.answered) return AvailabilityCheck.NotAnswered
         removeMedia(change.removed)
         // Answered for again: one that stopped as gone did not go.
-        for (id in available) {
+        for (id in answer.ids) {
             val key = downloadKey(owner.server, id)
             engine.titles.update(key) { if (it.failure == DownloadFailure.Gone) it.copy(failure = DownloadFailure.Stopped) else it }
         }
@@ -619,18 +632,19 @@ internal class AndroidDownloads(
      * the two) goes; a title no account claims goes; a title that does not
      * read any more goes with its media - nothing could show or play it; a
      * title whose download never reached the manager, and that did not say
-     * why, stopped.
+     * why, stopped. A download left failed in the index - the process ended
+     * between the manager's failure and the removal it sets off - has what
+     * it fetched freed, as a failed download does.
      */
     private fun reconcile() {
         val titles = engine.titles.titles.value
         val downloads = engine.downloads.value
         val starting = engine.starting.value
-        val orphanMedia = downloads.keys.filter { titles[it] == null && it !in starting }
         val unclaimed = titles.values.filter { it.owners.isEmpty() }.map { it.key }
         if (unclaimed.isNotEmpty()) engine.titles.change { BookChange(it - unclaimed.toSet(), unclaimed) }
         val unreadable = engine.titles.unreadable
         for (key in unreadable) engine.titles.removeUnreadable(key)
-        removeMedia((orphanMedia + unclaimed + unreadable).distinct())
+        removeMedia(mediaToFreeAtStart(titles, downloads, starting, unreadable))
         for (t in titles.values) {
             if (t.owners.isNotEmpty() && downloads[t.key] == null && t.failure == null && t.key !in starting) {
                 engine.titles.update(t.key) { it.copy(failure = DownloadFailure.Stopped) }
@@ -643,26 +657,48 @@ internal class AndroidDownloads(
         val downloads = engine.downloads.value
         visibleTo(engine.titles.titles.value, owner)
             .filter { !it.extrasDone && downloads[it.key]?.state == Download.STATE_COMPLETED }
-            .forEach { fetchExtrasLater(it.key) }
+            .forEach {
+                // The server answers again: a few tries more, should it not.
+                noAnswerRetries.remove(it.key)
+                fetchExtrasLater(it.key)
+            }
     }
 
-    private fun fetchExtrasLater(key: String) {
-        container.appScope.launch(Dispatchers.IO) { fetchExtras(key) }
+    private fun fetchExtrasLater(key: String, afterMs: Long = 0L) {
+        container.appScope.launch(Dispatchers.IO) {
+            if (afterMs > 0) delay(afterMs)
+            fetchExtras(key)
+        }
     }
+
+    /** How often a title's extras were tried again without an answer, since
+     *  they last came: a few times while the server seems there, else when
+     *  it answers again ([catchUpExtras]). */
+    private val noAnswerRetries = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    /** A sidecar the server answered for, and not with the file: tried
+     *  again [tries] times so far. */
+    private class SidecarRefused(val tries: Int, cause: Exception) : Exception(cause)
 
     /**
      * The title's sidecar subtitles and artwork, beside its media - for its
      * owner signed in now on its server only: no other account's token goes
      * to it, and no token to another server; it waits for its owner. The
-     * subtitles must come: a download without them is not on the phone yet,
-     * and one whose media is in and whose subtitles fail is a failed one, for
-     * its reason - its media kept, "try again" fetches the rest. A subtitle
-     * the server no longer has is left out once the server says the title is
-     * still the account's; the title goes where the server says it is not -
-     * and while it has said so once only (the title marked), nothing is
-     * decided: the subtitles wait for its next answer. Artwork is best
-     * effort: a title without a poster shows its initials, as everywhere in
-     * the app.
+     * subtitles must come: a download without them is not on the phone yet
+     * - "downloading 99 %" once its media is in, never a failed title that
+     * keeps its media (docs/chino downloads: a failed download frees what it
+     * had). A subtitle the server answers for and does not serve (a 5xx, a
+     * refusal) is asked again a little later, and left out after
+     * [SIDECAR_TRIES] such answers: one text track the server cannot give
+     * never keeps the whole title off the phone, nor makes anyone download
+     * it again for nothing. No answer at all counts nothing: the subtitles
+     * come once the server answers again. A subtitle the server no longer
+     * has is left out once the server says the title is still the account's;
+     * the title goes where the server says it is not - and while it has said
+     * so once only (the title marked), nothing is decided: the subtitles wait
+     * for its next answer. Artwork is best effort: a title without a poster
+     * shows its initials, as everywhere in the app. A failure recorded
+     * meanwhile - out of room, the server's switch - is never undone here.
      */
     private suspend fun fetchExtras(key: String) {
         extrasLock.withLock {
@@ -684,7 +720,22 @@ internal class AndroidDownloads(
                 try {
                     fetchTo(url, file)
                 } catch (e: ApiStatusException) {
-                    if (e.status != 404 && e.status != 410) throw e
+                    when (val miss = sidecarMiss(e.status, s.tries)) {
+                        // The server answered, and not with the file: one
+                        // try of a few, then the title goes on without it.
+                        SidecarMiss.LeaveOut -> {
+                            Log.i(TAG, "a subtitle the server answered ${e.status} for $SIDECAR_TRIES times is left out")
+                            gone += s.id
+                            continue
+                        }
+                        is SidecarMiss.TryAgain -> {
+                            engine.titles.update(key) { t ->
+                                t.copy(subtitles = t.subtitles.map { if (it.id == s.id) it.copy(tries = miss.tries) else it })
+                            }
+                            throw SidecarRefused(miss.tries, e)
+                        }
+                        else -> Unit
+                    }
                     when (val c = checkAvailability(listOf(title.itemId))) {
                         is AvailabilityCheck.Done -> when {
                             // Not the account's any more: deleted, said where it shows.
@@ -698,16 +749,23 @@ internal class AndroidDownloads(
                 }
             }
             fetchArtwork(key, token)
+            noAnswerRetries.remove(key)
             engine.titles.update(key) { t ->
-                t.copy(subtitles = t.subtitles.filterNot { it.id in gone }, extrasDone = true, failure = null)
+                t.copy(subtitles = t.subtitles.filterNot { it.id in gone }, extrasDone = true)
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: SidecarRefused) {
+            // Again a little later, a little later each time.
+            fetchExtrasLater(key, afterMs = EXTRAS_RETRY_MS * e.tries)
         } catch (e: Exception) {
-            // Waits for the next start of its media, or the server's next
-            // answer; once the media is in, it is a failure the control names.
-            if (engine.downloads.value[key]?.state == Download.STATE_COMPLETED) {
-                engine.titles.update(key) { it.copy(failure = failureOf(e)) }
+            // No answer: nothing counts against the subtitles. Asked again
+            // when the server answers again (catchUpExtras) - and, while it
+            // seems to answer, a few times a little later.
+            val n = (noAnswerRetries[key] ?: 0) + 1
+            if (n <= NO_ANSWER_RETRIES && container.serverReach.state.value != Reach.Unreachable) {
+                noAnswerRetries[key] = n
+                fetchExtrasLater(key, afterMs = EXTRAS_RETRY_MS * n)
             }
         } finally {
             extrasLock.withLock { extrasRunning.remove(key) }
@@ -793,8 +851,37 @@ internal class AndroidDownloads(
         /** How often the background check asks at most. */
         const val RECHECK_MS = 5L * 60 * 1000
 
+        /** A title's subtitles asked again after this, times the tries so
+         *  far: a server that answered for one and did not serve it, or did
+         *  not answer while it seemed there. */
+        const val EXTRAS_RETRY_MS = 30_000L
+
+        /** How often, without an answer, before the extras wait for the
+         *  server to answer again. */
+        const val NO_ANSWER_RETRIES = 3
+
         val NOTICES = MapSerializer(String.serializer(), ListSerializer(String.serializer()))
     }
+}
+
+/**
+ * The downloads whose media goes as the process starts ([AndroidDownloads]'
+ * reconcile): one whose title went (the process ended between the two) and
+ * is not being started, one whose title no account claims, one whose title
+ * does not read any more, and one left failed in the index - the process
+ * ended between the manager's failure and the removal it sets off; a failed
+ * download frees what it fetched.
+ */
+internal fun mediaToFreeAtStart(
+    titles: Map<String, DownloadedTitle>,
+    downloads: Map<String, DownloadSnapshot>,
+    starting: Set<String>,
+    unreadable: Collection<String>,
+): List<String> {
+    val orphanMedia = downloads.keys.filter { titles[it] == null && it !in starting }
+    val unclaimed = titles.values.filter { it.owners.isEmpty() }.map { it.key }
+    val leftFailed = downloads.filterValues { it.state == Download.STATE_FAILED }.keys
+    return (orphanMedia + unclaimed + unreadable + leftFailed).distinct()
 }
 
 /** Media3's download state as the shared mapping names it. */

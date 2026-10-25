@@ -19,8 +19,14 @@ sealed interface AddServerState {
     data class Error(val message: String) : AddServerState
 
     /** The new server answered, and changing to it deletes the downloads of
-     *  the one connected now: asked first ([AddServerScreenModel.confirm]). */
-    data class AskDropDownloads(val summary: DownloadsSummary, val config: ServerConfig, val url: String) : AddServerState
+     *  the one connected now ([dropsDownloads]: another server), or stops
+     *  casting: asked first ([AddServerScreenModel.confirm]). */
+    data class AskDropDownloads(
+        val summary: DownloadsSummary,
+        val config: ServerConfig,
+        val url: String,
+        val dropsDownloads: Boolean = true,
+    ) : AddServerState
     data object Done : AddServerState
 }
 
@@ -73,12 +79,14 @@ class AddServerScreenModel(
                     val oldServer = container.serverBase
                     val another = clearAccountsOnConnect && r.config.baseUrl.trimEnd('/') != oldServer
                     val summary = if (another) container.downloads?.summaryOfServer(oldServer) else null
-                    // Asked, too, while the account casts: that stops.
-                    val casting = another && activeAccountId()?.let { container.castingDeviceOf(it) } != null
-                    if ((summary != null && !summary.isEmpty) || casting) {
-                        _state.value = AddServerState.AskDropDownloads(summary ?: DownloadsSummary(0, 0L), r.config, rawUrl)
+                    // Asked, too, while the account casts: that stops - also
+                    // connecting to the same server again, which removes
+                    // every account all the same.
+                    val casting = activeAccountId()?.let { container.castingDeviceOf(it) } != null
+                    if (asksBeforeChangingServer(clearAccountsOnConnect, summary, casting)) {
+                        _state.value = AddServerState.AskDropDownloads(summary ?: DownloadsSummary(0, 0L), r.config, rawUrl, dropsDownloads = another)
                     } else {
-                        finish(r.config, rawUrl, dropDownloadsOf = oldServer.takeIf { another })
+                        finish(r.config, rawUrl, dropDownloadsOf = oldServer.takeIf { another }, castingSaid = false)
                     }
                 }
                 is BootstrapResult.Fail -> _state.value = AddServerState.Error(messageFor(r))
@@ -91,7 +99,9 @@ class AddServerScreenModel(
     fun confirm() {
         val ask = _state.value as? AddServerState.AskDropDownloads ?: return
         _state.value = AddServerState.Probing
-        screenModelScope.launch { finish(ask.config, ask.url, dropDownloadsOf = container.serverBase) }
+        screenModelScope.launch {
+            finish(ask.config, ask.url, dropDownloadsOf = container.serverBase.takeIf { ask.dropsDownloads }, castingSaid = true)
+        }
     }
 
     /** "cancel": nothing changes, the old server stays. */
@@ -101,10 +111,14 @@ class AddServerScreenModel(
 
     private fun activeAccountId(): String? = runCatching { container.accountStore.snapshotBlocking().activeAccount?.id }.getOrNull()
 
-    private suspend fun finish(config: ServerConfig, rawUrl: String, dropDownloadsOf: String?) {
-        // Another server: whoever casts now stops - its last position
-        // written first - as the question said.
-        if (dropDownloadsOf != null) activeAccountId()?.let { leaveCastingOf(container, it, castingSaid = true) }
+    private suspend fun finish(config: ServerConfig, rawUrl: String, dropDownloadsOf: String?, castingSaid: Boolean) {
+        // Another server, or every account removed for the same one again:
+        // whoever casts now stops - its last position written first - as
+        // the question said (else a toast does), and the TV plays nothing on
+        // for whoever signs in next.
+        if (changeServerLeavesCast(clearAccountsOnConnect, dropDownloadsOf != null)) {
+            activeAccountId()?.let { leaveCastingOf(container, it, castingSaid = castingSaid) }
+        }
         if (dropDownloadsOf != null) runCatching { container.downloads?.dropServer(dropDownloadsOf) }
         if (clearAccountsOnConnect) {
             runCatching {
@@ -133,3 +147,15 @@ class AddServerScreenModel(
             "This app connects over HTTPS only; plain http works just for localhost. Use the server's https:// address."
     }
 }
+
+/** Whether "change server" asks first: the downloads of the server
+ *  connected now go ([downloads], another server's change), or - where the
+ *  accounts are removed ([clearsAccounts], Change server, even to the same
+ *  server) - the account casting now stops ([casting]). */
+internal fun asksBeforeChangingServer(clearsAccounts: Boolean, downloads: DownloadsSummary?, casting: Boolean): Boolean =
+    (downloads != null && !downloads.isEmpty) || (clearsAccounts && casting)
+
+/** Whether connecting stops casting: wherever it removes the accounts
+ *  ([clearsAccounts]) or the old server's downloads ([dropsDownloads]) - a
+ *  title never plays on under the next person. */
+internal fun changeServerLeavesCast(clearsAccounts: Boolean, dropsDownloads: Boolean): Boolean = clearsAccounts || dropsDownloads

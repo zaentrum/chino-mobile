@@ -380,6 +380,20 @@ class ProgressSync(
         queue.supersede(p)
     }
 
+    /**
+     * A position of [itemId] another screen played for [accountId] just now
+     * - the TV this phone cast to, as casting stopped - that did not reach
+     * the server: kept as the phone's own player's are, and sent with its
+     * age, with that account's own bearer, once the server can be reached
+     * and the account is signed in. For a title on the phone it is where its
+     * download resumes here.
+     */
+    suspend fun keepUnsent(accountId: String, itemId: String, positionSec: Int, durationSec: Int) {
+        val p = PlayedPosition(server(), accountId, itemId, positionSec, durationSec, now())
+        if (onPhone(accountId, itemId)) queue.remember(p)
+        if (queue.enqueue(p)) onQueued()
+    }
+
     /** The last position played on this phone of [itemId], in seconds. */
     suspend fun lastPlayedSec(itemId: String): Int? {
         val accountId = account() ?: return null

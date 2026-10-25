@@ -7,13 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,16 +16,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.account.AccountDeletion
 import cloud.nalet.chino.mobile.data.account.deleteAccountThenSignOut
@@ -42,14 +32,11 @@ import cloud.nalet.chino.mobile.data.account.isFinal
 import cloud.nalet.chino.mobile.data.account.text
 import cloud.nalet.chino.mobile.data.account.title
 import cloud.nalet.chino.mobile.data.auth.Account
+import cloud.nalet.chino.mobile.ui.components.QuestionDialog
+import cloud.nalet.chino.mobile.ui.components.QuestionText
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
-import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
-import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
-import cloud.nalet.chino.mobile.ui.theme.ChinoSurface
-import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.TriangleAlert
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -64,19 +51,19 @@ private val WHAT_GOES = listOf(
 )
 
 /**
- * Delete Account, opened from Settings → Account. A destructive dialog — the
- * platform's (Material3's AlertDialog, not the scrim card the other dialogs
- * draw), so screen readers treat it as modal and the system back closes it —
- * that names the account and the server, says what goes and that it cannot
- * be undone, and deletes only from its red Delete Account button.
+ * Delete account, opened from Settings → Account: the one question the app
+ * asks before what can't be undone ([QuestionDialog], a platform dialog, so
+ * screen readers treat it as modal and the system back closes it), that
+ * names the account and the server, says what goes and that it cannot be
+ * undone, and deletes only from its danger button, "delete account".
  *
  * The answers (data/account): deleted → the account is signed out on this
- * device ([cloud.nalet.chino.mobile.data.AppContainer.forgetDeletedAccount])
+ * phone ([cloud.nalet.chino.mobile.data.AppContainer.forgetDeletedAccount])
  * and [onSignedOut] takes the app back to the start; refused or not
- * available here → the reason, and Close; any other → Try Again Later with
- * the server's message, Delete Account still there. Back, a tap outside and
- * Cancel do nothing while the request is out; the request and the sign-out
- * finish even should the dialog be gone by then.
+ * available here → the reason, and "close"; any other → the server's
+ * message, "delete account" still there. Back, a tap outside and "cancel"
+ * do nothing while the request is out; the request and the sign-out finish
+ * even should the dialog be gone by then.
  */
 @Composable
 fun DeleteAccountDialog(
@@ -122,98 +109,52 @@ fun DeleteAccountDialog(
     // Its downloads on this phone go with it: the question says so.
     val downloads = remember(account.id) { downloadsOf(container, account.id) }
     val device = LocalDeviceKind.current
-    AlertDialog(
-        onDismissRequest = { if (!deleting) onDismiss() },
-        properties = DialogProperties(dismissOnBackPress = !deleting, dismissOnClickOutside = !deleting),
-        shape = RectangleShape,
-        containerColor = ChinoSurface,
-        icon = { Icon(imageVector = Lucide.TriangleAlert, contentDescription = null, tint = ChinoRed) },
-        title = {
-            // The web dialog's `h2.text-lg font-medium`, at the dialog's
-            // title size.
-            Text(
-                text = "Delete Account",
-                color = Color.White,
-                fontWeight = FontWeight.Medium,
-                style = ChinoHeading,
-                modifier = Modifier.semantics { heading() },
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "This deletes the account $who on ${serverHost ?: "this server"}, and with it:",
-                    color = ChinoFg2,
-                    fontSize = 14.sp,
-                )
-                Column(
-                    modifier = Modifier.padding(start = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+    // The one question before what can't be undone: "delete account" in
+    // monospace, what goes, "cancel" and the danger button - "close" alone
+    // once the answer leaves nothing to do here.
+    QuestionDialog(
+        title = DELETE_ACCOUNT_TITLE,
+        action = DELETE_ACCOUNT_TITLE.takeUnless { final },
+        onAction = delete,
+        onDismiss = onDismiss,
+        busy = deleting,
+        dismissLabel = if (final) "close" else "cancel",
+    ) {
+        QuestionText("This deletes the account $who on ${serverHost ?: "this server"}, and with it:")
+        Column(
+            modifier = Modifier.padding(start = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            WHAT_GOES.forEach { line ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    WHAT_GOES.forEach { line ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Box(modifier = Modifier.size(5.dp).background(ChinoMuted))
-                            Text(text = line, color = ChinoFg2, fontSize = 14.sp)
-                        }
-                    }
-                }
-                if (!downloads.isEmpty) {
-                    Text(text = yourDownloadsGoSentence(downloads, device), color = ChinoFg2, fontSize = 14.sp)
-                }
-                Text(text = "This can't be undone.", color = ChinoFg2, fontSize = 14.sp)
-                // Progress, or why the account is still there: announced.
-                Column(
-                    modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    val shown = answer
-                    when {
-                        deleting -> Text(text = "Deleting your account…", color = ChinoMuted, fontSize = 13.sp)
-                        shown != null -> {
-                            shown.title?.let {
-                                Text(text = it, color = ChinoRed, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            Text(text = shown.text, color = ChinoFg2, fontSize = 13.sp)
-                        }
-                    }
+                    Box(modifier = Modifier.size(5.dp).background(ChinoMuted))
+                    Text(text = line, color = ChinoFg2, fontSize = 14.sp)
                 }
             }
-        },
-        confirmButton = {
-            if (!final) {
-                Button(
-                    onClick = delete,
-                    enabled = !deleting,
-                    shape = RectangleShape,
-                    // The design system's red with its dark label; while it
-                    // deletes, the same, with the spinner.
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ChinoRed,
-                        contentColor = ChinoOnFill,
-                        disabledContainerColor = ChinoRed,
-                        disabledContentColor = ChinoOnFill,
-                    ),
-                ) {
-                    if (deleting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            color = ChinoOnFill,
-                            strokeWidth = 2.dp,
-                        )
-                        Text(text = "Deleting…", modifier = Modifier.padding(start = 8.dp))
-                    } else {
-                        Text(text = "Delete Account")
+        }
+        if (!downloads.isEmpty) QuestionText(yourDownloadsGoSentence(downloads, device))
+        QuestionText("This can't be undone.")
+        // Progress, or why the account is still there: announced.
+        Column(
+            modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            val shown = answer
+            when {
+                deleting -> Text(text = "Deleting your account…", color = ChinoMuted, fontSize = 13.sp)
+                shown != null -> {
+                    shown.title?.let {
+                        Text(text = it, color = ChinoRed, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
+                    Text(text = shown.text, color = ChinoFg2, fontSize = 13.sp)
                 }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !deleting, shape = RectangleShape) {
-                Text(text = if (final) "Close" else "Cancel", color = if (deleting) ChinoMuted else ChinoFg2)
-            }
-        },
-    )
+        }
+    }
 }
+
+/** Delete account's title, which its danger button repeats. */
+private const val DELETE_ACCOUNT_TITLE = "delete account"

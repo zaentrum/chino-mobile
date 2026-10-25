@@ -490,6 +490,17 @@ internal fun onPhoneBytes(downloads: Map<String, DownloadSnapshot>, folders: Map
         .filterValues { it.state != Download.STATE_FAILED && it.state != Download.STATE_REMOVING }
         .mapValues { (key, d) -> d.bytes.coerceAtLeast(0L) + (folders[key] ?: 0L) }
 
+/** What of a download's media is on the phone now, without its title's
+ *  folder: none for one that failed or goes, or has none ([d] null). */
+internal fun mediaBytesOf(d: DownloadSnapshot?): Long =
+    if (d == null || d.state == Download.STATE_FAILED || d.state == Download.STATE_REMOVING) 0L else d.bytes.coerceAtLeast(0L)
+
+/** Whether a title counts as on the phone for the storage line, "delete
+ *  all" and the questions before a sign-out: some of its media is there, or
+ *  it is complete - a title queued with only its artwork is not. */
+internal fun countsAsOnThePhone(d: DownloadSnapshot?): Boolean =
+    mediaBytesOf(d) > 0 || d?.state == Download.STATE_COMPLETED
+
 /** Media3's download index and the cache's, in a database file of their
  *  own: the Zap cache keeps its own in Media3's default one. */
 private class DownloadsDatabase(context: Context) :

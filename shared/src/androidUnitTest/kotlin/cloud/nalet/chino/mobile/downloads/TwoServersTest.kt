@@ -92,7 +92,8 @@ class TwoServersTest {
         ).also { it.serverBase }
     }
 
-    /** The main thread's work, and the manager's thread's, for a while. */
+    /** The main thread's work, and the manager's thread's, for a while:
+     *  time for something that should not happen to happen. */
     private fun settle(ms: Long = 1_500) {
         val until = System.currentTimeMillis() + ms
         while (System.currentTimeMillis() < until) {
@@ -101,6 +102,24 @@ class TwoServersTest {
         }
         shadowOf(Looper.getMainLooper()).idle()
     }
+
+    /** The main thread's work, and the manager's thread's, until [done] -
+     *  at most [timeoutMs]: on a machine under load the manager can take
+     *  seconds to open its index, and a fixed wait is too short there. */
+    private fun settleUntil(timeoutMs: Long = 60_000, done: () -> Boolean) {
+        val until = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < until) {
+            shadowOf(Looper.getMainLooper()).idle()
+            if (done()) return
+            Thread.sleep(20)
+        }
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    /** The download's stop reason in the manager's index, once the manager
+     *  has read it; null before, or while the download is not in it. */
+    private fun stopReasonOf(engine: DownloadEngine, key: String): Int? =
+        if (engine.indexRead.value) engine.manager.downloadIndex.getDownload(key)?.stopReason else null
 
     @Test
     fun afterAChangeOfServerOnlyTheNewGraphSetsTheStopReasons() {
@@ -135,9 +154,9 @@ class TwoServersTest {
             DownloadRequest.Builder(key, Uri.parse("$serverTwo/v1/items/film/play/master.m3u8")).setMimeType(MimeTypes.APPLICATION_M3U8).build(),
             STOP_NONE,
         )
-        settle()
         // The first server's graph: not its owner's - it waits, away.
-        assertEquals(STOP_OWNER_AWAY, engine.manager.downloadIndex.getDownload(key)?.stopReason)
+        settleUntil { stopReasonOf(engine, key) == STOP_OWNER_AWAY }
+        assertEquals(STOP_OWNER_AWAY, stopReasonOf(engine, key))
 
         // Change server: the second server's graph is the app's, the first's
         // work stops (the Application's rebuildContainer).
@@ -145,16 +164,17 @@ class TwoServersTest {
         app.container = second
         first.close()
         second.downloads
-        settle()
+        settleUntil { !first.appScope.isActive && stopReasonOf(engine, key) == STOP_NONE }
         assertFalse(first.appScope.isActive)
-        assertEquals(STOP_NONE, engine.manager.downloadIndex.getDownload(key)?.stopReason)
+        assertEquals(STOP_NONE, stopReasonOf(engine, key))
 
         // And it stays so as the downloads change: nothing of the first
         // graph's sets it back.
+        // Each change given time to set it back, were anything to.
         repeat(3) { n ->
             engine.titles.update(key) { it.copy(estimatedBytes = 1_000L + n) }
             settle(500)
-            assertEquals(STOP_NONE, engine.manager.downloadIndex.getDownload(key)?.stopReason, "after change ${n + 1}")
+            assertEquals(STOP_NONE, stopReasonOf(engine, key), "after change ${n + 1}")
         }
     }
 }

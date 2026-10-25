@@ -7,6 +7,8 @@ import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.hls.playlist.HlsMultivariantPlaylist
 import cloud.nalet.chino.mobile.data.api.PlayInfo
 import cloud.nalet.chino.mobile.data.downloads.DownloadPlan
+import cloud.nalet.chino.mobile.data.downloads.DownloadedTitle
+import cloud.nalet.chino.mobile.data.downloads.OwnerClaim
 import cloud.nalet.chino.mobile.data.downloads.parseHlsMaster
 import cloud.nalet.chino.mobile.data.model.Item
 import org.junit.Test
@@ -14,7 +16,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** What a plan picks, as Media3 numbers the master: each pick found by its
  *  URL in Media3's own parse, whatever token the master carries - and no
@@ -108,6 +112,56 @@ class StreamKeysTest {
         // Media and folder: what the row says, what the line and the
         // questions sum - partly fetched ones too, while they wait.
         assertEquals(mapOf("there" to 49_280_000L, "coming" to 10_250_000L, "waiting" to 3_000_000L), figures)
+    }
+
+    @Test
+    fun aDownloadLeftFailedInTheIndexHasItsMediaFreedAtTheStart() {
+        fun snapshot(state: Int) = DownloadSnapshot(
+            state = state,
+            percent = 0f,
+            bytes = 7_000_000,
+            request = DownloadRequest.Builder("k", Uri.parse(masterUrl)).build(),
+        )
+        fun title(id: String, owned: Boolean = true) = DownloadedTitle(
+            itemId = id,
+            item = Item(id = id, title = id, kind = "movie"),
+            quality = "Medium (720p)",
+            server = "s",
+            owners = if (owned) listOf(OwnerClaim("anna", addedAtMs = 1, checkedAtMs = 1)) else emptyList(),
+        )
+        val titles = listOf(title("failed"), title("fine"), title("nobodys", owned = false), title("odd")).associateBy { it.key }
+        val downloads = mapOf(
+            title("failed").key to snapshot(Download.STATE_FAILED),
+            title("fine").key to snapshot(Download.STATE_COMPLETED),
+            title("nobodys").key to snapshot(Download.STATE_STOPPED),
+            "gone~0" to snapshot(Download.STATE_QUEUED),
+            "new~0" to snapshot(Download.STATE_QUEUED),
+        )
+        val freed = mediaToFreeAtStart(titles, downloads, starting = setOf("new~0"), unreadable = listOf(title("odd").key))
+        assertEquals(setOf("gone~0", title("nobodys").key, title("odd").key, title("failed").key), freed.toSet())
+    }
+
+    @Test
+    fun aTitleCountsAsOnThePhoneByItsMediaNotItsArtwork() {
+        fun snapshot(state: Int, bytes: Long) = DownloadSnapshot(
+            state = state,
+            percent = 0f,
+            bytes = bytes,
+            request = DownloadRequest.Builder("k", Uri.parse(masterUrl)).build(),
+        )
+        // Partly fetched, done, or waiting with what it fetched: on the phone.
+        assertTrue(countsAsOnThePhone(snapshot(Download.STATE_DOWNLOADING, 69_000_000)))
+        assertTrue(countsAsOnThePhone(snapshot(Download.STATE_COMPLETED, 450_000_000)))
+        assertTrue(countsAsOnThePhone(snapshot(Download.STATE_QUEUED, 3_000_000)))
+        // Queued with nothing fetched - its poster in its folder only - or
+        // none at all, failed, going: not.
+        assertFalse(countsAsOnThePhone(snapshot(Download.STATE_QUEUED, 0)))
+        assertFalse(countsAsOnThePhone(snapshot(Download.STATE_STOPPED, 0)))
+        assertFalse(countsAsOnThePhone(null))
+        assertFalse(countsAsOnThePhone(snapshot(Download.STATE_FAILED, 7_000_000)))
+        assertFalse(countsAsOnThePhone(snapshot(Download.STATE_REMOVING, 7_000_000)))
+        assertEquals(0L, mediaBytesOf(snapshot(Download.STATE_FAILED, 7_000_000)))
+        assertEquals(69_000_000L, mediaBytesOf(snapshot(Download.STATE_DOWNLOADING, 69_000_000)))
     }
 
     @Test

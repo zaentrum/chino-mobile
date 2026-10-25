@@ -143,6 +143,29 @@ class CastProgressTest {
     }
 
     @Test
+    fun anAccountTheServerDeletedIsLetGoWithNoWriteWhateverTheTvStillReports() {
+        // Delete account while its title plays on the TV: the server has
+        // deleted what it kept of the account, and the phone writes nothing
+        // more of it - not the last position, not one the TV reports while
+        // casting stops, though the account is still signed in meanwhile.
+        val tv = Tv()
+        tv.play(fromMs = 1_000_000, seconds = 5)
+        tv.reporter.letGoUnwritten(ME.accountId)
+        assertNull(tv.reporter.trackedItemId)
+        tv.play(fromMs = 1_006_000, seconds = 15)
+        tv.status(RemotePlayerState.Paused, 1_021_000)
+        tv.reporter.onSessionEnding()
+        assertTrue(tv.writes.isEmpty(), "written for a deleted account: ${tv.writes}")
+        // The next account signed in writes as before.
+        tv.writer = YOU
+        tv.reporter.writerChanged()
+        tv.tag = tagOf("m2", owner = YOU.owner)
+        tv.play(fromMs = 0, seconds = 3)
+        tv.reporter.onSessionEnding()
+        assertEquals(listOf(write("m2", 3, final = true, account = YOU.accountId)), tv.writes)
+    }
+
+    @Test
     fun theSameTitleLoadedAgainKeepsItsStartGuard() {
         val tv = Tv()
         tv.play(fromMs = 2_400_000, seconds = 3)

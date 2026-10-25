@@ -30,16 +30,16 @@ fun statusLabel(status: DownloadStatus): String = when (status) {
 }
 
 /**
- * A row's one text on the downloads screen: the status and the size its
- * offer said, as the server reports it ([size]) - "queued · 347 MB",
+ * A title's one text, on its control and on its row of the downloads
+ * screen alike: the status and the size its offer said, as the server
+ * reports it ([size]) - "queued · 347 MB", "waiting for Wi-Fi · 347 MB",
  * "downloading 15% · 347 MB", "downloaded · 347 MB", the same number before
- * and after. One that failed keeps nothing, and its row says no size - but
- * where its media came in whole and the rest of it did not, what it keeps.
+ * and after. One that failed keeps nothing, and says no size.
  */
 fun rowLabel(status: DownloadStatus, size: Long?): String {
     val label = statusLabel(status)
     val sized = status is DownloadStatus.Queued || status is DownloadStatus.WaitingForWifi ||
-        status is DownloadStatus.WaitingForConnection || status is DownloadStatus.Downloading || status is DownloadStatus.Failed
+        status is DownloadStatus.WaitingForConnection || status is DownloadStatus.Downloading
     return if (sized && size != null && size > 0) "$label · ${formatSize(size)}" else label
 }
 
@@ -179,6 +179,19 @@ fun accountDownloadsGoSentence(summary: DownloadsSummary, accountName: String, d
     } else {
         "The ${summary.titles} downloads of $accountName, ${formatSize(summary.bytes)}, are deleted from this ${device.word}."
     }
+
+/** Remove account, with none of its downloads on the phone: what goes, by
+ *  the account's name - "This removes Anna from this phone. You'll need to
+ *  sign in again to use the account." */
+fun accountRemovedSentence(accountName: String, device: DeviceKind): String =
+    "This removes $accountName from this ${device.word}. You'll need to sign in again to use the account."
+
+/** The account picker's line under its title: what a tap on a tile and on
+ *  its ✕ do. */
+fun pickerHintLine(device: DeviceKind): String = "Tap to switch. Tap ✕ to remove an account from this ${device.word}."
+
+/** The ✕ on an account's tile, as a screen reader names it. */
+const val REMOVE_ACCOUNT_LABEL = REMOVE_ACCOUNT_TITLE
 
 /** The download notification's title: a film's, or an episode's with its
  *  series and code - "Pioneer One · S01E01 · Earthfall". */

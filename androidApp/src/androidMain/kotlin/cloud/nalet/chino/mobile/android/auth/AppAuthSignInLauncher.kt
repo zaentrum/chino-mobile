@@ -5,6 +5,8 @@ import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import cloud.nalet.chino.mobile.AppConfig
 import cloud.nalet.chino.mobile.currentTimeMillis
 import cloud.nalet.chino.mobile.data.auth.OAuthRedirect
@@ -34,7 +36,10 @@ import net.openid.appauth.ResponseTypeValues
  * One launcher instance per Activity — re-create if the activity is
  * recreated. AppAuth's own state lives in the redirect-uri receiver
  * activity, not here, so nothing needs to be persisted across config
- * changes.
+ * changes. Its [AuthorizationService] binds the browser's Custom Tabs
+ * service to the Activity; it is disposed as the Activity is destroyed
+ * ([installFor]) - a change of server recreates it - so no connection is
+ * left bound to an Activity that is gone.
  */
 class AppAuthSignInLauncher private constructor(
     private val activity: ComponentActivity,
@@ -97,6 +102,16 @@ class AppAuthSignInLauncher private constructor(
                 else -> deferred.complete(SignInResult.Error("token exchange returned no token"))
             }
         }
+    }
+
+    /** The Activity is destroyed: the browser's service is unbound, and a
+     *  sign-in still waiting for its answer ends as cancelled - its answer
+     *  goes to the next Activity's launcher, never this one. */
+    private fun dispose() {
+        launcher = null
+        pending?.complete(SignInResult.Cancelled)
+        pending = null
+        service.dispose()
     }
 
     override suspend fun signIn(): SignInResult {
@@ -162,6 +177,12 @@ class AppAuthSignInLauncher private constructor(
                 redirectUri = OAuthRedirect.URI,
             )
             launcher.registerLauncher()
+            activity.lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onDestroy(owner: LifecycleOwner) {
+                    owner.lifecycle.removeObserver(this)
+                    launcher.dispose()
+                }
+            })
             return launcher
         }
     }

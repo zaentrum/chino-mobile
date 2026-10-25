@@ -123,7 +123,43 @@ data class DownloadedSubtitle(
     val file: String,
     /** Where the server serves it ("/api/v1/play/subs/{id}.vtt"). */
     val source: String? = null,
+    /** How often the server answered for it, and not with the file (a 5xx,
+     *  a refusal): at [SIDECAR_TRIES] it is left out, and the title is on
+     *  the phone without it. No answer at all counts nothing. */
+    val tries: Int = 0,
 )
+
+/** How often a sidecar subtitle the server answers for but does not serve
+ *  is asked for before the download goes on without it: one text track the
+ *  server cannot give never keeps a whole title off the phone. */
+const val SIDECAR_TRIES = 3
+
+/** What a sidecar subtitle's fetch that did not bring it comes to. */
+sealed interface SidecarMiss {
+    /** The server no longer has it (404, 410): whether the title is still
+     *  the account's decides - left out if so, the title gone if not. */
+    data object AskWhetherTheTitleIsStillTheAccounts : SidecarMiss
+
+    /** The server answered, and not with the file: asked again later, its
+     *  [tries] so far counted. */
+    data class TryAgain(val tries: Int) : SidecarMiss
+
+    /** The server answered so [SIDECAR_TRIES] times: the title goes on
+     *  without it. */
+    data object LeaveOut : SidecarMiss
+
+    /** No answer: nothing counted; it comes once the server answers. */
+    data object WaitForTheServer : SidecarMiss
+}
+
+/** What a sidecar's fetch the server answered [status] for (null: no
+ *  answer) comes to, after [triesSoFar] such answers. */
+fun sidecarMiss(status: Int?, triesSoFar: Int): SidecarMiss = when {
+    status == null -> SidecarMiss.WaitForTheServer
+    status == 404 || status == 410 -> SidecarMiss.AskWhetherTheTitleIsStillTheAccounts
+    triesSoFar + 1 >= SIDECAR_TRIES -> SidecarMiss.LeaveOut
+    else -> SidecarMiss.TryAgain(triesSoFar + 1)
+}
 
 /**
  * Where a download is - the download manager's own states, in the words the
@@ -184,6 +220,9 @@ data class DownloadEntry(
      *  control say its size as the server reported it ([size]). */
     val onPhoneBytes: Long,
     val claim: OwnerClaim,
+    /** What of its media is on the phone now - the manager's count, without
+     *  its folder: a title queued with only its artwork there has none. */
+    val mediaBytes: Long = 0L,
 ) {
     val itemId: String get() = title.itemId
 
@@ -191,20 +230,35 @@ data class DownloadEntry(
 
     /** The size a row shows: the size its offer said, as the server
      *  reported it - the same number before and after (the status carries
-     *  it once it is on the phone); for one that failed, what it keeps,
-     *  which is nothing but where its media came in whole and the rest of it
-     *  did not. */
+     *  it once it is on the phone); on its way with none said, none - what
+     *  has come so far is not the title's size, and is left out rather than
+     *  guessed; for one that failed, none - a failed download keeps
+     *  nothing. */
     val size: Long?
         get() = when (status) {
             is DownloadStatus.Downloaded -> status.bytes
             is DownloadStatus.CheckNeeded -> status.bytes
-            is DownloadStatus.Failed -> onPhoneBytes.takeIf { it > 0 }
-            else -> title.estimatedBytes ?: onPhoneBytes.takeIf { it > 0 }
+            is DownloadStatus.Failed -> null
+            else -> title.estimatedBytes?.takeIf { it > 0 }
         }
 
-    /** Whether some of it is on the phone: what "delete all" and the
-     *  questions before a sign-out count. */
-    val onPhone: Boolean get() = onPhoneBytes > 0 || status is DownloadStatus.Downloaded || status is DownloadStatus.CheckNeeded
+    /** Whether some of it is on the phone: what the storage line, "delete
+     *  all" and the questions before a sign-out count. Some of its media - a
+     *  title partly downloaded counts; one queued, with nothing but its
+     *  artwork there, doesn't (docs/chino downloads). */
+    val onPhone: Boolean get() = mediaBytes > 0 || status is DownloadStatus.Downloaded || status is DownloadStatus.CheckNeeded
+}
+
+/**
+ * What of [entries] is on the phone - the one figure the downloads screen's
+ * line, "delete all" and the questions before a sign-out compute: the titles
+ * with something of their media there ([DownloadEntry.onPhone]) and, of the
+ * same titles, what they take ([DownloadEntry.onPhoneBytes]). The number and
+ * the size count the same titles.
+ */
+fun onThePhone(entries: List<DownloadEntry>): DownloadsSummary {
+    val there = entries.filter { it.onPhone }
+    return DownloadsSummary(there.size, there.sumOf { it.onPhoneBytes })
 }
 
 /** What downloads take on the phone, and what is left there. */
