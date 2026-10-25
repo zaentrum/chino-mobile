@@ -211,7 +211,21 @@ private val ENDONYMS: Map<String, Set<String>> = mapOf(
 
 private val PRIMARY = Regex("^[a-z]{2,3}$")
 
-private fun subtags(code: String): List<String> = code.trim().replace('_', '-').split('-')
+// The macrolanguages Media3 writes before a language of theirs
+// (Util.normalizeLanguageCode): "nb" as "no-nob", "nn" as "no-nno", "id" as
+// "ms-ind", "hr", "bs" and "sr" as "hbs-hrv", "hbs-bos", "hbs-srp", "tw" as
+// "ak-twi". The second subtag is the language itself (BCP 47's extended
+// language subtag), so a track it names is named, and compared, as that
+// language - "Norwegian Bokmål", "Croatian", "Indonesian", never "Norwegian",
+// "Serbo-Croatian" or "Malay". Chinese keeps "zh": its varieties are told by
+// a track's own title.
+private val MACROLANGUAGES = setOf("no", "ms", "hbs", "ak")
+private val EXTENDED_LANGUAGE = Regex("^[A-Za-z]{3}$")
+
+private fun subtags(code: String): List<String> {
+    val parts = code.trim().replace('_', '-').split('-')
+    return if (parts.size >= 2 && parts[0].lowercase() in MACROLANGUAGES && EXTENDED_LANGUAGE.matches(parts[1])) parts.drop(1) else parts
+}
 
 /** The code's language subtag, lower-cased ("pt" of "PT_br"); "" for none. */
 private fun primarySubtag(code: String?): String = code?.let { subtags(it).first().lowercase() }.orEmpty()

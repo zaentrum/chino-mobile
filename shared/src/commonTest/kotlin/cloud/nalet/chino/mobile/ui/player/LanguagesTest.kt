@@ -156,6 +156,46 @@ class LanguagesTest {
     }
 
     @Test
+    fun aLanguageMedia3WritesAfterItsMacrolanguageIsThatLanguage() {
+        // Media3 gives "nb" as "no-nob", "id" as "ms-ind", "hr" as "hbs-hrv".
+        val cases = mapOf(
+            "no-nob" to ("nb" to "Norwegian Bokmål"),
+            "no-nno" to ("nn" to "Norwegian Nynorsk"),
+            "ms-ind" to ("id" to "Indonesian"),
+            "hbs-hrv" to ("hr" to "Croatian"),
+            "hbs-bos" to ("bs" to "Bosnian"),
+            "hbs-srp" to ("sr" to "Serbian"),
+            "ak-twi" to ("tw" to "Akan"),
+        )
+        for ((code, expected) in cases) {
+            assertEquals(expected.first, normalizeLang(code), code)
+            assertEquals(expected.first, languageTag(code), code)
+            assertEquals(expected.second, languageName(code), code)
+        }
+        // A region after it stays: "Serbian (Serbia)".
+        assertEquals("sr-RS", languageTag("hbs-srp-RS"))
+        // Croatian, Bosnian and Serbian are three, never one "Serbo-Croatian".
+        assertEquals(3, listOf("hbs-hrv", "hbs-bos", "hbs-srp").map { subtitleLabel(SubtitleLabelInput(it)) }.toSet().size)
+        // The plain macrolanguages, and Chinese's varieties, as before.
+        assertEquals("no", normalizeLang("no"))
+        assertEquals("ms", normalizeLang("ms"))
+        assertEquals("zh", normalizeLang("zh-cmn"))
+    }
+
+    @Test
+    fun aCodeTitleThatOnlyRepeatsTheLanguageIsDropped() {
+        // "NB" on a Bokmål track, as Media3 tags it or as the server does;
+        // "AF" and "BG" on theirs.
+        assertEquals("Norwegian Bokmål", subtitleLabel(SubtitleLabelInput("no-nob", "NB")))
+        assertEquals("Norwegian Bokmål", subtitleLabel(SubtitleLabelInput("nb", "NB")))
+        assertEquals("Norwegian Nynorsk", subtitleLabel(SubtitleLabelInput("no-nno", "NN")))
+        assertEquals("Afrikaans", subtitleLabel(SubtitleLabelInput("af", "AF")))
+        assertEquals("Bulgarian", subtitleLabel(SubtitleLabelInput("bg", "BG")))
+        // On a track tagged plain Norwegian, "NB" says which one: as chino-web.
+        assertEquals("Norwegian · NB", subtitleLabel(SubtitleLabelInput("no", "NB")))
+    }
+
+    @Test
     fun aTitleThatIsOnlyTheLanguagesOwnNameSaysNothingMore() {
         // The word list's name, never "German · Deutsch".
         assertEquals("German", subtitleLabel(SubtitleLabelInput("de", "Deutsch")))
