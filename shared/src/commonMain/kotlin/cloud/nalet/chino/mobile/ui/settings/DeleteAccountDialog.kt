@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.account.AccountDeletion
-import cloud.nalet.chino.mobile.data.account.deleteAccountThenSignOut
 import cloud.nalet.chino.mobile.data.downloads.yourDownloadsGoSentence
 import cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind
 import cloud.nalet.chino.mobile.ui.downloads.downloadsOf
@@ -93,7 +92,9 @@ fun DeleteAccountDialog(
                 if (container.accountStore.snapshotBlocking().activeAccount?.id != account.id) {
                     AccountDeletion.Failed("Another account is signed in now. Open Delete Account again.")
                 } else {
-                    container.chinoApi.deleteAccountThenSignOut { container.forgetDeletedAccount(account.id) }
+                    // Nothing the TV plays is written for it while the
+                    // server deletes it.
+                    container.deleteAccount(account.id)
                 }
             }
             deleting = false

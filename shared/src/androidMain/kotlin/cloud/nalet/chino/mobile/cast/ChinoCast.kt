@@ -202,6 +202,8 @@ internal object ChinoCast {
         // it does, its last position written first (leave).
         container.castingDeviceOf = ::castingDeviceOf
         container.leaveCasting = ::leave
+        // The account is being deleted: nothing written for it meanwhile.
+        container.holdCastWrites = ::holdWrites
         if (this.container !== container) {
             this.container = container
             ownerWatch?.cancel()
@@ -567,6 +569,29 @@ internal object ChinoCast {
         device
     }
 
+    /** The account whose writes are held ([holdWrites]); null for none. */
+    @Volatile
+    private var held: String? = null
+
+    /**
+     * [accountId]'s writes of what the TV plays held ([hold]) - the server
+     * is deleting the account: none starts for it, and one already out is
+     * waited for, at most [LEAVE_WRITE_WAIT_MS], so that it lands before the
+     * deletion and never after it. Not [hold]: they go on as before, the
+     * account was not deleted (once it was, [leave] lets what the TV plays
+     * go unwritten, and the account is gone).
+     */
+    suspend fun holdWrites(accountId: String, hold: Boolean) {
+        withContext(Dispatchers.Main) {
+            if (hold) {
+                held = accountId
+                withTimeoutOrNull(LEAVE_WRITE_WAIT_MS) { _writing.first { it == 0 } }
+            } else if (held == accountId) {
+                held = null
+            }
+        }
+    }
+
     private fun reportOf(error: MediaError?, senderStatus: Int?): CastErrorReport =
         CastErrorReport(detailedCode = error?.detailedErrorCode, reason = error?.reason, senderStatus = senderStatus)
 
@@ -607,17 +632,19 @@ internal object ChinoCast {
     }
 
     /** One position write, for the account it is of - refused once another
-     *  is signed in. */
+     *  is signed in, and while the account's writes are held (it is being
+     *  deleted). */
     private fun write(w: CastProgressWrite) {
         val c = container ?: return
-        if (w.accountId != activeAccountId) return
+        if (w.accountId != activeAccountId || w.accountId == held) return
         _writing.update { it + 1 }
         keepAliveChanged()
         c.appScope.launch {
             try {
                 // Once more as it goes out: the request carries the bearer of
-                // whoever is signed in then.
-                if (w.accountId == activeAccountId) {
+                // whoever is signed in then, and none goes for an account
+                // being deleted.
+                if (w.accountId == activeAccountId && w.accountId != held) {
                     // With the account's own bearer, and only while it is
                     // the one signed in - never the shared client's, which
                     // may be the next account's by the time it goes out.

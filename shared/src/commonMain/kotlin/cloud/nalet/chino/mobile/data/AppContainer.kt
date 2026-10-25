@@ -1,6 +1,8 @@
 package cloud.nalet.chino.mobile.data
 
 import cloud.nalet.chino.mobile.AppConfig
+import cloud.nalet.chino.mobile.data.account.AccountDeletion
+import cloud.nalet.chino.mobile.data.account.deleteAccountThenSignOut
 import cloud.nalet.chino.mobile.data.api.ChinoApi
 import cloud.nalet.chino.mobile.data.api.HttpClientFactory
 import cloud.nalet.chino.mobile.data.api.forgetBearer
@@ -261,6 +263,25 @@ class AppContainer(
     }
 
     /**
+     * Deletes [accountId] - the account signed in - on the server (DELETE
+     * /v1/me) and, once the server says it is gone, signs it out here
+     * ([forgetDeletedAccount]). While the request is out, nothing the TV
+     * plays is written for it: a periodic position sent then would arrive
+     * as the server deletes the account's rows, and come back as a row of
+     * an account that is gone. The writes are held - one already out waited
+     * for first, so it lands before the deletion - and go on as before
+     * where the account was not deleted.
+     */
+    suspend fun deleteAccount(accountId: String): AccountDeletion {
+        holdCastWrites(accountId, true)
+        try {
+            return chinoApi.deleteAccountThenSignOut { forgetDeletedAccount(accountId) }
+        } finally {
+            holdCastWrites(accountId, false)
+        }
+    }
+
+    /**
      * Signs [accountId] out of this device once the server has deleted it:
      * its tokens leave [accountStore], and what the process still holds for
      * it goes as well — the bearer the HTTP client keeps (it would ride on
@@ -389,6 +410,12 @@ class AppContainer(
      *  casting stops. The device it stopped casting on; null where it cast
      *  nothing. Set by the platform that casts. */
     var leaveCasting: suspend (accountId: String, writeLast: Boolean) -> String? = { _, _ -> null }
+
+    /** Holds [accountId]'s writes of what the TV plays ([hold]), or lets
+     *  them go on (not [hold]): held, none starts for it - a write already
+     *  out is waited for, a few seconds at most - while the server deletes
+     *  the account. Set by the platform that casts. */
+    var holdCastWrites: suspend (accountId: String, hold: Boolean) -> Unit = { _, _ -> }
 
     /** Short confirmations shown over any screen, the design system's
      *  toasts (ui/components/Toast.kt). */
