@@ -72,6 +72,17 @@ class LanguageSettingTest {
     }
 
     @Test
+    fun subtitlesSetOffTheFieldSaysOffAsThePlayersMenuDoes() {
+        setting(subtitleSettingChoices(listOf("en", "de"), "off"), "off", mutableListOf())
+        compose.onNodeWithContentDescription("subtitle language")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "off"))
+        // Drawn as it is said: "off", lowercase, never "Off".
+        compose.onNode(hasText("off") and dropdown).assertExists()
+        // The same word on a server that names no languages.
+        assertEquals("off", subtitleSettingChoices(emptyList(), "off").first().name)
+    }
+
+    @Test
     fun theFieldSaysWhatIsSetAndTheMenuPicksIt() {
         setting(subtitleSettingChoices(listOf("en", "de"), "deu"), "deu", mutableListOf())
         compose.onNodeWithContentDescription("subtitle language")

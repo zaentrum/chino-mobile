@@ -236,21 +236,20 @@ fun ownLanguages(preferred: String?, audio: String?, device: String?): List<Stri
  * - [SubtitleMenu.top], the languages that matter to the person: the
  *   subtitle setting's ([preferred] - "off" names none), then each other
  *   subtitle language the server is set up for ([serverLanguages], its
- *   order). A wanted language takes a track by its language, and by its
- *   script and region where both name one ([tag]: its tag with what its own
- *   title says, [subtitleLanguage]): "zh-Hans" takes an unmarked "Chinese",
- *   never "zh-Hant"; "en" takes "en-GB" too. A language's tracks stay
- *   together all the same, the AI ones included: where two of these name it
- *   by another script or region (the setting's "zh-Hant", the server's
- *   "zh-Hans"), its tracks are one block, where the language first comes -
- *   never split by the languages between.
+ *   order).
  * - On a server set up for no subtitle languages (none, or a server from
  *   before the route), the person's own instead ([ownLanguages]): the
  *   subtitle setting's, the audio setting's unless it is Original ([audio]),
- *   the device's ([device]). Each of them the whole language, the AI ones
- *   included, a language with its region or script counting as that
- *   language: a device in "zh-TW" puts Chinese on top, all of it, its runs
- *   in the order below - never its own run first and the rest after it.
+ *   the device's ([device]).
+ * - Either way a language on top brings all of its tracks there, the AI ones
+ *   included, whatever region or script the server or the person names it
+ *   with, or none ([tag]: a track's tag with what its own title says,
+ *   [subtitleLanguage]): the server's "zh-Hans" brings "Chinese
+ *   (Traditional)" along, a device in "zh-TW" the bare "Chinese" and
+ *   "Chinese (Simplified)" - none of them under "more languages". Its tracks
+ *   are one block where the language first comes, in its runs (below):
+ *   never split by the languages between, never its named run first and the
+ *   rest after it.
  * - [SubtitleMenu.more], what "more languages" opens: the rest, the
  *   languages in alphabetical order of their names, a track in no language
  *   by its own - a packaged title's as any title's.
@@ -294,31 +293,22 @@ fun <T> subtitleMenu(
         return (bare + named).flatMap { v -> group.filter { variant(it) == v }.sortedBy(rank) }
     }
     // The server's languages after the subtitle setting's; where it names
-    // none, the person's own, each the whole language.
+    // none, the person's own. Each by its language alone: a region or a
+    // script it is named with takes nothing away from the rest of it.
     val named = serverLanguages.any { languageTag(it).isNotEmpty() }
     val wanted = if (named) {
         listOf(settingLanguage(preferred, SUBTITLES_OFF)) + serverLanguages
     } else {
         ownLanguages(preferred, audio, device)
-    }.filter { languageTag(it).isNotEmpty() }.distinctBy { languageTag(it) }
-    val takes = { w: String, t: T -> if (named) sameLanguage(w, tag(t)) else normalizeLang(tag(t)) == normalizeLang(w) }
+    }.map(::normalizeLang).filter { it.isNotEmpty() }.distinct()
     val placed = HashSet<Int>()
-    // On top, one block per language asked for, by its language. A later one
-    // in a language already on top - the server's "zh-Hans" after the
-    // setting's "zh-Hant" - joins that language's block, so its tracks stay
-    // together, in their runs, where the language first comes: never split
-    // by the languages between.
-    val blocks = ArrayList<Pair<String, MutableList<Int>>>()
-    for (w in wanted) {
-        val group = unique.indices.filter { it !in placed && takes(w, unique[it]) }
-        if (group.isEmpty()) continue
-        placed += group
-        val base = normalizeLang(w)
-        val block = blocks.firstOrNull { base.isNotEmpty() && it.first == base }
-        if (block != null) block.second += group else blocks += base to group.toMutableList()
+    // On top, one block per language, where it first comes: all of its
+    // tracks, in the file's order, then in runs.
+    val top = wanted.flatMap { lang ->
+        val block = unique.indices.filter { it !in placed && normalizeLang(tag(unique[it])) == lang }
+        placed += block
+        runs(block.map { unique[it] })
     }
-    // A block's tracks in the file's order, as one language's: then in runs.
-    val top = blocks.flatMap { (_, block) -> runs(block.sorted().map { unique[it] }) }
     // The rest by language; a track in no language on its own.
     val rest = LinkedHashMap<String, MutableList<T>>()
     unique.forEachIndexed { i, t ->
@@ -332,20 +322,6 @@ fun <T> subtitleMenu(
         compareNames(if (a.isEmpty()) label(x.first()) else languageName(a), if (b.isEmpty()) label(y.first()) else languageName(b))
     }
     return SubtitleMenu(top, more.flatMap { it.second })
-}
-
-/** Whether a track tagged [code] is in the language [want] names: the same
- *  language, and the same script and region where both name one. */
-fun sameLanguage(want: String?, code: String?): Boolean {
-    val w = languageTag(want)
-    val t = languageTag(code)
-    if (w.isEmpty() || t.isEmpty() || normalizeLang(w) != normalizeLang(t)) return false
-    val ws = scriptOfTag(w)
-    val ts = scriptOfTag(t)
-    if (ws.isNotEmpty() && ts.isNotEmpty() && ws != ts) return false
-    val wr = regionOfTag(w)
-    val tr = regionOfTag(t)
-    return wr.isEmpty() || tr.isEmpty() || wr == tr
 }
 
 /**
