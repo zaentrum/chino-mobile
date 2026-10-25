@@ -119,6 +119,10 @@ fun SettingsSection() {
     // The question before a sign-out that deletes the account's downloads:
     // what goes, non-null while it is open.
     var signOutDownloads by remember { mutableStateOf<DownloadsSummary?>(null) }
+    // A sign-out runs to its end once started (the TV's last position
+    // written first, up to a few seconds): busy until the screen goes, and
+    // no second one meanwhile.
+    var signingOut by remember { mutableStateOf(false) }
     val device = LocalDeviceKind.current
     // What the server offers: a bug report goes only where it takes them.
     val features by container.serverReach.features.collectAsState()
@@ -129,11 +133,14 @@ fun SettingsSection() {
     }
     val signOut: (castingSaid: Boolean) -> Unit = { castingSaid ->
         val id = activeAccount?.id
-        if (id != null) scope.launch {
-            signOutOfThisPhone(container, id, castingSaid)
-            val remaining = container.accountStore.snapshotBlocking().accounts
-            if (remaining.isEmpty()) nav.replaceAll(AuthScreen())
-            else nav.replaceAll(AccountPickerScreen())
+        if (id != null && !signingOut) {
+            signingOut = true
+            scope.launch {
+                signOutOfThisPhone(container, id, castingSaid)
+                val remaining = container.accountStore.snapshotBlocking().accounts
+                if (remaining.isEmpty()) nav.replaceAll(AuthScreen())
+                else nav.replaceAll(AccountPickerScreen())
+            }
         }
     }
 
@@ -182,6 +189,7 @@ fun SettingsSection() {
             ActionRow(
                 label = "Sign out",
                 subtitle = activeAccount?.displayName ?: "Sign out of this account",
+                enabled = !signingOut,
                 onClick = {
                     // Its downloads go with it: asked first. None: as before.
                     val summary = activeAccount?.id?.let { downloadsOf(container, it) }
@@ -307,11 +315,11 @@ fun SettingsSection() {
             DownloadsGoQuestion(
                 title = SIGN_OUT_TITLE,
                 sentence = withCastingSentence(if (summary.isEmpty) "" else yourDownloadsGoSentence(summary, device), container, id),
-                onConfirm = {
-                    signOutDownloads = null
-                    signOut(casting)
-                },
+                // The question stays, its danger button busy, until the
+                // sign-out is done and the screen goes.
+                onConfirm = { signOut(casting) },
                 onDismiss = { signOutDownloads = null },
+                busy = signingOut,
             )
         }
         deleteTarget?.let { account ->
@@ -368,6 +376,8 @@ private fun ActionRow(
     subtitle: String,
     /** A row that deletes something: its label in the destructive red. */
     destructive: Boolean = false,
+    /** False while its action runs: a second tap does nothing. */
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Row(
@@ -375,7 +385,7 @@ private fun ActionRow(
             .fillMaxWidth()
             .clip(RectangleShape)
             .background(ChinoSurface)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

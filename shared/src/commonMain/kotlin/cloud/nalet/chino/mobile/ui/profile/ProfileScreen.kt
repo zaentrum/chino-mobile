@@ -132,13 +132,20 @@ class ProfileScreen : Screen {
         // The question before a sign-out that deletes the account's
         // downloads: what goes, non-null while it is open.
         var signOutDownloads by remember { mutableStateOf<DownloadsSummary?>(null) }
+        // A sign-out runs to its end once started (the TV's last position
+        // written first, up to a few seconds): busy until the screen goes,
+        // and no second one meanwhile.
+        var signingOut by remember { mutableStateOf(false) }
         val device = LocalDeviceKind.current
         val signOut: (castingSaid: Boolean) -> Unit = { castingSaid ->
             val id = activeAccount?.id
-            if (id != null) scope.launch {
-                signOutOfThisPhone(container, id, castingSaid)
-                val remaining = container.accountStore.snapshotBlocking().accounts
-                if (remaining.isEmpty()) nav.replaceAll(AuthScreen()) else nav.replaceAll(AccountPickerScreen())
+            if (id != null && !signingOut) {
+                signingOut = true
+                scope.launch {
+                    signOutOfThisPhone(container, id, castingSaid)
+                    val remaining = container.accountStore.snapshotBlocking().accounts
+                    if (remaining.isEmpty()) nav.replaceAll(AuthScreen()) else nav.replaceAll(AccountPickerScreen())
+                }
             }
         }
         // parent_id -> series title, resolved after the history paints so
@@ -205,6 +212,7 @@ class ProfileScreen : Screen {
                         IdentityCard(
                             displayName = activeAccount?.displayName ?: "Account",
                             email = activeAccount?.email.orEmpty(),
+                            signOutEnabled = !signingOut,
                             onSignOut = {
                                 // Its downloads go with it: asked first. None: as before.
                                 val summary = activeAccount?.id?.let { downloadsOf(container, it) }
@@ -218,11 +226,12 @@ class ProfileScreen : Screen {
                             DownloadsGoQuestion(
                                 title = SIGN_OUT_TITLE,
                                 sentence = withCastingSentence(if (summary.isEmpty) "" else yourDownloadsGoSentence(summary, device), container, id),
-                                onConfirm = {
-                                    signOutDownloads = null
-                                    signOut(casting)
-                                },
+                                // The question stays, its danger button
+                                // busy, until the sign-out is done and the
+                                // screen goes.
+                                onConfirm = { signOut(casting) },
                                 onDismiss = { signOutDownloads = null },
+                                busy = signingOut,
                             )
                         }
                         // The web's h2, in the heading face.
@@ -340,7 +349,7 @@ private fun ProfileHeader(onBack: () -> Unit) {
 }
 
 @Composable
-private fun IdentityCard(displayName: String, email: String, onSignOut: () -> Unit) {
+private fun IdentityCard(displayName: String, email: String, onSignOut: () -> Unit, signOutEnabled: Boolean = true) {
     // Mirrors web's identity card: #161B22 fill, #30363D hairline, avatar +
     // name/email + a pill Sign out button. On a phone the row stays single-
     // line; the email truncates rather than wrapping the button off-screen.
@@ -378,7 +387,7 @@ private fun IdentityCard(displayName: String, email: String, onSignOut: () -> Un
             modifier = Modifier
                 .clip(RectangleShape)
                 .background(Color(0x1AFFFFFF))
-                .clickable(onClick = onSignOut)
+                .clickable(enabled = signOutEnabled, onClick = onSignOut)
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
