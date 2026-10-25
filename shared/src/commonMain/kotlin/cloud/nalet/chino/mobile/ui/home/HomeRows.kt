@@ -6,6 +6,7 @@ import cloud.nalet.chino.mobile.data.api.NO_ANSWER_SENTENCE
 import cloud.nalet.chino.mobile.data.api.loadDetails
 import cloud.nalet.chino.mobile.data.api.loadFailure
 import cloud.nalet.chino.mobile.data.api.sentence
+import cloud.nalet.chino.mobile.data.api.signInRefused
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -112,5 +113,33 @@ internal fun homeView(
             recentSeries = recentSeries.value ?: known?.recentSeries,
             topRated = topRated.value ?: known?.topRated,
         ),
+    )
+}
+
+/** What one load of Home comes to ([homeLoad]). */
+internal class HomeLoad(val view: HomeView, val streamToken: String)
+
+/**
+ * One load of Home from its asks ([ask]): its rows ([homeView]), and the
+ * token its posters and the hero are signed with - the one [token] got, else
+ * the one the phone signed with last ([lastToken], the posters it already
+ * shows): a mint that had no answer is one ask more that didn't, never the
+ * whole page gone. A sign-in the server refuses on the mint (a 401 or 403)
+ * is thrown, for Home's own page for it with its ways on.
+ */
+internal fun homeLoad(
+    feed: Asked<List<ContinueWatchingItem>>,
+    recentMovies: Asked<List<Item>>,
+    recentSeries: Asked<List<Item>>,
+    topRated: Asked<List<Item>>,
+    token: Asked<String>,
+    known: KnownRows?,
+    playedHere: Map<String, Int> = emptyMap(),
+    lastToken: String? = null,
+): HomeLoad {
+    token.failure?.takeIf { it.signInRefused }?.let { throw it }
+    return HomeLoad(
+        view = homeView(feed, recentMovies, recentSeries, topRated, known, playedHere),
+        streamToken = token.value ?: lastToken.orEmpty(),
     )
 }

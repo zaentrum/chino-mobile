@@ -256,7 +256,9 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                     }
                     val heroDef = async { heroPool() }
                     val cwDef = async { ask { container.chinoApi.continueWatching().items } }
-                    val tokenDef = async { container.streamTokenManager.valid() }
+                    // Minted again hours into a session: one ask more,
+                    // never the whole page gone where it has no answer.
+                    val tokenDef = async { ask { container.streamTokenManager.valid() } }
                     val key = knownKey()
                     val known = KnownHome.get(key)
                     // The hero names a series' episode as its page does
@@ -279,7 +281,17 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                     } else {
                         known?.feed.orEmpty().mapNotNull { row -> container.progressSync.lastPlayedSec(row.id)?.let { row.id to it } }.toMap()
                     }
-                    val view = homeView(feed, recentMoviesDef.await(), recentSeriesDef.await(), topRatedDef.await(), known, playedHere)
+                    val load = homeLoad(
+                        feed,
+                        recentMoviesDef.await(),
+                        recentSeriesDef.await(),
+                        topRatedDef.await(),
+                        tokenDef.await(),
+                        known,
+                        playedHere,
+                        lastToken = container.streamTokenManager.current.value,
+                    )
+                    val view = load.view
                     KnownHome.put(key, view.toKeep)
                     // No answer: the whole app hears the server can't be
                     // reached - the banner, the bell gone - as on its other
@@ -298,7 +310,7 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                         recentSeries = view.recentSeries,
                         topRated = view.topRated,
                         baseUrl = container.config.apiBaseUrl.trimEnd('/'),
-                        streamToken = tokenDef.await(),
+                        streamToken = load.streamToken,
                         // A partly watched title resumes from what the phone
                         // knows of it, never a bare "play".
                         heroPlays = heroPlaysOf(pool, cw),

@@ -2,11 +2,17 @@ package cloud.nalet.chino.mobile.ui.home
 
 import cloud.nalet.chino.mobile.data.api.ApiStatusException
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
+import cloud.nalet.chino.mobile.data.api.FakeServer
+import cloud.nalet.chino.mobile.data.api.respondJson
+import cloud.nalet.chino.mobile.data.api.respondText
+import cloud.nalet.chino.mobile.data.auth.StreamTokenManager
 import cloud.nalet.chino.mobile.data.model.Item
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -96,6 +102,42 @@ class HomeOfflineTest {
         assertTrue(view.continueWatching.isEmpty())
         assertNull(view.continueWatchingFailed)
         assertEquals(emptyList(), view.toKeep.feed)
+    }
+
+    @Test
+    fun theStreamTokenMintedAgainWithTheServerGoneTheBannerAndTheRowsThePhoneKnowsNeverTheErrorPage() = runTest {
+        // The token minted at the start of a session, then the server gone
+        // and the token past its time: the mint has no answer.
+        var clockMs = 1_759_700_000_000L
+        var up = true
+        val server = FakeServer { request ->
+            if (!up) throw noAnswer
+            if (request.url.encodedPath.endsWith("/v1/me/stream-token")) respondJson("""{"stream_token":"t-morning"}""")
+            else respondText("not found", HttpStatusCode.NotFound)
+        }
+        val tokens = StreamTokenManager(server.api) { clockMs }
+        assertEquals("t-morning", tokens.valid())
+        up = false
+        clockMs += StreamTokenManager.TOKEN_LIFE_MS - StreamTokenManager.SLACK_MS
+        val token = ask { tokens.valid() }
+        assertTrue(token.failure is IOException)
+        val load = homeLoad(failed(noAnswer), failed(noAnswer), failed(noAnswer), failed(noAnswer), token, known, lastToken = tokens.current.value)
+        // The banner, the rows the phone knows, the hero that resumes.
+        assertTrue(load.view.offline)
+        assertEquals(listOf(film), load.view.continueWatching)
+        assertEquals(movies, load.view.recentMovies)
+        assertTrue(heroPlay(Item(id = "m1", title = "Harbour Lights", kind = "movie"), load.view.continueWatching, null)!!.resumes)
+        // Signed with the token the posters on screen have.
+        assertEquals("t-morning", load.streamToken)
+        // The mint alone without an answer: the rows as the server gave them.
+        val rows = homeLoad(answered(listOf(film)), answered(movies), answered(emptyList()), answered(emptyList()), token, known = null)
+        assertFalse(rows.view.offline)
+        assertEquals(movies, rows.view.recentMovies)
+        assertEquals("", rows.streamToken)
+        // A sign-in the server refuses on the mint: Home's own page for it.
+        val refused = failed<String>(ApiStatusException(401, "/api/v1/me/stream-token"))
+        val thrown = assertFailsWith<ApiStatusException> { homeLoad(failed(noAnswer), failed(noAnswer), failed(noAnswer), failed(noAnswer), refused, known) }
+        assertEquals(401, thrown.status)
     }
 
     @Test
