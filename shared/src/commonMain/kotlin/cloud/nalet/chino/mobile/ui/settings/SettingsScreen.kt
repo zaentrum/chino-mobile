@@ -30,6 +30,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.Lucide
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -110,6 +122,11 @@ fun SettingsSection() {
     val device = LocalDeviceKind.current
     // What the server offers: a bug report goes only where it takes them.
     val features by container.serverReach.features.collectAsState()
+    // The server's subtitle languages (GET /subtitles/languages), asked once
+    // a session as the player's menu asks; null until it answers.
+    val serverSubtitleLanguages by produceState<List<String>?>(initialValue = null, container) {
+        value = container.subtitleLanguages.get()
+    }
     val signOut: (castingSaid: Boolean) -> Unit = { castingSaid ->
         val id = activeAccount?.id
         if (id != null) scope.launch {
@@ -252,7 +269,7 @@ fun SettingsSection() {
             )
             LangPickerRow(
                 value = s.preferredAudioLang,
-                options = AUDIO_LANGS,
+                choices = audioSettingChoices(s.preferredAudioLang),
                 onSelect = { code -> scope.launch { container.settings.setPreferredAudioLang(code) } },
             )
 
@@ -265,9 +282,12 @@ fun SettingsSection() {
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
+            // The server's subtitle languages, read from its configuration as
+            // the player's menu reads them; every language where it names
+            // none.
             LangPickerRow(
                 value = s.preferredSubLang,
-                options = SUB_LANGS,
+                choices = subtitleSettingChoices(serverSubtitleLanguages, s.preferredSubLang),
                 onSelect = { code -> scope.launch { container.settings.setPreferredSubLang(code) } },
             )
         }
@@ -383,44 +403,19 @@ internal fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Uni
     }
 }
 
-/** Offered audio languages — mirrors chino-web's SettingsPage Audio
- *  options (Original first, then the same code/label pairs). 3-letter ISO
- *  codes match the web settings model; ExoPlayer's preferredAudioLanguage
- *  fuzzy-matches them against each item's track.language. */
-private val AUDIO_LANGS = listOf(
-    "orig" to "Original",
-    "eng" to "English",
-    "deu" to "German",
-    "fra" to "French",
-    "spa" to "Spanish",
-    "ita" to "Italian",
-    "jpn" to "Japanese",
-    "por" to "Portuguese",
-    "nld" to "Dutch",
-)
+/** How many languages a setting shows as chips; more - every language, for
+ *  a server that names none - are a menu. */
+private const val CHIPS_AT_MOST = 16
 
-/** Offered subtitle languages — same list as Audio but with Off in place
- *  of Original (web SettingsPage Subtitles options). */
-private val SUB_LANGS = listOf(
-    "off" to "Off",
-    "eng" to "English",
-    "deu" to "German",
-    "fra" to "French",
-    "spa" to "Spanish",
-    "ita" to "Italian",
-    "jpn" to "Japanese",
-    "por" to "Portuguese",
-    "nld" to "Dutch",
-)
-
-/** Wrapping chip-row language picker — same dark-card idiom as the other
- *  Settings rows. The selected code's chip fills blue; tapping a chip
- *  writes the preference. Used by both the Audio and Subtitles sections
- *  (the offered list differs: Original vs Off as the first entry). */
+/** A language setting, in the same dark-card idiom as the other Settings
+ *  rows: its [choices] (LanguageSettings.kt) as chips, the picked one
+ *  filled blue, or - a long list - its name opening a menu of them all.
+ *  Picking one writes the preference; a screen reader hears which is
+ *  picked. */
 @Composable
 private fun LangPickerRow(
     value: String,
-    options: List<Pair<String, String>>,
+    choices: List<LanguageChoice>,
     onSelect: (String) -> Unit,
 ) {
     Box(
@@ -430,26 +425,73 @@ private fun LangPickerRow(
             .background(ChinoSurface)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            options.forEach { (code, name) ->
-                val on = value.equals(code, ignoreCase = true)
-                Box(
-                    modifier = Modifier
-                        .clip(RectangleShape)
-                        .background(if (on) ChinoCloudBlue else ChinoBorder)
-                        .clickable { onSelect(code) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        text = name,
-                        color = if (on) ChinoOnFill else Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                    )
+        if (choices.size <= CHIPS_AT_MOST) {
+            FlowRow(
+                modifier = Modifier.selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                choices.forEach { choice ->
+                    val on = isChosen(value, choice.code)
+                    Box(
+                        modifier = Modifier
+                            .clip(RectangleShape)
+                            .background(if (on) ChinoCloudBlue else ChinoBorder)
+                            .selectable(selected = on, role = Role.RadioButton, onClick = { onSelect(choice.code) })
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = choice.name,
+                            color = if (on) ChinoOnFill else Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    }
                 }
+            }
+        } else {
+            LangMenu(value = value, choices = choices, onSelect = onSelect)
+        }
+    }
+}
+
+/** A long language list: the picked one's name, which opens a menu of
+ *  every choice in its order, the picked one in blue. */
+@Composable
+private fun LangMenu(value: String, choices: List<LanguageChoice>, onSelect: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val picked = choices.firstOrNull { isChosen(value, it.code) } ?: choices.first()
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .clip(RectangleShape)
+                .background(ChinoBorder)
+                .clickable(role = Role.DropdownList, onClick = { open = true })
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(text = picked.name, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Icon(imageVector = Lucide.ChevronDown, contentDescription = null, tint = ChinoMuted, modifier = Modifier.size(16.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            choices.forEach { choice ->
+                val on = choice === picked
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = choice.name,
+                            color = if (on) ChinoCloudBlue else Color.White,
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    onClick = {
+                        open = false
+                        onSelect(choice.code)
+                    },
+                    modifier = Modifier.semantics { selected = on },
+                )
             }
         }
     }

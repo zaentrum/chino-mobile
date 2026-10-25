@@ -283,6 +283,19 @@ private fun variantNames(tag: String): List<String> {
     return listOfNotNull(script, region)
 }
 
+/**
+ * Every language by its English name, as Settings offers them where the
+ * server names no subtitle languages: each ISO 639-1 language once, by its
+ * two-letter code, in alphabetical order of its name ([languageName], as
+ * the player names it) - the ones with no name to show left out.
+ */
+fun everyLanguage(): List<String> =
+    (T_TO_1.values + NAMES.keys.filter { it.length == 2 })
+        .distinct()
+        .filter { it !in OLD_1 && languageName(it) != it }
+        .distinctBy { languageName(it) }
+        .sortedWith { a, b -> compareNames(languageName(a), languageName(b)) }
+
 /** A track's language by name ("German", "No dialogue" for zxx), else its own
  *  label for a track in no language; null for neither. What a title's
  *  subtitle languages are listed as. */
@@ -999,7 +1012,12 @@ fun <T> defaultSubtitleTrack(
 ): T? {
     val want = defaultSubtitleLang(audioLang, subtitlePref) ?: return null
     val inLang = tracks.filter { normalizeLang(lang(it)) == want }
-    return inLang.firstOrNull { !forced(it) } ?: inLang.firstOrNull()
+    // A setting with its script or region ("zh-Hans", from the server's
+    // languages) takes a track with that one first, else any of the
+    // language.
+    val tag = languageTag(subtitlePref)
+    val pool = inLang.filter { languageTag(lang(it)) == tag }.takeIf { tag != want }.orEmpty().ifEmpty { inLang }
+    return pool.firstOrNull { !forced(it) } ?: pool.firstOrNull()
 }
 
 /** The forced track in the language of the audio playing, or null — the one
