@@ -56,6 +56,14 @@ class LanguageSettingsTest {
         assertTrue(languages.none { Regex("^[a-z]{2,3}$").matches(it) }, "a code shown as a name")
         assertEquals(languages.sortedBy { it.lowercase() }.take(5), languages.take(5))
         assertTrue(languages.indexOf("Breton") < languages.indexOf("Catalan"))
+        // Chinese in either script too, after the bare name: a reader of
+        // Traditional characters can say so on any phone.
+        val chinese = languages.indexOf("Chinese")
+        assertEquals(listOf("Chinese", "Chinese (Simplified)", "Chinese (Traditional)"), languages.subList(chinese, chinese + 3))
+        assertEquals(listOf("zh", "zh-Hans", "zh-Hant"), choices.drop(1).map { it.code }.filter { it.startsWith("zh") })
+        // The audio setting's languages have no scripts.
+        assertEquals(cloud.nalet.chino.mobile.ui.player.everyLanguage().size + 2, cloud.nalet.chino.mobile.ui.player.everyLanguage(scripts = true).size)
+        assertFalse("zh-Hant" in cloud.nalet.chino.mobile.ui.player.everyLanguage())
     }
 
     @Test
@@ -75,6 +83,12 @@ class LanguageSettingsTest {
         assertFalse(subtitleSettingChoices(emptyList(), current = "ger", device = "de")[2].name == "German")
         // A phone in Chinese with its script: that script.
         assertEquals("Chinese (Simplified)", subtitleSettingChoices(emptyList(), current = "off", device = "zh-Hans-CN")[1].name)
+        // With its region alone: the script that region writes, once.
+        for ((device, name) in listOf("zh-TW" to "Chinese (Traditional)", "zh-HK" to "Chinese (Traditional)", "zh-CN" to "Chinese (Simplified)", "zh" to "Chinese")) {
+            val own = subtitleSettingChoices(emptyList(), current = "off", device = device)
+            assertEquals(name, own[1].name, device)
+            assertEquals(1, names(own).count { it == name }, device)
+        }
         // A setting with its region stays as it is set.
         assertEquals("Portuguese (Brazil)", subtitleSettingChoices(emptyList(), current = "pt-BR")[1].name)
         // No phone language known: every language alphabetically, after off.
@@ -83,7 +97,7 @@ class LanguageSettingsTest {
         assertEquals(listOf("off", "English", "German"), names(subtitleSettingChoices(listOf("en", "de"), current = "off", device = "de")))
     }
 
-    private fun everyLanguageNames() = cloud.nalet.chino.mobile.ui.player.everyLanguage().map(::languageName)
+    private fun everyLanguageNames() = cloud.nalet.chino.mobile.ui.player.everyLanguage(scripts = true).map(::languageName)
 
     @Test
     fun theAudioSettingOffersOriginalThenTheAppsLanguagesNamedAsThePlayersAudioMenuNamesThem() {

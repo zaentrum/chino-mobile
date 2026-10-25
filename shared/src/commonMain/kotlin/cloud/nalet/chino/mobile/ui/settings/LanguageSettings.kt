@@ -4,6 +4,7 @@ import cloud.nalet.chino.mobile.ui.player.everyLanguage
 import cloud.nalet.chino.mobile.ui.player.languageName
 import cloud.nalet.chino.mobile.ui.player.languageTag
 import cloud.nalet.chino.mobile.ui.player.normalizeLang
+import cloud.nalet.chino.mobile.ui.player.regionOfTag
 import cloud.nalet.chino.mobile.ui.player.scriptOfTag
 
 /*
@@ -36,8 +37,9 @@ fun isChosen(value: String, code: String): Boolean {
  * "off", as the player's subtitles menu says it, then the server's subtitle
  * languages ([serverLanguages], GET /subtitles/languages, in its order) -
  * never a list fixed in the app; a server that names none offers every
- * language by name ([everyLanguage]), the person's own first - the one set,
- * the phone's ([device]) - then the others in alphabetical order, never a
+ * language by name ([everyLanguage]), Chinese in either script too, the
+ * person's own first - the one set, the phone's ([device]) - then the
+ * others in alphabetical order, never a
  * scroll from Abkhazian (the TV's, 1c27a33). Each language once, named as
  * the player's menus name it. The [current] setting, where it is none of
  * the server's - set before, or on another server - is offered after them,
@@ -52,16 +54,36 @@ fun subtitleSettingChoices(serverLanguages: List<String>?, current: String, devi
     if (named.isNotEmpty()) return withCurrent(off + named.map { LanguageChoice(it, languageName(it)) }, current)
     // Every language: the one set and the phone's first, each once, then the
     // rest alphabetically without them.
-    val every = everyLanguage().map { LanguageChoice(it, languageName(it)) }
-    // The phone's language as a language, with its script ("zh-Hans"), not
-    // its region: "de-CH" is German.
-    val phone = languageTag(device).let { t -> listOf(normalizeLang(t), scriptOfTag(t)).filter { it.isNotEmpty() }.joinToString("-") }
-    val own = listOf(current.takeUnless { it.trim().equals(SUBTITLES_OFF, ignoreCase = true) }.orEmpty(), phone)
+    val every = everyLanguage(scripts = true).map { LanguageChoice(it, languageName(it)) }
+    val own = listOf(current.takeUnless { it.trim().equals(SUBTITLES_OFF, ignoreCase = true) }.orEmpty(), phoneLanguage(device))
         .filter { languageTag(it).isNotEmpty() }
         .map { code -> every.firstOrNull { isChosen(code, it.code) } ?: LanguageChoice(code, languageName(code)) }
         .distinctBy { it.code }
     return off + own + every.filter { e -> own.none { it.code == e.code } }
 }
+
+/** The phone's language as Settings offers it: the language with its script
+ *  ("zh-Hans"), not its region - "de-CH" is German. A phone in Chinese that
+ *  names its region alone has the script that region writes: "zh-TW" and
+ *  "zh-HK" are Traditional, "zh-CN" and "zh-SG" Simplified. */
+private fun phoneLanguage(device: String?): String {
+    val tag = languageTag(device)
+    val lang = normalizeLang(tag)
+    val script = scriptOfTag(tag).ifEmpty {
+        when {
+            lang != "zh" -> ""
+            regionOfTag(tag) in TRADITIONAL_CHINESE_REGIONS -> "Hant"
+            regionOfTag(tag) in SIMPLIFIED_CHINESE_REGIONS -> "Hans"
+            else -> ""
+        }
+    }
+    return listOf(lang, script).filter { it.isNotEmpty() }.joinToString("-")
+}
+
+/** Where Chinese is written in Traditional characters, and where in
+ *  Simplified ones, by default. */
+private val TRADITIONAL_CHINESE_REGIONS = setOf("TW", "HK", "MO")
+private val SIMPLIFIED_CHINESE_REGIONS = setOf("CN", "SG", "MY")
 
 /** The languages the audio setting offers besides "Original": the server
  *  names no audio languages, so these are the app's, as before. */

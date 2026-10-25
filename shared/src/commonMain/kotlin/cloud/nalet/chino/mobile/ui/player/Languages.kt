@@ -301,10 +301,13 @@ private fun variantNames(tag: String): List<String> {
  * Every language by its English name, as Settings offers them where the
  * server names no subtitle languages: each ISO 639-1 language once, by its
  * two-letter code, in alphabetical order of its name ([languageName], as
- * the player names it) - the ones with no name to show left out.
+ * the player names it) - the ones with no name to show left out. With
+ * [scripts], where the subtitles are meant, Chinese in either script too:
+ * "Chinese (Simplified)", "Chinese (Traditional)" (chino-web's
+ * everyLanguage(true)).
  */
-fun everyLanguage(): List<String> =
-    (T_TO_1.values + NAMES.keys.filter { it.length == 2 })
+fun everyLanguage(scripts: Boolean = false): List<String> =
+    (T_TO_1.values + NAMES.keys.filter { it.length == 2 } + if (scripts) listOf("zh-Hans", "zh-Hant") else emptyList())
         .distinct()
         .filter { it !in OLD_1 && languageName(it) != it }
         .distinctBy { languageName(it) }
