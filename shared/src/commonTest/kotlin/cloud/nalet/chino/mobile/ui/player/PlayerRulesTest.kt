@@ -185,6 +185,18 @@ class PlayerRulesTest {
     }
 
     @Test
+    fun theControlsStayWhileAScreenReadersFocusIsOnOneOfThem() {
+        assertEquals(4_000L, controlsHideAfterMs(playing = true, dragging = false, menuOpen = false, screenReaderOnThem = false))
+        assertEquals(8_000L, controlsHideAfterMs(playing = false, dragging = false, menuOpen = false, screenReaderOnThem = false))
+        // TalkBack on a control: they stay, playing or not.
+        assertNull(controlsHideAfterMs(playing = true, dragging = false, menuOpen = false, screenReaderOnThem = true))
+        assertNull(controlsHideAfterMs(playing = false, dragging = false, menuOpen = false, screenReaderOnThem = true))
+        // As while a drag runs or a menu is open.
+        assertNull(controlsHideAfterMs(playing = true, dragging = true, menuOpen = false, screenReaderOnThem = false))
+        assertNull(controlsHideAfterMs(playing = true, dragging = false, menuOpen = true, screenReaderOnThem = false))
+    }
+
+    @Test
     fun heldSidewaysThePlayerHidesTheSystemBarsAsInFullscreen() {
         assertEquals(true, playerHidesSystemBars(fullscreen = false, landscape = true))
         assertEquals(true, playerHidesSystemBars(fullscreen = true, landscape = false))

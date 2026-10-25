@@ -1723,14 +1723,21 @@ private fun PlaybackSurface(
     ImmersiveFullscreenEffect(active = playerHidesSystemBars(fullscreen = fullscreen, landscape = landscape))
 
     // Auto-hide chrome — bumped on any interaction, suppressed while user
-    // is dragging anything or a popover is open.
+    // is dragging anything, a popover is open, or TalkBack's focus is on a
+    // control (controlsHideAfterMs): hidden under it, the control would be
+    // lost to a screen-reader user. Its focus moving counts as a touch.
     var chromeVisible by remember { mutableStateOf(true) }
     var lastInteraction by remember { mutableStateOf(cloud.nalet.chino.mobile.currentTimeMillis()) }
     val noteInteraction: () -> Unit = { lastInteraction = cloud.nalet.chino.mobile.currentTimeMillis() }
-    LaunchedEffect(lastInteraction, isPlaying, scrubbing, volumeDragging, openPopover) {
+    val screenReaderFocused by rememberScreenReaderFocused()
+    LaunchedEffect(lastInteraction, isPlaying, scrubbing, volumeDragging, openPopover, screenReaderFocused) {
         chromeVisible = true
-        if (scrubbing || volumeDragging || openPopover != OpenPopover.NONE) return@LaunchedEffect
-        val grace = if (isPlaying) 4_000L else 8_000L
+        val grace = controlsHideAfterMs(
+            playing = isPlaying,
+            dragging = scrubbing || volumeDragging,
+            menuOpen = openPopover != OpenPopover.NONE,
+            screenReaderOnThem = screenReaderFocused,
+        ) ?: return@LaunchedEffect
         delay(grace)
         chromeVisible = false
     }

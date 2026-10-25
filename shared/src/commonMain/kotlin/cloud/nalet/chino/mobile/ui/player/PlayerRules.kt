@@ -193,6 +193,20 @@ object PlayerButtons {
     fun fullscreen(on: Boolean) = PlayerButtonName(if (on) "exit fullscreen" else "fullscreen")
 }
 
+/**
+ * How long the player's controls stay after the last touch before they hide
+ * - 4 s while it plays, 8 s while it is paused - or null while they stay:
+ * while the person drags the scrubber or the volume ([dragging]), while one
+ * of the controls' menus is open ([menuOpen]), and while a screen reader's
+ * focus is on one of them ([screenReaderOnThem]), so TalkBack never loses
+ * the control it is on.
+ */
+fun controlsHideAfterMs(playing: Boolean, dragging: Boolean, menuOpen: Boolean, screenReaderOnThem: Boolean): Long? = when {
+    dragging || menuOpen || screenReaderOnThem -> null
+    playing -> 4_000L
+    else -> 8_000L
+}
+
 /** Whether the player hides the system bars: in fullscreen, and whenever the
  *  phone is held sideways - the picture fills the screen then, and the
  *  status bar would sit over its top. A swipe from the edge brings them
