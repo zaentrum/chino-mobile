@@ -3169,7 +3169,13 @@ internal fun ChromeButton(
  *  playing as the audio menu names it ([name]), never the code. When
  *  `enabled` (the player lists its tracks), tapping the chip opens the
  *  AudioMenuCard via the shared OpenPopover state; before, the same chip,
- *  a button that can't be pressed yet. */
+ *  a button that can't be pressed yet.
+ *
+ *  One node for a screen reader, as the round buttons are: the code's text
+ *  is no node of its own under it. A button with a node inside is handed to
+ *  Android as a nameless clickable view, its name and its role each on a
+ *  node of their own below it - so the chip clears what is inside it and
+ *  says its name itself. */
 @Composable
 private fun AudioLangChip(
     language: String,
@@ -3193,7 +3199,9 @@ private fun AudioLangChip(
                 role = androidx.compose.ui.semantics.Role.Button,
                 onClick = onClick,
             )
-            .semantics {
+            // The code is what the eye reads; the name says the track. The
+            // click and the role above it stay; what is inside goes.
+            .clearAndSetSemantics {
                 contentDescription = name.name
                 name.state?.let { stateDescription = it }
             }
@@ -3204,7 +3212,7 @@ private fun AudioLangChip(
             color = if (accent) ChinoOnFill else Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
-            // The code is what the eye reads; the name says the track.
+            // Drawn, never read: no node anywhere says the code.
             modifier = Modifier.clearAndSetSemantics {},
         )
     }

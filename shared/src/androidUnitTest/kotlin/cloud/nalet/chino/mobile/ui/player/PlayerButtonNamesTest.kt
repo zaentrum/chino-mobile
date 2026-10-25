@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.ui.player
 
+import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.Role
 import androidx.media3.common.C
 import androidx.media3.common.Format
@@ -14,7 +15,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import org.junit.Rule
@@ -22,19 +23,28 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import cloud.nalet.chino.mobile.ui.AccessibilityNodes
+import cloud.nalet.chino.mobile.ui.screenReaderOn
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
  * What TalkBack reads of the player's round buttons: each says what it does
  * and the state it is in, as chino-web's player buttons do - never an
- * unnamed button.
+ * unnamed button. Read twice: in Compose's semantics, and as Android hands
+ * them to a screen reader and to uiautomator's dump ([AccessibilityNodes]),
+ * where a button with a node inside it arrives as a nameless view.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
+// Android's nodes are built from the screen's regions, which want the real
+// graphics ([AccessibilityNodes]).
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PlayerButtonNamesTest {
     @get:Rule
-    val compose = createComposeRule()
+    val compose = createAndroidComposeRule<ComponentActivity>()
 
     private val button = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
 
@@ -49,6 +59,7 @@ class PlayerButtonNamesTest {
         onPlayPause: () -> Unit = {},
         onAudio: () -> Unit = {},
     ) {
+        screenReaderOn(compose.activity)
         compose.setContent {
             BottomControls(
                 isPlaying = playing,
@@ -133,6 +144,38 @@ class PlayerButtonNamesTest {
         for (node in compose.onAllNodes(hasClickAction()).fetchSemanticsNodes()) {
             val name = node.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString().orEmpty()
             assertTrue(name.isNotBlank(), "a button without a name: ${node.config}")
+        }
+    }
+
+    @Test
+    fun theAudioChipReachesAndroidAsOneButtonNamedAudioWithTheTrackPlaying() {
+        controls(audioTracks = listOf(audio("eng", "English", selected = false), audio("eng", "English · Commentary", selected = true)))
+        val chip = compose.onNode(hasContentDescription("audio") and hasClickAction()).fetchSemanticsNode()
+        val info = assertNotNull(AccessibilityNodes(compose.activity).of(chip))
+        // What the dump lists for it: one clickable Button named "audio",
+        // nothing below it - not a nameless view over a node with the name
+        // and another with the role.
+        assertEquals("android.widget.Button", info.className)
+        assertEquals("audio", info.contentDescription?.toString())
+        assertEquals("English · Commentary", info.stateDescription?.toString())
+        assertTrue(info.isClickable)
+        assertEquals(0, info.childCount, "the chip's code or its name as nodes of their own")
+    }
+
+    @Test
+    fun everyClickableNodeReachesAndroidAsANamedButton() {
+        controls(audioTracks = listOf(audio("eng", "English", selected = true)))
+        val nodes = AccessibilityNodes(compose.activity)
+        val clickable = compose.onAllNodes(SemanticsMatcher("any") { true }, useUnmergedTree = true).fetchSemanticsNodes()
+            .mapNotNull { nodes.of(it) }
+            .filter { it.isClickable }
+        // Those on the test's narrow screen: pause, volume, audio, subtitles,
+        // speed, quality, the episodes, fullscreen.
+        val names = clickable.map { it.contentDescription?.toString() }
+        assertTrue(names.containsAll(listOf("pause", "volume", "audio", "subtitles", "speed", "quality", "fullscreen")), "$names")
+        for (info in clickable) {
+            assertEquals("android.widget.Button", info.className, "'${info.contentDescription}'")
+            assertTrue(!info.contentDescription.isNullOrBlank(), "a clickable ${info.className} without a name")
         }
     }
 
