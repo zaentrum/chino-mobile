@@ -1,6 +1,9 @@
 package cloud.nalet.chino.mobile.data.downloads
 
 import kotlinx.coroutines.test.runTest
+import cloud.nalet.chino.mobile.data.api.chinoApiClient
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.request.get
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -77,6 +80,38 @@ class ServerReachTest {
         assertNull(oldest.features.value)
         oldest.check()
         assertEquals(true, oldest.features.value?.downloads)
+    }
+
+    @Test
+    fun anyAnsweredRequestMakesTheServerReachableAtOnce() {
+        val reach = ServerReach(fetch = { null })
+        reach.report(false)
+        // The first answer after a time out of reach: reachable, and says so.
+        assertEquals(true, reach.requestAnswered())
+        assertEquals(Reach.Reachable, reach.state.value)
+        // Then nothing more to say.
+        assertEquals(false, reach.requestAnswered())
+        // Before the first look: reachable, but nothing waited for it.
+        val fresh = ServerReach(fetch = { null })
+        assertEquals(false, fresh.requestAnswered())
+        assertEquals(Reach.Reachable, fresh.state.value)
+    }
+
+    @Test
+    fun theApisClientTellsOfEveryAnswerA2xxOnly() = runTest {
+        var answered = 0
+        var status = io.ktor.http.HttpStatusCode.OK
+        val client = io.ktor.client.HttpClient(io.ktor.client.engine.mock.MockEngine { respond("{}", status) }) {
+            chinoApiClient("https://media.example.com/api/", { null }, { null }, onAnswered = { answered++ })
+        }
+        client.get("v1/me")
+        assertEquals(1, answered)
+        // A proxy's 502 or a refusal is no answer of the server's to count.
+        status = io.ktor.http.HttpStatusCode.BadGateway
+        runCatching { client.get("v1/me") }
+        status = io.ktor.http.HttpStatusCode.NotFound
+        runCatching { client.get("v1/me") }
+        assertEquals(1, answered)
     }
 
     @Test

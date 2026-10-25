@@ -229,7 +229,21 @@ class AppContainer(
     val tokenManager: TokenManager by lazy { TokenManager(accountStore, oidcDeviceClient) }
 
     /** Authenticated client — every chino-api call routes through here. */
-    val http: HttpClient by lazy { HttpClientFactory.create(config, tokenManager) }
+    val http: HttpClient by lazy { HttpClientFactory.create(config, tokenManager, onAnswered = ::serverAnswered) }
+
+    /**
+     * A call to the server had its answer: the server is reached, at once
+     * ([ServerReach.requestAnswered]). Where it was out of reach until now,
+     * what it offers is asked for where it hasn't said yet, and what was
+     * played here meanwhile goes out, as when its next look finds it.
+     */
+    private fun serverAnswered() {
+        if (!serverReach.requestAnswered()) return
+        appScope.launch {
+            if (serverReach.features.value == null) runCatching { serverReach.check() }
+            runCatching { progressSync.flush() }
+        }
+    }
 
     val chinoApi: ChinoApi by lazy { ChinoApi(http) }
 

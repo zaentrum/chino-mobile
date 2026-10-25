@@ -39,12 +39,14 @@ internal val ChinoJson: Json = Json { ignoreUnknownKeys = true; explicitNulls = 
  * [apiBaseUrl], and every non-2xx answer an [ApiStatusException] with the
  * server's message. Ktor installs the response check before the Auth plugin
  * sends, so it sees the answer after a renewed token's retry: a 401 the
- * renewal fixes is no error.
+ * renewal fixes is no error. Every 2xx answer is the server reached
+ * ([onAnswered]).
  */
 internal fun HttpClientConfig<*>.chinoApiClient(
     apiBaseUrl: String,
     accessToken: suspend () -> String?,
     renewedToken: suspend () -> String?,
+    onAnswered: () -> Unit = {},
 ) {
     install(ContentNegotiation) { json(ChinoJson) }
     apiTimeouts()
@@ -63,6 +65,7 @@ internal fun HttpClientConfig<*>.chinoApiClient(
     HttpResponseValidator {
         validateResponse { response ->
             if (!response.status.isSuccess()) throw response.apiStatusException()
+            onAnswered()
         }
     }
     defaultRequest {
@@ -112,8 +115,9 @@ internal fun HttpClient.forgetBearer() {
 object HttpClientFactory {
     /** Authenticated client used for every chino-api call. Auth plugin reads
      *  tokens through [TokenManager] which is multi-account aware — switching
-     *  the active account in AccountStore propagates here without rewiring. */
-    fun create(config: AppConfig, tokenManager: TokenManager): HttpClient = HttpClient {
+     *  the active account in AccountStore propagates here without rewiring.
+     *  [onAnswered]: a call had its answer, a 2xx - the server is reached. */
+    fun create(config: AppConfig, tokenManager: TokenManager, onAnswered: () -> Unit = {}): HttpClient = HttpClient {
         // On the connections the player streams over, so its first request
         // to the server goes over one these calls just used (shareConnections).
         engine { shareConnections() }
@@ -121,6 +125,7 @@ object HttpClientFactory {
             apiBaseUrl = config.apiBaseUrl,
             accessToken = { tokenManager.validAccessToken() },
             renewedToken = { tokenManager.forceRefresh() },
+            onAnswered = onAnswered,
         )
         install(Logging) {
             level = if (config.isBeta) LogLevel.INFO else LogLevel.NONE

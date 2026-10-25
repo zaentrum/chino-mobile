@@ -73,6 +73,19 @@ class ServerReach(
         set(if (answered) Reach.Reachable else Reach.Unreachable)
     }
 
+    /**
+     * A request of the app's to the server had its answer (a 2xx): the
+     * server can be reached, from now on - the downloads, "check needed" and
+     * the bell follow at once, not only at the next look at /api/config.
+     * True where it was out of reach until now: what waited for it can go.
+     */
+    fun requestAnswered(): Boolean {
+        val was = _state.value
+        if (was == Reach.Reachable) return false
+        set(Reach.Reachable)
+        return was == Reach.Unreachable
+    }
+
     private fun set(r: Reach): Reach {
         _state.value = r
         return r
