@@ -205,6 +205,16 @@ fun <T> distinctSubtitles(
     return firstOf.values.toList()
 }
 
+private val SORT_PUNCTUATION = Regex("[(),]")
+private val SORT_SPACES = Regex("\\s+")
+
+/** A run's name as it sorts: its words, without the brackets and commas
+ *  between them, so a name comes before the longer ones it begins -
+ *  "Chinese (Traditional)" before "Chinese (Traditional, Taiwan)", where
+ *  the collator alone puts the comma before the bracket (ICU's and the
+ *  JDK's both). chino-web's sortName. */
+internal fun sortName(name: String): String = name.replace(SORT_PUNCTUATION, " ").replace(SORT_SPACES, " ").trim()
+
 /** A language setting's value as a language: "" for none ([none]: "off",
  *  "orig"; empty). */
 private fun settingLanguage(value: String?, none: String): String {
@@ -255,8 +265,9 @@ fun ownLanguages(preferred: String?, audio: String?, device: String?): List<Stri
  *   by its own - a packaged title's as any title's.
  *
  * Within a language each region or script has a run of its own, the bare
- * name first and the others in alphabetical order ("Chinese", "Chinese
- * (Simplified)", "Chinese (Simplified) · AI", "Chinese (Traditional)"); within
+ * name first and the others in alphabetical order, a name before the longer
+ * ones it begins ("Chinese", "Chinese (Simplified)", "Chinese (Simplified) ·
+ * AI", "Chinese (Traditional)", "Chinese (Traditional, Taiwan)"); within
  * a run plain first, then for deaf and hard of hearing, then foreign-language
  * parts only, then AI ([ai]: made by the platform), each in the file's order.
  * Tracks that read the same show once ([distinctSubtitles]).
@@ -284,12 +295,14 @@ fun <T> subtitleMenu(
     val unique = distinctSubtitles(tracks, label, tag, on, own, picture, retag)
     val rank = { t: T -> if (ai(t)) 3 else if (forced(t)) 2 else if (sdh(t)) 1 else 0 }
     // A language's tracks: a run per region or script, the bare name first,
-    // the others by their names; in a run by kind, then in the file's order.
+    // the others by their names ([sortName]: "Chinese (Traditional)" before
+    // "Chinese (Traditional, Taiwan)"); in a run by kind, then in the file's
+    // order.
     fun runs(group: List<T>): List<T> {
         val variant = { t: T -> namedTag(languageTag(tag(t))) }
         val tags = group.map(variant).distinct()
         val bare = tags.filter { it == normalizeLang(it) }
-        val named = (tags - bare.toSet()).sortedWith { a, b -> compareNames(languageName(a), languageName(b)) }
+        val named = (tags - bare.toSet()).sortedWith { a, b -> compareNames(sortName(languageName(a)), sortName(languageName(b))) }
         return (bare + named).flatMap { v -> group.filter { variant(it) == v }.sortedBy(rank) }
     }
     // The server's languages after the subtitle setting's; where it names

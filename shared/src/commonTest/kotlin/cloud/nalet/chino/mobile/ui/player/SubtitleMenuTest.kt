@@ -647,15 +647,17 @@ class SubtitleMenuTest {
     fun aLanguageOnTopNamedWithOrWithoutARegionOrScriptBringsAllOfItsTracksNeverUnderMoreLanguages() {
         // docs/chino subtitles, "The menu": a server that names Chinese
         // (Simplified) shows Chinese (Traditional) in the Chinese block too,
-        // the bare name first, then the runs alphabetically.
+        // the bare name first, then the runs alphabetically - a name before
+        // the longer ones it begins.
         val chinese = listOf(
             S("emb-2", "zh-Hant", embedded = true),
             S("emb-3", "eng", embedded = true),
             S("emb-4", "chi", embedded = true),
             S("emb-5", "fre", embedded = true),
+            S("emb-6", "zh-Hant-TW", embedded = true),
             S("side-zh", "zh-Hans", "AI"),
         )
-        val block = listOf("Chinese", "Chinese (Simplified) · AI", "Chinese (Traditional)")
+        val block = listOf("Chinese", "Chinese (Simplified) · AI", "Chinese (Traditional)", "Chinese (Traditional, Taiwan)")
         val rows: List<Triple<String, List<String>, String?>> = listOf(
             // Named by the server, with a script.
             Triple("off", listOf("zh-Hans"), null),
@@ -696,6 +698,52 @@ class SubtitleMenuTest {
             listOf("English · for deaf and hard of hearing", "English (United Kingdom)", "English (United States)"),
             labels(menu(english, preferred = "en-GB", serverLanguages = listOf("de")).top),
         )
+    }
+
+    @Test
+    fun aLanguageOnTopBringsAllOfItsTracksWhateverRegionOrScriptNamesItTheWebsRow() {
+        // chino-web's own row, track for track.
+        val tracks = listOf(
+            S("emb-2", "zh-Hant", embedded = true),
+            S("emb-3", "fre", embedded = true),
+            S("emb-4", "chi", embedded = true),
+            S("emb-5", "pt-PT", embedded = true),
+            S("emb-6", "zh-Hant-TW", embedded = true),
+            S("side-zh", "zh-Hans", "AI"),
+            S("side-pt", "pt-BR", "AI"),
+        )
+        val chinese = listOf("Chinese", "Chinese (Simplified) · AI", "Chinese (Traditional)", "Chinese (Traditional, Taiwan)")
+        // Named by the server with a script: the whole language, the bare
+        // name first, then the runs alphabetically.
+        val hans = menu(tracks, preferred = "off", serverLanguages = listOf("zh-Hans"))
+        assertEquals(chinese, labels(hans.top))
+        assertEquals(listOf("French", "Portuguese (Brazil) · AI", "Portuguese (Portugal)"), labels(hans.more))
+        // With a region, the same: Brazil's Portuguese brings Portugal's.
+        val brazil = menu(tracks, preferred = "off", serverLanguages = listOf("pt-BR"))
+        assertEquals(listOf("Portuguese (Brazil) · AI", "Portuguese (Portugal)"), labels(brazil.top))
+        // Named by the person: the subtitle setting's Traditional Chinese
+        // brings the server's Simplified and the file's bare one, on a server
+        // that names other languages too.
+        assertEquals(chinese + "French", labels(menu(tracks, preferred = "zh-Hant", serverLanguages = listOf("fr")).top))
+        // And without the server's languages, as before.
+        assertEquals(chinese, labels(menu(tracks, preferred = "zh-Hans", serverLanguages = emptyList()).top))
+        // Every track is still listed once.
+        for (serverLanguages in listOf(listOf("zh-Hans"), listOf("pt-BR"), emptyList())) {
+            assertEquals(tracks.size, entries(menu(tracks, serverLanguages = serverLanguages)).size, "$serverLanguages")
+        }
+        // Under "more languages" the same order: a name before the longer
+        // ones it begins.
+        val regions = listOf(
+            S("emb-2", "zh-Hant-TW", embedded = true),
+            S("emb-3", "zh-Hant-HK", embedded = true),
+            S("emb-4", "zh-Hant", embedded = true),
+            S("emb-5", "eng", embedded = true),
+        )
+        assertEquals(
+            listOf("Chinese (Traditional)", "Chinese (Traditional, Hong Kong SAR China)", "Chinese (Traditional, Taiwan)"),
+            labels(menu(regions, preferred = "off", serverLanguages = listOf("en")).more),
+        )
+        assertEquals("Chinese Traditional Taiwan", sortName("Chinese (Traditional, Taiwan)"))
     }
 
     @Test
