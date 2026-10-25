@@ -196,12 +196,15 @@ android {
 
 // A release build takes its versionCode from VERSION_CODE, never the debug
 // default: Play refuses a code at or below the last one it has, and an
-// upload built without it would carry 1. Checked as a release build starts,
-// so a debug build, the tests and a release unit-test run need none.
-tasks.matching { it.name == "preReleaseBuild" }.configureEach {
-    doFirst {
-        if (ciVersionCode == null) {
-            throw GradleException("A release build needs VERSION_CODE: the versionCode Play takes next, above the last one it has.")
-        }
+// upload built without it would carry 1. Checked once the task graph is
+// known, and only where it packages a release - an APK or a bundle
+// (assembleRelease, bundleRelease, installRelease, and `build`, which
+// assembles one): a debug build, the tests (testReleaseUnitTest too), lint
+// (lintRelease too) and `check` need none.
+val releaseOutputs = setOf("packageRelease", "packageReleaseBundle", "packageReleaseUniversalApk", "signReleaseBundle")
+gradle.taskGraph.whenReady {
+    val packagesRelease = allTasks.any { it.project == project && it.name in releaseOutputs }
+    if (packagesRelease && ciVersionCode == null) {
+        throw GradleException("A release build needs VERSION_CODE: the versionCode Play takes next, above the last one it has.")
     }
 }
