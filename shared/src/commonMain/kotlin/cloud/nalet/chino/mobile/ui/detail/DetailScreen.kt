@@ -401,20 +401,17 @@ private fun ReadyContent(
         // landscape the action row stays near the fold instead of the tall
         // 21:9 image eating the whole screen.
         val backdropH = minOf(maxWidth * 9f / 21f, maxHeight * 0.6f)
-        // The page from the phone has a top bar of its own - Back / Home,
-        // then the banner - that never scrolls (docs/chino downloads: the
-        // banner on top, under the top bar); the server's page floats Back
-        // / Home over its backdrop.
-        val fromThePhone = ready.offline != null
+        // The page has a top bar of its own - Back / Home, and on the page
+        // from the phone the banner under them - that never scrolls (docs/
+        // chino downloads: the banner on top, under the top bar): the page
+        // scrolls under it, never under buttons floating over its text.
         // How far the poster and content ride up over the backdrop: web's
-        // 128dp where the backdrop is tall enough, less on a phone, whose
-        // 21:9 backdrop is short — the poster starts below the Back / Home
-        // row instead of under it (heroOverlap). Under the phone's top bar
-        // nothing is over the backdrop.
+        // 128dp where the backdrop is tall enough (heroOverlap); nothing is
+        // over the backdrop.
         val overlap = heroOverlap(
             backdropHeight = backdropH,
             topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-            buttonsOver = !fromThePhone,
+            buttonsOver = false,
         )
         // A phone's episode rows where the hero stacks (the page under 600dp,
         // isWideDetail below); a tablet's stay as they are.
@@ -632,13 +629,13 @@ private fun ReadyContent(
 }
 
 /**
- * A title's page around its [content], which scrolls ([scroll]). From the
- * phone - a [banner] to show - the page has a top bar of its own, Back /
- * Home and the Cast button on the page's colour, and the banner under it:
- * neither scrolls, so the page never passes under the buttons or the banner
- * (docs/chino downloads: the banner on top, under the top bar). From the
- * server, Back / Home and the Cast button float over the backdrop, under
- * the status bar. Home resets to the app root (chino-web parity).
+ * A title's page around its [content], which scrolls ([scroll]): a top bar
+ * of its own, Back / Home and the Cast button on the page's colour, and from
+ * the phone - a [banner] to show - the banner under it (docs/chino downloads:
+ * the banner on top, under the top bar). Neither scrolls, so the page never
+ * passes under the buttons or the banner: the server's page as the one from
+ * the phone, never Back / Home floating over its text. Home resets to the
+ * app root (chino-web parity).
  */
 @Composable
 internal fun TitlePageFrame(
@@ -649,49 +646,33 @@ internal fun TitlePageFrame(
     cast: @Composable (Modifier) -> Unit = { PageCastButton(it) },
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            if (banner != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(ChinoBg2)
-                        .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(top = HERO_BUTTONS_TOP),
-                ) {
-                    BackAndHome(onBack = onBack, onHome = onHome, modifier = Modifier.padding(start = 16.dp))
-                    cast(Modifier.align(Alignment.TopEnd).padding(end = 16.dp))
-                }
-                InformationBanner(banner, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .verticalScroll(scroll),
-                content = content,
-            )
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Under the status bar (clock + battery), edge to edge.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(ChinoBg2)
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(top = HERO_BUTTONS_TOP, bottom = if (banner == null) TOP_BAR_BOTTOM else 0.dp),
+        ) {
+            BackAndHome(onBack = onBack, onHome = onHome, modifier = Modifier.padding(start = 16.dp))
+            cast(Modifier.align(Alignment.TopEnd).padding(end = 16.dp))
         }
-        if (banner == null) {
-            // The `windowInsetsPadding(statusBars)` pushes them below the
-            // system status bar (clock + battery) when running edge-to-edge;
-            // without it the chips collide with the system bar on tablets.
-            BackAndHome(
-                onBack = onBack,
-                onHome = onHome,
-                modifier = Modifier
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(start = 16.dp, top = HERO_BUTTONS_TOP),
-            )
-            cast(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(end = 16.dp, top = HERO_BUTTONS_TOP),
-            )
+        if (banner != null) {
+            InformationBanner(banner, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
         }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(scroll),
+            content = content,
+        )
     }
 }
+
+/** Under the top bar's buttons where no banner follows them. */
+private val TOP_BAR_BOTTOM = 8.dp
 
 /**
  * Back and Home, side by side on one solid surface with a 1 dp divider
