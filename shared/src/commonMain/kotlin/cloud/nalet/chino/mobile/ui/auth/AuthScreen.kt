@@ -109,12 +109,7 @@ class AuthScreen : Screen {
                             // provider, not a fixed central account. Derive
                             // the host from the connected server for a small
                             // "you're signing into <your server>" cue.
-                            text = container.serverConfig?.baseUrl
-                                ?.substringAfter("://")
-                                ?.substringBefore("/")
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let { "Films and series — sign in to $it." }
-                                ?: "Films and series — sign in to your account.",
+                            text = signInLine(container.serverConfig?.baseUrl),
                             style = MaterialTheme.typography.bodyLarge,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onBackground,
@@ -169,3 +164,14 @@ private fun ChangeServerLink(onClick: () -> Unit) {
             .wrapContentHeight(Alignment.CenterVertically),
     )
 }
+
+/** The line under the sign-in screen's heading, in docs/chino's words
+ *  ("movies", as the app's tab says): the host of the server it signs in to
+ *  ([serverBaseUrl]), where one is known. */
+internal fun signInLine(serverBaseUrl: String?): String =
+    serverBaseUrl
+        ?.substringAfter("://")
+        ?.substringBefore("/")
+        ?.takeIf { it.isNotBlank() }
+        ?.let { "Movies and series — sign in to $it." }
+        ?: "Movies and series — sign in to your account."

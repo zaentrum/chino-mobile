@@ -132,10 +132,9 @@ class ZapScreen : Screen {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             when (val s = state) {
                 ZapUiState.Loading -> ZapMessage("Tuning in…", spinner = true)
-                ZapUiState.Empty -> ZapMessage(
-                    "Nothing to zap right now",
-                    subtitle = "Add some movies or shows, or come back after the next ingest cycle.",
-                )
+                // What is true, and nothing it can't keep: no step the
+                // viewer may not have, no word of the server's own work.
+                ZapUiState.Empty -> ZapMessage("Nothing to zap right now")
                 is ZapUiState.Active -> ZapPager(
                     cards = s.cards,
                     isSaved = { it in watchlist },
