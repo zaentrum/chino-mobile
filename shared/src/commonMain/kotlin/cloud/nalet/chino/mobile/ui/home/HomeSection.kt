@@ -408,17 +408,17 @@ private fun ContinueWatchingShelf(
 /**
  * Continue watching where it couldn't load and the phone knows none of it:
  * its heading, and the design system's couldn't-load in its place - what
- * couldn't load, why where the banner above doesn't say it already, and
- * "try again".
+ * couldn't load ("you don't have access to this" for a 403), why where the
+ * banner above doesn't say it already, and "try again" where it can help.
  */
 @Composable
 private fun ContinueWatchingCouldntLoad(failure: ShelfFailure, onRetry: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ShelfHeading(CONTINUE_WATCHING)
         CouldntLoad(
-            title = CONTINUE_WATCHING_COULDNT_LOAD,
+            title = failure.title,
             sentence = failure.sentence,
-            action = "try again",
+            action = if (failure.tryAgain) "try again" else null,
             onAction = onRetry,
             details = failure.details,
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),

@@ -2,7 +2,7 @@ package cloud.nalet.chino.mobile.ui.home
 
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.api.LoadFailure
-import cloud.nalet.chino.mobile.data.api.NO_ANSWER_SENTENCE
+import cloud.nalet.chino.mobile.data.api.NO_ACCESS_TITLE
 import cloud.nalet.chino.mobile.data.api.loadDetails
 import cloud.nalet.chino.mobile.data.api.loadFailure
 import cloud.nalet.chino.mobile.data.api.sentence
@@ -49,10 +49,18 @@ internal object KnownHome {
     }
 }
 
-/** Why Continue watching couldn't load where the phone knows nothing of it:
- *  the reason - none where the banner already says the server can't be
- *  reached - and what tells the cases apart, under details. */
-data class ShelfFailure(val sentence: String?, val details: String?)
+/** Why Continue watching couldn't load where the phone knows nothing of it,
+ *  by the design system's case: its [title] - what couldn't load, or "you
+ *  don't have access to this" for a 403 - the reason, none where the banner
+ *  already says the server can't be reached or the case has none; whether
+ *  "try again" can help ([tryAgain]: not where access is refused); and what
+ *  tells the cases apart, under details. */
+data class ShelfFailure(
+    val sentence: String?,
+    val details: String?,
+    val title: String = CONTINUE_WATCHING_COULDNT_LOAD,
+    val tryAgain: Boolean = true,
+)
 
 /** What one load's row asks say of the server ([homeReach]). */
 internal enum class HomeReach {
@@ -116,10 +124,14 @@ internal fun homeView(
 ): HomeView {
     val shownFeed = feed.value ?: known?.feed?.map { row -> playedHere[row.id]?.let { row.copy(positionSec = it) } ?: row }
     val failed = feed.failure?.takeIf { shownFeed == null }?.let { e ->
-        ShelfFailure(
-            sentence = if (offline) null else e.loadFailure(singleThing = false).sentence() ?: NO_ANSWER_SENTENCE,
-            details = e.loadDetails(),
-        )
+        when (val case = e.loadFailure(singleThing = false)) {
+            // No access (403): the design system's heading, nothing under it
+            // but the status - "try again" can't change it.
+            LoadFailure.NoAccess -> ShelfFailure(sentence = null, details = e.loadDetails(), title = NO_ACCESS_TITLE, tryAgain = false)
+            // The case's own reason, where it has one: never a word of the
+            // server out of reach from one that answered.
+            else -> ShelfFailure(sentence = if (offline) null else case.sentence(), details = e.loadDetails())
+        }
     }
     val rows = shownFeed.orEmpty()
     return HomeView(
@@ -147,8 +159,10 @@ internal class HomeLoad(val view: HomeView, val streamToken: String)
  * token its posters and the hero are signed with - the one [token] got, else
  * the one the phone signed with last ([lastToken], the posters it already
  * shows): a mint that had no answer is one ask more that didn't, never the
- * whole page gone. A sign-in the server refuses on the mint (a 401 or 403)
- * is thrown, for Home's own page for it with its ways on.
+ * whole page gone. A sign-in the server refuses is thrown, for Home's own
+ * page for it with its ways on: a 401 on any ask, which the app's own
+ * renewal didn't mend - no row's empty state, the sign-in - and a 401 or
+ * 403 on the mint, the account's own.
  *
  * Offline - the banner, and the app hearing the server can't be reached -
  * where no row had an answer; where one went without among answers, only
@@ -166,6 +180,9 @@ internal suspend fun homeLoad(
     lastToken: String? = null,
     reachable: suspend () -> Boolean,
 ): HomeLoad {
+    listOf(feed, recentMovies, recentSeries, topRated)
+        .firstNotNullOfOrNull { asked -> asked.failure?.takeIf { it.loadFailure(singleThing = false) == LoadFailure.SignedOut } }
+        ?.let { throw it }
     token.failure?.takeIf { it.signInRefused }?.let { throw it }
     val offline = when (homeReach(feed, recentMovies, recentSeries, topRated)) {
         HomeReach.Answered -> false

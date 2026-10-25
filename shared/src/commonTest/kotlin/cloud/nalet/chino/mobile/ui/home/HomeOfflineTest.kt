@@ -3,6 +3,8 @@ package cloud.nalet.chino.mobile.ui.home
 import cloud.nalet.chino.mobile.data.api.ApiStatusException
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.api.FakeServer
+import cloud.nalet.chino.mobile.data.api.NO_ACCESS_TITLE
+import cloud.nalet.chino.mobile.data.api.NO_ANSWER_SENTENCE
 import cloud.nalet.chino.mobile.data.api.respondJson
 import cloud.nalet.chino.mobile.data.api.respondText
 import cloud.nalet.chino.mobile.data.auth.StreamTokenManager
@@ -14,6 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -175,6 +178,32 @@ class HomeOfflineTest {
         assertEquals(HomeReach.Answered, homeReach(answered(1), failed<Int>(ApiStatusException(500, "/api/v1/items"))))
         // Every row without an answer: offline at once, the server not asked.
         assertTrue(homeLoad(failed(noAnswer), failed(noAnswer), failed(noAnswer), failed(noAnswer), answered("t"), known, reachable = notAsked).view.offline)
+    }
+
+    @Test
+    fun aRefusedSignInIsHomesOwnPageNoAccessContinueWatchingsHeadingNeverCantReachTheServerFromOneThatAnswered() = runTest {
+        // A 401 on any row, after the app's own renewal: Home's page for a
+        // refused sign-in, with its ways on - never a row's couldn't-load.
+        val feedRefused = assertFailsWith<ApiStatusException> {
+            homeLoad(failed(ApiStatusException(401, "/api/v1/continue-watching")), answered(movies), answered(emptyList()), answered(emptyList()), answered("t"), null, reachable = notAsked)
+        }
+        assertEquals(401, feedRefused.status)
+        val rowRefused = assertFailsWith<ApiStatusException> {
+            homeLoad(answered(listOf(film)), answered(movies), answered(emptyList()), failed(ApiStatusException(401, "/api/v1/items")), answered("t"), known, reachable = notAsked)
+        }
+        assertEquals(401, rowRefused.status)
+        // A 403 on Continue watching, nothing known of it: the design
+        // system's no-access heading, nothing under it but the status, no
+        // "try again" that can't change it.
+        val noAccess = homeLoad(failed(ApiStatusException(403, "/api/v1/continue-watching")), answered(movies), answered(emptyList()), answered(emptyList()), answered("t"), null, reachable = notAsked)
+        assertFalse(noAccess.view.offline)
+        assertEquals(ShelfFailure(sentence = null, details = "HTTP 403", title = NO_ACCESS_TITLE, tryAgain = false), noAccess.view.continueWatchingFailed)
+        // The server answered: never "Can't reach the server." under it.
+        for (status in listOf(400, 401, 403, 404, 500, 503)) {
+            val view = homeView(failed(ApiStatusException(status, "/api/v1/continue-watching")), answered(movies), answered(emptyList()), answered(emptyList()), known = null)
+            assertNotEquals(NO_ANSWER_SENTENCE, view.continueWatchingFailed!!.sentence, "$status")
+            assertFalse(view.offline, "$status")
+        }
     }
 
     @Test

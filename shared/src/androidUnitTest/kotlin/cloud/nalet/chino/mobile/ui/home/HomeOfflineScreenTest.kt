@@ -12,6 +12,7 @@ import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.PlatformServerConfigStoreFactory
 import cloud.nalet.chino.mobile.data.PlatformSettingsStoreFactory
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
+import cloud.nalet.chino.mobile.data.api.NO_ACCESS_TITLE
 import cloud.nalet.chino.mobile.data.auth.PlatformAccountStoreFactory
 import cloud.nalet.chino.mobile.data.auth.PlatformTokenStoreFactory
 import cloud.nalet.chino.mobile.data.downloads.UNREACHABLE_BANNER_NOTHING
@@ -63,14 +64,14 @@ class HomeOfflineScreenTest {
         continueWatchingFailed = failed,
     )
 
-    private fun home(state: HomeUiState.Ready, onRetry: () -> Unit = {}) {
+    private fun home(state: HomeUiState.Ready, onRetry: () -> Unit = {}, banner: String? = UNREACHABLE_BANNER_NOTHING) {
         val c = container()
         compose.setContent {
             CompositionLocalProvider(LocalAppContainer provides c) {
                 ReadyContent(
                     state,
                     onItemSelected = {},
-                    banner = UNREACHABLE_BANNER_NOTHING,
+                    banner = banner,
                     onRetry = onRetry,
                     onPlayCard = { _, _ -> },
                     onPlayHero = { _, _ -> },
@@ -104,5 +105,16 @@ class HomeOfflineScreenTest {
         compose.onNodeWithText("Can't reach the server.").assertDoesNotExist()
         compose.onNodeWithText("try again").performClick()
         compose.runOnIdle { assertEquals(1, retried) }
+    }
+
+    @Test
+    fun noAccessToContinueWatchingSaysSoWithNothingToTryAgainNeverCantReachTheServer() {
+        val failure = ShelfFailure(sentence = null, details = "HTTP 403", title = NO_ACCESS_TITLE, tryAgain = false)
+        home(ready(emptyList(), failed = failure).copy(offline = false), banner = null)
+        compose.onNodeWithText("Continue watching").assertExists()
+        compose.onNodeWithText(NO_ACCESS_TITLE).assertExists()
+        compose.onNodeWithText(CONTINUE_WATCHING_COULDNT_LOAD).assertDoesNotExist()
+        compose.onNodeWithText("try again").assertDoesNotExist()
+        compose.onNodeWithText("Can't reach the server.").assertDoesNotExist()
     }
 }
