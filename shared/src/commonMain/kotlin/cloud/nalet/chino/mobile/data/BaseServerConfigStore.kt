@@ -57,6 +57,16 @@ abstract class BaseServerConfigStore : ServerConfigStore {
 
     override suspend fun clear() {
         // Keep recents so the user can re-pick a recent after "Change server".
-        writeBlob(readBlobBlocking().copy(config = null))
+        // A server's subtitle languages go with it.
+        writeBlob(readBlobBlocking().copy(config = null, subtitleLanguages = null))
+    }
+
+    override fun subtitleLanguagesBlocking(baseUrl: String): List<String>? =
+        readBlobBlocking().subtitleLanguages?.takeIf { it.baseUrl == baseUrl }?.languages
+
+    override suspend fun saveSubtitleLanguages(baseUrl: String, languages: List<String>) {
+        val blob = readBlobBlocking()
+        val kept = KeptSubtitleLanguages(baseUrl, languages)
+        if (blob.subtitleLanguages != kept) writeBlob(blob.copy(subtitleLanguages = kept))
     }
 }

@@ -673,6 +673,56 @@ class ServerSubtitleLanguagesTest {
     }
 
     @Test
+    fun anAnswerIsKeptOnThePhoneAndAStartWithoutTheServerHasIt() = runTest {
+        // A session that asked: the answer is kept.
+        val keptOnThePhone = mutableListOf<List<String>>()
+        val first = ServerSubtitleLanguages(fetch = { server.api.subtitleLanguages().languages }, kept = null, keep = { keptOnThePhone += it })
+        assertEquals(listOf("en", "de", "zh-Hans"), first.get())
+        assertEquals(listOf(listOf("en", "de", "zh-Hans")), keptOnThePhone)
+        // The next start, the server out of reach: the menu has its
+        // languages without asking, and nothing more is kept.
+        reply = { throw IOException("no connection") }
+        val next = ServerSubtitleLanguages(fetch = { server.api.subtitleLanguages().languages }, kept = keptOnThePhone.last(), keep = { keptOnThePhone += it })
+        assertEquals(listOf("en", "de", "zh-Hans"), next.current)
+        assertEquals(null, next.answered())
+        assertEquals(listOf("en", "de", "zh-Hans"), next.current)
+        assertEquals(1, keptOnThePhone.size)
+        // Once it answers again, what it says now.
+        reply = { respondJson("""{"languages":["fr"]}""") }
+        assertEquals(listOf("fr"), next.get())
+        assertEquals(listOf("fr"), next.current)
+        assertEquals(listOf("fr"), keptOnThePhone.last())
+        // Never asked and nothing kept: none, and the menu has the person's own.
+        assertEquals(emptyList(), ServerSubtitleLanguages(fetch = { error("not asked") }).current)
+    }
+
+    @Test
+    fun theServerConfigStoreKeepsOneServersLanguagesAndForgetsThemWithTheServer() = runTest {
+        val store = object : cloud.nalet.chino.mobile.data.BaseServerConfigStore() {
+            val state = kotlinx.coroutines.flow.MutableStateFlow(cloud.nalet.chino.mobile.data.ServerConfigBlob())
+            override fun readBlobBlocking() = state.value
+            override suspend fun writeBlob(blob: cloud.nalet.chino.mobile.data.ServerConfigBlob) { state.value = blob }
+            override val blobFlow get() = state
+        }
+        val here = "https://media.example.com/api"
+        store.save(cloud.nalet.chino.mobile.data.ServerConfig(baseUrl = here, issuer = "https://id.example.com", clientId = "app"))
+        assertEquals(null, store.subtitleLanguagesBlocking(here))
+        store.saveSubtitleLanguages(here, listOf("en", "de"))
+        assertEquals(listOf("en", "de"), store.subtitleLanguagesBlocking(here))
+        // A server that names none is kept as none, not as "never answered".
+        store.saveSubtitleLanguages(here, emptyList())
+        assertEquals(emptyList(), store.subtitleLanguagesBlocking(here))
+        // Another server's are not this one's.
+        assertEquals(null, store.subtitleLanguagesBlocking("https://other.example.com/api"))
+        // Kept through a refreshed sign-in setting; gone with Change server.
+        store.saveSubtitleLanguages(here, listOf("fr"))
+        store.save(cloud.nalet.chino.mobile.data.ServerConfig(baseUrl = here, issuer = "https://id.example.com", clientId = "app-2"))
+        assertEquals(listOf("fr"), store.subtitleLanguagesBlocking(here))
+        store.clear()
+        assertEquals(null, store.subtitleLanguagesBlocking(here))
+    }
+
+    @Test
     fun noAnswerIsNoneForNowAndTheNextMenuAsksAgain() = runTest {
         reply = { throw IOException("no connection") }
         val languages = ServerSubtitleLanguages { server.api.subtitleLanguages().languages }

@@ -43,6 +43,17 @@ data class ServerConfig(
 data class ServerConfigBlob(
     @SerialName("config") val config: ServerConfig? = null,
     @SerialName("recents") val recents: List<String> = emptyList(),
+    /** The subtitle languages the connected server named last
+     *  ([ServerConfigStore.subtitleLanguagesBlocking]). */
+    @SerialName("subtitle_languages") val subtitleLanguages: KeptSubtitleLanguages? = null,
+)
+
+/** The subtitle languages a server named (GET /subtitles/languages), kept
+ *  with the server they are of. */
+@Serializable
+data class KeptSubtitleLanguages(
+    @SerialName("base_url") val baseUrl: String,
+    @SerialName("languages") val languages: List<String>,
 )
 
 /**
@@ -74,6 +85,16 @@ interface ServerConfigStore {
 
     /** Forgets the connected server — used by Settings "Change server". */
     suspend fun clear()
+
+    /** The subtitle languages the server at [baseUrl] named the last time it
+     *  answered (GET /subtitles/languages) - none where it names none - kept
+     *  so that a title played from the phone has its menu as online, with no
+     *  server to ask; null where it never answered. */
+    fun subtitleLanguagesBlocking(baseUrl: String): List<String>? = null
+
+    /** Keeps what the server at [baseUrl] named ([subtitleLanguagesBlocking]):
+     *  one server's, the one connected. */
+    suspend fun saveSubtitleLanguages(baseUrl: String, languages: List<String>) {}
 }
 
 /** Per-platform factory — Android gives us a Context, iOS gives us a suite

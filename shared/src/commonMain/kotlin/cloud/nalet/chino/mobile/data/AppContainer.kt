@@ -251,8 +251,16 @@ class AppContainer(
 
     /** The subtitle languages the server is set up for, asked once for the
      *  graph's life - a server, a session - and kept: the subtitles menu's
-     *  top level after the viewer's own language. */
-    val subtitleLanguages: ServerSubtitleLanguages by lazy { ServerSubtitleLanguages { chinoApi.subtitleLanguages().languages } }
+     *  top level after the viewer's own language. The last answer is kept
+     *  on the phone with the server, for a start without it. */
+    val subtitleLanguages: ServerSubtitleLanguages by lazy {
+        val server = config.apiBaseUrl
+        ServerSubtitleLanguages(
+            fetch = { chinoApi.subtitleLanguages().languages },
+            kept = serverConfigStore.subtitleLanguagesBlocking(server),
+            keep = { serverConfigStore.saveSubtitleLanguages(server, it) },
+        )
+    }
 
     val telemetry: Telemetry by lazy {
         Telemetry(
