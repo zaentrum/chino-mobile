@@ -31,6 +31,9 @@ import cloud.nalet.chino.mobile.data.downloads.DownloadedSubtitle
 import cloud.nalet.chino.mobile.data.downloads.DownloadedTitle
 import cloud.nalet.chino.mobile.data.downloads.Downloads
 import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
+import cloud.nalet.chino.mobile.data.downloads.EXTRAS_RETRY_MAX_MS
+import cloud.nalet.chino.mobile.data.downloads.EXTRAS_RETRY_MS
+import cloud.nalet.chino.mobile.data.downloads.extrasRetryDelayMs
 import cloud.nalet.chino.mobile.data.downloads.ManagerState
 import cloud.nalet.chino.mobile.data.downloads.Owner
 import cloud.nalet.chino.mobile.data.downloads.PlanResult
@@ -658,27 +661,48 @@ internal class AndroidDownloads(
         visibleTo(engine.titles.titles.value, owner)
             .filter { !it.extrasDone && downloads[it.key]?.state == Download.STATE_COMPLETED }
             .forEach {
-                // The server answers again: a few tries more, should it not.
-                noAnswerRetries.remove(it.key)
+                // The server answers again: asked from the start again.
+                extrasRetries.remove(it.key)
                 fetchExtrasLater(it.key)
             }
     }
 
-    private fun fetchExtrasLater(key: String, afterMs: Long = 0L) {
-        container.appScope.launch(Dispatchers.IO) {
-            if (afterMs > 0) delay(afterMs)
-            fetchExtras(key)
-        }
+    private fun fetchExtrasLater(key: String) {
+        container.appScope.launch(Dispatchers.IO) { fetchExtras(key) }
     }
 
-    /** How often a title's extras were tried again without an answer, since
-     *  they last came: a few times while the server seems there, else when
-     *  it answers again ([catchUpExtras]). */
-    private val noAnswerRetries = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    /** A title's extras asked again after [afterMs] - one ask waiting per
+     *  title, the later one replacing the one before: retries never pile up. */
+    private fun retryExtrasLater(key: String, afterMs: Long) {
+        val job = container.appScope.launch(Dispatchers.IO, start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            delay(afterMs)
+            retryJobs.remove(key, coroutineContext[kotlinx.coroutines.Job])
+            fetchExtras(key)
+        }
+        retryJobs.put(key, job)?.cancel()
+        job.start()
+    }
+
+    private val retryJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+
+    /** How often in a row a title's extras did not come without a counted
+     *  answer - no answer, or one that only says the server is not
+     *  answering now - since they last came or the server answered again:
+     *  the wait before the next ask ([extrasRetryDelayMs]), and after
+     *  [NO_ANSWER_RETRIES] the server is asked whether it is there. */
+    private val extrasRetries = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     /** A sidecar the server answered for, and not with the file: tried
      *  again [tries] times so far. */
     private class SidecarRefused(val tries: Int, cause: Exception) : Exception(cause)
+
+    /** A sidecar the server answered for only to say it is not answering
+     *  now, already counted within the hour: nothing counts, asked again. */
+    private class SidecarWaits(cause: Exception) : Exception(cause)
+
+    /** No answer, and the server, asked, is not there: the extras wait for
+     *  it to answer again ([catchUpExtras]). */
+    private class ServerNotThere(cause: Exception) : Exception(cause)
 
     /**
      * The title's sidecar subtitles and artwork, beside its media - for its
@@ -691,8 +715,15 @@ internal class AndroidDownloads(
      * refusal) is asked again a little later, and left out after
      * [SIDECAR_TRIES] such answers: one text track the server cannot give
      * never keeps the whole title off the phone, nor makes anyone download
-     * it again for nothing. No answer at all counts nothing: the subtitles
-     * come once the server answers again. A subtitle the server no longer
+     * it again for nothing. An answer that only says the server is not
+     * answering now - its proxy's 502-504, a timeout, too many requests, a
+     * stream token it did not take - counts once an hour at most
+     * ([sidecarMiss]): a restart of minutes costs no subtitle. No answer at
+     * all counts nothing while the server is not there: asked again a little
+     * later each time while it seems there, and after a few times the server
+     * is asked whether it is - not there, the subtitles come once it answers
+     * again; there, the subtitle's path alone does not answer, which counts
+     * as an outage answer does. A subtitle the server no longer
      * has is left out once the server says the title is still the account's;
      * the title goes where the server says it is not - and while it has said
      * so once only (the title marked), nothing is decided: the subtitles wait
@@ -717,39 +748,60 @@ internal class AndroidDownloads(
                 if (file.isFile && file.length() > 0) continue
                 val url = artworkUrl(title.server, s.source ?: "/api/v1/play/subs/${s.id}.vtt", token)
                     ?: throw IOException("no subtitle url")
-                try {
+                val failure: Exception = try {
                     fetchTo(url, file)
+                    continue
                 } catch (e: ApiStatusException) {
-                    when (val miss = sidecarMiss(e.status, s.tries)) {
-                        // The server answered, and not with the file: one
-                        // try of a few, then the title goes on without it.
-                        SidecarMiss.LeaveOut -> {
-                            Log.i(TAG, "a subtitle the server answered ${e.status} for $SIDECAR_TRIES times is left out")
-                            gone += s.id
-                            continue
-                        }
-                        is SidecarMiss.TryAgain -> {
-                            engine.titles.update(key) { t ->
-                                t.copy(subtitles = t.subtitles.map { if (it.id == s.id) it.copy(tries = miss.tries) else it })
-                            }
-                            throw SidecarRefused(miss.tries, e)
-                        }
-                        else -> Unit
+                    e
+                } catch (e: IOException) {
+                    e
+                }
+                val status = (failure as? ApiStatusException)?.status
+                // A stream token the server did not take: the next try signs anew.
+                if (status == 401) container.streamTokenManager.invalidate()
+                // No answer for it: nothing counts the first few times. Then
+                // the server is asked whether it is there; where it answers
+                // all else, this subtitle's path alone does not.
+                val serverAnswers = if (failure is IOException) {
+                    if ((extrasRetries[key] ?: 0) < NO_ANSWER_RETRIES) throw failure
+                    if (container.serverReach.check() != Reach.Reachable) throw ServerNotThere(failure)
+                    true
+                } else {
+                    false
+                }
+                val now = currentTimeMillis()
+                when (val miss = sidecarMiss(status, s.tries, s.lastTryAtMs, now, serverAnswers)) {
+                    // The server answered, and not with the file: one try of
+                    // a few, then the title goes on without it.
+                    SidecarMiss.LeaveOut -> {
+                        Log.i(TAG, "a subtitle the server answered ${status ?: "nothing"} for $SIDECAR_TRIES times is left out")
+                        gone += s.id
+                        continue
                     }
-                    when (val c = checkAvailability(listOf(title.itemId))) {
-                        is AvailabilityCheck.Done -> when {
-                            // Not the account's any more: deleted, said where it shows.
-                            c.deleted.any { it.key == key } -> return
-                            // Said once: no answer yet, for the subtitle as for the title.
-                            c.marked.any { it.key == key } -> return
-                            else -> gone += s.id
+                    is SidecarMiss.TryAgain -> {
+                        engine.titles.update(key) { t ->
+                            t.copy(subtitles = t.subtitles.map { if (it.id == s.id) it.copy(tries = miss.tries, lastTryAtMs = now) else it })
                         }
-                        AvailabilityCheck.NotAnswered -> throw e
+                        throw SidecarRefused(miss.tries, failure)
                     }
+                    // Only that the server is not answering now, counted
+                    // within the hour: asked again, nothing counted.
+                    SidecarMiss.WaitForTheServer -> throw SidecarWaits(failure)
+                    SidecarMiss.AskWhetherTheTitleIsStillTheAccounts -> Unit
+                }
+                when (val c = checkAvailability(listOf(title.itemId))) {
+                    is AvailabilityCheck.Done -> when {
+                        // Not the account's any more: deleted, said where it shows.
+                        c.deleted.any { it.key == key } -> return
+                        // Said once: no answer yet, for the subtitle as for the title.
+                        c.marked.any { it.key == key } -> return
+                        else -> gone += s.id
+                    }
+                    AvailabilityCheck.NotAnswered -> throw failure
                 }
             }
             fetchArtwork(key, token)
-            noAnswerRetries.remove(key)
+            extrasRetries.remove(key)
             engine.titles.update(key) { t ->
                 t.copy(subtitles = t.subtitles.filterNot { it.id in gone }, extrasDone = true)
             }
@@ -757,16 +809,23 @@ internal class AndroidDownloads(
             throw e
         } catch (e: SidecarRefused) {
             // Again a little later, a little later each time.
-            fetchExtrasLater(key, afterMs = EXTRAS_RETRY_MS * e.tries)
+            retryExtrasLater(key, afterMs = EXTRAS_RETRY_MS * e.tries)
         } catch (e: Exception) {
-            // No answer: nothing counts against the subtitles. Asked again
-            // when the server answers again (catchUpExtras) - and, while it
-            // seems to answer, a few times a little later.
-            val n = (noAnswerRetries[key] ?: 0) + 1
-            if (n <= NO_ANSWER_RETRIES && container.serverReach.state.value != Reach.Unreachable) {
-                noAnswerRetries[key] = n
-                fetchExtrasLater(key, afterMs = EXTRAS_RETRY_MS * n)
+            // No answer, or only that the server is not answering now:
+            // nothing counts against the subtitles. Asked again a little
+            // later each time for as long as the server seems there - after
+            // a few times without an answer it is asked whether it is.
+            // Where it is not, they come once it answers again
+            // (catchUpExtras), and are asked at the longest wait all the
+            // same: never left waiting on a check no screen makes.
+            val n = (extrasRetries[key] ?: 0) + 1
+            extrasRetries[key] = n
+            val reach = when {
+                e is ServerNotThere || e is SidecarWaits -> container.serverReach.state.value
+                n >= NO_ANSWER_RETRIES -> container.serverReach.check()
+                else -> container.serverReach.state.value
             }
+            retryExtrasLater(key, afterMs = if (reach == Reach.Unreachable) EXTRAS_RETRY_MAX_MS else extrasRetryDelayMs(n))
         } finally {
             extrasLock.withLock { extrasRunning.remove(key) }
             // Its folder as it is now, subtitles and artwork in it.
@@ -851,13 +910,9 @@ internal class AndroidDownloads(
         /** How often the background check asks at most. */
         const val RECHECK_MS = 5L * 60 * 1000
 
-        /** A title's subtitles asked again after this, times the tries so
-         *  far: a server that answered for one and did not serve it, or did
-         *  not answer while it seemed there. */
-        const val EXTRAS_RETRY_MS = 30_000L
-
-        /** How often, without an answer, before the extras wait for the
-         *  server to answer again. */
+        /** How often in a row without an answer before the server is asked
+         *  whether it is there: not there, the extras wait for it to answer
+         *  again; there, a subtitle that still does not answer counts. */
         const val NO_ANSWER_RETRIES = 3
 
         val NOTICES = MapSerializer(String.serializer(), ListSerializer(String.serializer()))

@@ -284,19 +284,58 @@ class DownloadWordsTest {
  *  answered, left out after a few such answers, waited for where it did
  *  not answer - never a failed title that keeps its media. */
 class SidecarMissTest {
+    private val hour = SIDECAR_SPACING_MS
+    private val t0 = 1_000_000_000L
+
     @Test
     fun aSubtitleTheServerKeepsRefusingIsLeftOutAfterAFewTries() {
-        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(503, triesSoFar = 0))
-        assertEquals(SidecarMiss.TryAgain(2), sidecarMiss(500, triesSoFar = 1))
-        assertEquals(SidecarMiss.LeaveOut, sidecarMiss(502, triesSoFar = SIDECAR_TRIES - 1))
-        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(403, triesSoFar = 0))
+        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(500, triesSoFar = 0, nowMs = t0))
+        // A 500 or a refusal counts each time, a little later each time.
+        assertEquals(SidecarMiss.TryAgain(2), sidecarMiss(500, triesSoFar = 1, lastTryAtMs = t0, nowMs = t0 + 30_000))
+        assertEquals(SidecarMiss.LeaveOut, sidecarMiss(500, triesSoFar = SIDECAR_TRIES - 1, lastTryAtMs = t0, nowMs = t0 + 60_000))
+        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(403, triesSoFar = 0, nowMs = t0))
+        assertEquals(SidecarMiss.LeaveOut, sidecarMiss(403, triesSoFar = SIDECAR_TRIES - 1, lastTryAtMs = t0, nowMs = t0 + 1))
+    }
+
+    @Test
+    fun theServerNotAnsweringNowCountsOnceAnHourAtMost() {
+        // A restart behind the proxy: the first answer counts...
+        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(502, triesSoFar = 0, nowMs = t0))
+        // ...and every one within the hour waits, counting nothing.
+        for (status in listOf(502, 503, 504, 408, 429, 401)) {
+            assertEquals(SidecarMiss.WaitForTheServer, sidecarMiss(status, triesSoFar = 1, lastTryAtMs = t0, nowMs = t0 + 30_000), "$status")
+            assertEquals(SidecarMiss.WaitForTheServer, sidecarMiss(status, triesSoFar = 2, lastTryAtMs = t0, nowMs = t0 + hour - 1), "$status")
+        }
+        // A file the server keeps failing behind its proxy is left out all
+        // the same, its answers an hour apart.
+        assertEquals(SidecarMiss.TryAgain(2), sidecarMiss(502, triesSoFar = 1, lastTryAtMs = t0, nowMs = t0 + hour))
+        assertEquals(SidecarMiss.LeaveOut, sidecarMiss(503, triesSoFar = SIDECAR_TRIES - 1, lastTryAtMs = t0 + hour, nowMs = t0 + 2 * hour))
+        // A clock set back counts as spaced, never as a wait for good.
+        assertEquals(SidecarMiss.TryAgain(2), sidecarMiss(502, triesSoFar = 1, lastTryAtMs = t0, nowMs = t0 - 1))
     }
 
     @Test
     fun noAnswerCountsNothingAndAGoneOneAsksTheServerAboutTheTitle() {
         assertEquals(SidecarMiss.WaitForTheServer, sidecarMiss(null, triesSoFar = SIDECAR_TRIES))
+        assertEquals(SidecarMiss.WaitForTheServer, sidecarMiss(null, triesSoFar = 0, nowMs = t0))
         assertEquals(SidecarMiss.AskWhetherTheTitleIsStillTheAccounts, sidecarMiss(404, triesSoFar = 0))
         assertEquals(SidecarMiss.AskWhetherTheTitleIsStillTheAccounts, sidecarMiss(410, triesSoFar = 5))
+    }
+
+    @Test
+    fun noAnswerForASubtitleWhileTheServerAnswersAllElseCountsAsAnOutageDoes() {
+        assertEquals(SidecarMiss.TryAgain(1), sidecarMiss(null, triesSoFar = 0, nowMs = t0, serverAnswers = true))
+        assertEquals(SidecarMiss.WaitForTheServer, sidecarMiss(null, triesSoFar = 1, lastTryAtMs = t0, nowMs = t0 + 600_000, serverAnswers = true))
+        assertEquals(SidecarMiss.LeaveOut, sidecarMiss(null, triesSoFar = SIDECAR_TRIES - 1, lastTryAtMs = t0, nowMs = t0 + hour, serverAnswers = true))
+    }
+
+    @Test
+    fun theExtrasAreAskedAgainALittleLaterEachTimeForAsLongAsItTakes() {
+        assertEquals(EXTRAS_RETRY_MS, extrasRetryDelayMs(1))
+        assertEquals(3 * EXTRAS_RETRY_MS, extrasRetryDelayMs(3))
+        // Never given up while the server seems there: at most ten minutes apart.
+        assertEquals(EXTRAS_RETRY_MAX_MS, extrasRetryDelayMs(1_000))
+        assertEquals(EXTRAS_RETRY_MS, extrasRetryDelayMs(0))
     }
 
     @Test

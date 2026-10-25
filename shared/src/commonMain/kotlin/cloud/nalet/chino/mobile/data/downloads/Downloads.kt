@@ -125,14 +125,38 @@ data class DownloadedSubtitle(
     val source: String? = null,
     /** How often the server answered for it, and not with the file (a 5xx,
      *  a refusal): at [SIDECAR_TRIES] it is left out, and the title is on
-     *  the phone without it. No answer at all counts nothing. */
+     *  the phone without it. An answer that only says the server is not
+     *  answering now ([SIDECAR_OUTAGE]) counts once in [SIDECAR_SPACING_MS]
+     *  at most, and so does no answer for it while the server answers all
+     *  else. No answer at all - the server not there - counts nothing. */
     val tries: Int = 0,
+    /** When the last of [tries] was counted, by the wall clock (ms); 0
+     *  before the first. */
+    val lastTryAtMs: Long = 0L,
 )
 
 /** How often a sidecar subtitle the server answers for but does not serve
  *  is asked for before the download goes on without it: one text track the
  *  server cannot give never keeps a whole title off the phone. */
 const val SIDECAR_TRIES = 3
+
+/**
+ * What the server answers for a sidecar while it, or what is behind it, is
+ * not answering now - not about the subtitle: its proxy's 502-504
+ * ([SERVER_DOWN], a restart, a rollout), a timeout (408), too many requests
+ * (429), and a stream token it did not take (401; the next try signs anew).
+ * The same codes the app's other requests wait on.
+ */
+val SIDECAR_OUTAGE: Set<Int> = SERVER_DOWN.toSet() + setOf(401, 408, 429)
+
+/**
+ * How far apart answers of [SIDECAR_OUTAGE] - and no answer for a subtitle
+ * while the server answers all else - count against it: once an hour at
+ * most, so an outage of minutes never costs a title its subtitle, while one
+ * the server keeps failing behind its proxy (502 for that file alone) is
+ * still left out after [SIDECAR_TRIES] such hours, the first counted at once.
+ */
+const val SIDECAR_SPACING_MS = 60L * 60 * 1000
 
 /** What a sidecar subtitle's fetch that did not bring it comes to. */
 sealed interface SidecarMiss {
@@ -148,18 +172,45 @@ sealed interface SidecarMiss {
      *  without it. */
     data object LeaveOut : SidecarMiss
 
-    /** No answer: nothing counted; it comes once the server answers. */
+    /** No answer, or one that only says the server is not answering now
+     *  and was counted within the hour: nothing counted; asked again a
+     *  little later, and it comes once the server answers. */
     data object WaitForTheServer : SidecarMiss
 }
 
-/** What a sidecar's fetch the server answered [status] for (null: no
- *  answer) comes to, after [triesSoFar] such answers. */
-fun sidecarMiss(status: Int?, triesSoFar: Int): SidecarMiss = when {
-    status == null -> SidecarMiss.WaitForTheServer
+/**
+ * What a sidecar's fetch the server answered [status] for (null: no answer)
+ * comes to, after [triesSoFar] counted answers, the last at [lastTryAtMs],
+ * at [nowMs] by the wall clock. [serverAnswers]: with no answer for it, the
+ * server answers all else (its /api/config): its path alone does not, and
+ * that counts as an outage answer does. A clock set back counts as spaced.
+ */
+fun sidecarMiss(
+    status: Int?,
+    triesSoFar: Int,
+    lastTryAtMs: Long = 0L,
+    nowMs: Long = 0L,
+    serverAnswers: Boolean = false,
+): SidecarMiss = when {
+    status == null && !serverAnswers -> SidecarMiss.WaitForTheServer
     status == 404 || status == 410 -> SidecarMiss.AskWhetherTheTitleIsStillTheAccounts
+    (status == null || status in SIDECAR_OUTAGE) && triesSoFar > 0 &&
+        nowMs - lastTryAtMs in 0 until SIDECAR_SPACING_MS -> SidecarMiss.WaitForTheServer
     triesSoFar + 1 >= SIDECAR_TRIES -> SidecarMiss.LeaveOut
     else -> SidecarMiss.TryAgain(triesSoFar + 1)
 }
+
+/** How long a title's extras wait before they are asked again, the [n]th
+ *  time in a row without them: [EXTRAS_RETRY_MS] more each time, at most
+ *  [EXTRAS_RETRY_MAX_MS] - asked for as long as the server seems there. */
+fun extrasRetryDelayMs(n: Int): Long = (EXTRAS_RETRY_MS * n.coerceAtLeast(1)).coerceAtMost(EXTRAS_RETRY_MAX_MS)
+
+/** A title's subtitles asked again after this, times the tries so far. */
+const val EXTRAS_RETRY_MS = 30_000L
+
+/** The longest a title's extras wait between two asks - and the wait each
+ *  time while the server is not there. */
+const val EXTRAS_RETRY_MAX_MS = 10L * 60 * 1000
 
 /**
  * Where a download is - the download manager's own states, in the words the
