@@ -56,6 +56,7 @@ import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Play
+import com.composables.icons.lucide.X
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -564,6 +565,40 @@ private fun YearRatingChipRow(item: Item) {
 }
 
 /**
+ * A card's menu, opened by a long-press on the card: "play" - or "resume"
+ * for a title stopped part way ([resumes]) - the watched toggle ("mark as
+ * watched", "watched"), and "remove from continue watching" where the card
+ * is in it; each where its action is wired. Its items in the mono face,
+ * lowercase, as every menu's (chino-web 039233b).
+ */
+@Composable
+internal fun CardMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    watched: Boolean,
+    resumes: Boolean = false,
+    onPlay: (() -> Unit)? = null,
+    onToggleWatched: (() -> Unit)? = null,
+    onRemoveFromContinueWatching: (() -> Unit)? = null,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        onPlay?.let { play -> CardMenuItem(if (resumes) CARD_RESUME else CARD_PLAY, Lucide.Play) { onDismiss(); play() } }
+        // Its state, in the words of the title page's toggle.
+        onToggleWatched?.let { toggle -> CardMenuItem(watchedName(watched), Lucide.Check) { onDismiss(); toggle() } }
+        onRemoveFromContinueWatching?.let { remove -> CardMenuItem(REMOVE_FROM_CONTINUE_WATCHING, Lucide.X) { onDismiss(); remove() } }
+    }
+}
+
+@Composable
+private fun CardMenuItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label, style = cloud.nalet.chino.mobile.ui.theme.ChinoMono, fontSize = 14.sp) },
+        leadingIcon = { Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+        onClick = onClick,
+    )
+}
+
+/**
  * Horizontal carousel of [MediaCard] tiles. Mirrors chino-web's MediaRow.
  * Heading + LazyRow; touch-scrollable (no prev/next chevrons because mobile
  * has fling-scroll natively).
@@ -589,10 +624,12 @@ fun MediaRow(
     // as the Continue Watching cards). Home rails leave this off.
     episodeBadges: Boolean = false,
     // #188: per-card watched toggle. When set, each card's overflow menu gains
-    // a Mark-watched/Mark-unwatched item; the callback receives the item id and
-    // owns the optimistic update (Home rails drop the card; Browse flips the
-    // badge). null leaves the toggle off the menu.
+    // a "mark as watched" / "watched" item; the callback receives the item id
+    // and owns the optimistic update (Home rails drop the card; Browse flips
+    // the badge). null leaves the toggle off the menu.
     onToggleWatched: ((String) -> Unit)? = null,
+    /** Each card's menu plays its title ("play"); null: no such item. */
+    onPlay: ((String) -> Unit)? = null,
 ) {
     // CDP-verified: title → LazyRow gap = 16dp (web `mb-4`).
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -627,6 +664,7 @@ fun MediaRow(
                         episodeBadge = if (episodeBadges) episodeBadgeFor(item) else null,
                         cardWidth = cardWidth,
                         onToggleWatched = onToggleWatched?.let { cb -> { cb(item.id) } },
+                        onPlay = onPlay?.let { cb -> { cb(item.id) } },
                     )
                 }
                 // #150: end-of-row "See all" tile — only when the row opts
@@ -751,10 +789,15 @@ fun MediaCard(
     // MediaCard's `credit`. Two lines are held whatever it says, so a grid
     // row of filmography cards stays one height.
     credit: String? = null,
+    /** The menu's first item, "play" - or "resume" ([resumes]) - which
+     *  plays the title; null: none. */
+    onPlay: (() -> Unit)? = null,
+    /** The title was stopped part way, where the player resumes it. */
+    resumes: Boolean = false,
 ) {
-    // Either action wires the overflow affordance. When ONLY the watched
-    // toggle is wired (Home rails / Browse grid), the menu still appears.
-    val hasMenu = onRemoveFromContinueWatching != null || onToggleWatched != null
+    // Any action wires the overflow affordance. When ONLY the watched
+    // toggle is wired, the menu still appears.
+    val hasMenu = onRemoveFromContinueWatching != null || onToggleWatched != null || onPlay != null
     // Drives the card's menu, opened by a long-press on the card (no button
     // drawn over the artwork).
     var menuOpen by remember { mutableStateOf(false) }
@@ -810,42 +853,15 @@ fun MediaCard(
             // progress bar (the design system's title actions).
             if (hasMenu) {
                 Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)) {
-                    DropdownMenu(
+                    CardMenu(
                         expanded = menuOpen,
-                        onDismissRequest = { menuOpen = false },
-                    ) {
-                        // #188: watched toggle — label/icon flip on the
-                        // server-stamped watchedAt. Reuses the same watched
-                        // POST/DELETE as the detail-page eye via onToggleWatched.
-                        if (onToggleWatched != null) {
-                            val isWatched = item.watchedAt != null
-                            DropdownMenuItem(
-                                text = {
-                                    Text(if (isWatched) "Mark as unwatched" else "Mark as watched")
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Lucide.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                },
-                                onClick = {
-                                    menuOpen = false
-                                    onToggleWatched()
-                                },
-                            )
-                        }
-                        if (onRemoveFromContinueWatching != null) {
-                            DropdownMenuItem(
-                                text = { Text("Remove from Continue Watching") },
-                                onClick = {
-                                    menuOpen = false
-                                    onRemoveFromContinueWatching()
-                                },
-                            )
-                        }
-                    }
+                        onDismiss = { menuOpen = false },
+                        watched = item.watchedAt != null,
+                        resumes = resumes,
+                        onPlay = onPlay,
+                        onToggleWatched = onToggleWatched,
+                        onRemoveFromContinueWatching = onRemoveFromContinueWatching,
+                    )
                 }
             }
             if (progress != null && progress > 0f) {

@@ -187,15 +187,7 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
      * usePlayTitle. [then] gets the episode id, or null for the page.
      */
     fun seriesEpisode(seriesId: String, then: (String?) -> Unit) {
-        screenModelScope.launch {
-            val api = container.chinoApi
-            val episode = coroutineScope {
-                val continueWatching = async { runCatching { api.continueWatching().items }.getOrDefault(emptyList()) }
-                val seasons = async { runCatching { api.seriesEpisodes(seriesId).seasons }.getOrDefault(emptyList()) }
-                episodeToPlay(seriesId, continueWatching.await(), seasons.await())
-            }
-            then(episode)
-        }
+        screenModelScope.launch { then(seriesEpisodeToPlay(container.chinoApi, seriesId)) }
     }
 
     /** "try again" on a Home that couldn't load: loads it again. */

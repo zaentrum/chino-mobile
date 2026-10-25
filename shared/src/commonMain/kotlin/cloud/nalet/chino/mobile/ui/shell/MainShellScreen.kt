@@ -230,6 +230,7 @@ private fun SectionContent(
                 type = "movie",
                 pageTitle = "Movies",
                 onItemSelected = onItemSelected,
+                onPlay = onPlay,
             )
         }
         Section.Series -> tabStates.SaveableStateProvider(Section.Series.name) {
@@ -239,6 +240,7 @@ private fun SectionContent(
                 type = "series",
                 pageTitle = "Shows",
                 onItemSelected = onItemSelected,
+                onPlay = onPlay,
             )
         }
         Section.Watchlist -> tabStates.SaveableStateProvider(Section.Watchlist.name) {

@@ -213,13 +213,25 @@ private fun Modifier.pressedWiderThanDrawn(drawn: Dp, pressed: Dp): Modifier = l
     layout(drawn.roundToPx().coerceAtMost(width), placeable.height) { placeable.place(0, 0) }
 }
 
+/** The watched toggle's name, as a screen reader says it and a card's menu
+ *  writes it: "mark as watched", and "watched" once it is. */
+fun watchedName(watched: Boolean): String = if (watched) "watched" else "mark as watched"
+
+/** A card's menu: "play", or "resume" where the title was stopped part way -
+ *  without the position, which the card's bar shows - and its way off
+ *  Continue watching. Lowercase, for the mono face (chino-web's
+ *  titleActions). */
+const val CARD_PLAY = "play"
+const val CARD_RESUME = "resume"
+const val REMOVE_FROM_CONTINUE_WATCHING = "remove from continue watching"
+
 /** Watched: a dark check on green once watched, else the outlined check -
  *  the check means watched, on buttons and cards alike. */
 @Composable
 fun WatchedButton(watched: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
     TitleIconButton(
         icon = Lucide.Check,
-        name = if (watched) "watched" else "mark as watched",
+        name = watchedName(watched),
         on = watched,
         onFill = ChinoGreen,
         onClick = onToggle,

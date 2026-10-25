@@ -8,6 +8,7 @@ import cloud.nalet.chino.mobile.ui.detail.label
 import cloud.nalet.chino.mobile.ui.detail.playAction
 import cloud.nalet.chino.mobile.ui.detail.seriesPlayTarget
 import cloud.nalet.chino.mobile.ui.trailer.localTrailer
+import kotlinx.coroutines.async
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.TimeSource
@@ -74,6 +75,15 @@ internal fun pickHeroPool(
  */
 internal fun episodeToPlay(seriesId: String, continueWatching: List<ContinueWatchingItem>, seasons: List<Season>): String? =
     continueWatching.firstOrNull { it.type == "episode" && it.parentId == seriesId }?.id ?: firstEpisode(seasons)
+
+/** The episode Play on [seriesId] plays ([episodeToPlay]), as the server
+ *  says it now: its row in Continue watching, else its first episode; null
+ *  where it has none, or neither could be asked. */
+suspend fun seriesEpisodeToPlay(api: cloud.nalet.chino.mobile.data.api.ChinoApi, seriesId: String): String? = kotlinx.coroutines.coroutineScope {
+    val continueWatching = async { runCatching { api.continueWatching().items }.getOrDefault(emptyList()) }
+    val seasons = async { runCatching { api.seriesEpisodes(seriesId).seasons }.getOrDefault(emptyList()) }
+    episodeToPlay(seriesId, continueWatching.await(), seasons.await())
+}
 
 /** S01E01: the lowest episode of the lowest season from 1 on; the specials
  *  of season 0 only when there is nothing else. Web's firstEpisode. */

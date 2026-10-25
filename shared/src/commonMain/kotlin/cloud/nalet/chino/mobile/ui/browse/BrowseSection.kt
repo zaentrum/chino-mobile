@@ -1,5 +1,7 @@
 package cloud.nalet.chino.mobile.ui.browse
 
+import cloud.nalet.chino.mobile.ui.components.CardMenu
+import kotlinx.coroutines.launch
 import cloud.nalet.chino.mobile.ui.components.CardStatusMarks
 import androidx.compose.ui.graphics.RectangleShape
 
@@ -92,6 +94,9 @@ fun BrowseSection(
     type: String,
     pageTitle: String,
     onItemSelected: (String) -> Unit,
+    /** Plays a movie or an episode, where the player resumes it; a card's
+     *  menu "play". Null: no such item. */
+    onPlay: ((itemId: String) -> Unit)? = null,
 ) {
     // The filters, saveable as the shell's tab is: back from a title opened
     // from the grid, the grid has them still, as after a recreation or the
@@ -106,6 +111,8 @@ fun BrowseSection(
     // shell, and back from it the grid has its pages and scrolls back to
     // where it was, nothing asked again; it goes, its requests with it, when
     // the shell leaves the stack (Home starts a new one).
+    // A series card's "play" finds its episode first.
+    val playScope = androidx.compose.runtime.rememberCoroutineScope()
     val model = screen.rememberScreenModel(tag = type) {
         BrowseScreenModel(container, type, initialFilter = filter, initialRows = loadedRows)
     }
@@ -239,6 +246,20 @@ fun BrowseSection(
                         // #188: mark-watched/unwatched from the card overflow
                         // menu — flips the green ✓ badge optimistically.
                         onToggleWatched = { model.toggleWatched(item.id) },
+                        // A movie plays itself; a series its episode, else
+                        // its page opens (chino-web's usePlayTitle).
+                        onPlay = onPlay?.let { play ->
+                            {
+                                if (type == "series") {
+                                    playScope.launch {
+                                        cloud.nalet.chino.mobile.ui.home.seriesEpisodeToPlay(container.chinoApi, item.id)
+                                            ?.let(play) ?: onItemSelected(item.id)
+                                    }
+                                } else {
+                                    play(item.id)
+                                }
+                            }
+                        },
                     )
                 }
                 // Loading sentinel, else the count at the end of the list in
@@ -304,10 +325,12 @@ private fun BrowseCard(
     baseUrl: String,
     streamToken: String,
     onClick: () -> Unit,
-    // #188: when set, the card surfaces a Mark-watched/Mark-unwatched toggle
-    // in its menu, on a long-press, the same idiom and wording as the Home
-    // rail cards (MediaCard). null leaves the menu off.
+    // #188: when set, the card surfaces the watched toggle in its menu, on
+    // a long-press, the same idiom and wording as the Home rail cards
+    // (MediaCard, CardMenu). null leaves it off.
     onToggleWatched: (() -> Unit)? = null,
+    /** The menu's "play"; null: none. */
+    onPlay: (() -> Unit)? = null,
 ) {
     // Drives the card's menu, opened by a long-press.
     var menuOpen by remember { mutableStateOf(false) }
@@ -316,7 +339,7 @@ private fun BrowseCard(
             .clip(RectangleShape)
             .background(ChinoSurface)
             .let { base ->
-                if (onToggleWatched != null) {
+                if (onToggleWatched != null || onPlay != null) {
                     base.combinedClickable(onClick = onClick, onLongClick = { menuOpen = true }, onLongClickLabel = "More options")
                 } else {
                     base.clickable(onClick = onClick)
@@ -342,28 +365,15 @@ private fun BrowseCard(
             // The card's menu - mark watched - on a long-press: nothing is
             // drawn over the artwork but its status marks (the design
             // system's title actions).
-            if (onToggleWatched != null) {
+            if (onToggleWatched != null || onPlay != null) {
                 Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)) {
-                    DropdownMenu(
+                    CardMenu(
                         expanded = menuOpen,
-                        onDismissRequest = { menuOpen = false },
-                    ) {
-                        val isWatched = item.watchedAt != null
-                        DropdownMenuItem(
-                            text = { Text(if (isWatched) "Mark as unwatched" else "Mark as watched") },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Lucide.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            },
-                            onClick = {
-                                menuOpen = false
-                                onToggleWatched()
-                            },
-                        )
-                    }
+                        onDismiss = { menuOpen = false },
+                        watched = item.watchedAt != null,
+                        onPlay = onPlay,
+                        onToggleWatched = onToggleWatched,
+                    )
                 }
             }
         }

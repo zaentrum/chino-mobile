@@ -34,6 +34,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -107,12 +109,17 @@ fun AddToListSheet(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // Its header in the mono face, lowercase, as every menu's
+            // (chino-web 039233b).
             Text(
-                text = "Add to list",
+                text = "add to list",
                 color = Color.White,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = 8.dp, bottom = 8.dp),
+                style = cloud.nalet.chino.mobile.ui.theme.ChinoMono,
+                modifier = Modifier
+                    .padding(start = 8.dp, bottom = 8.dp)
+                    .semantics { heading() },
             )
             LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
                 items(lists, key = { it.id }) { list ->

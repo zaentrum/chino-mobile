@@ -143,6 +143,15 @@ fun HomeSection(
             // plays it from its start. A series whose episode isn't known
             // yet finds it now, else opens its page (chino-web's
             // usePlayTitle).
+            // A card's menu "play": a movie or an episode plays where the
+            // player resumes it; a series its episode, else its page.
+            onPlayCard = { id, series ->
+                if (series) {
+                    model.seriesEpisode(id) { episode -> if (episode != null) onPlay(episode, false) else onItemSelected(id) }
+                } else {
+                    onPlay(id, false)
+                }
+            },
             onPlayHero = { id, startOver ->
                 val play = s.heroPlays[id]
                 when {
@@ -171,6 +180,7 @@ fun HomeSection(
 private fun ReadyContent(
     s: HomeUiState.Ready,
     onItemSelected: (String) -> Unit,
+    onPlayCard: (itemId: String, series: Boolean) -> Unit,
     onPlayHero: (itemId: String, startOver: Boolean) -> Unit,
     onTrailerHero: (String, TrailerChoice) -> Unit,
     onRemoveFromContinueWatching: (String) -> Unit,
@@ -213,6 +223,7 @@ private fun ReadyContent(
                 // #188: the watched toggle is ADDITIONAL to dismiss; both
                 // live in the same overflow menu.
                 onToggleWatched = onToggleWatched,
+                onPlay = { id -> onPlayCard(id, false) },
             )
         }
         if (s.nextUp.isNotEmpty()) {
@@ -230,6 +241,7 @@ private fun ReadyContent(
                 onRemoveFromContinueWatching = null,
                 // #188: but the watched toggle is on every card surface.
                 onToggleWatched = onToggleWatched,
+                onPlay = { id -> onPlayCard(id, false) },
             )
         }
         if (s.recentMovies.isNotEmpty()) {
@@ -241,6 +253,7 @@ private fun ReadyContent(
                 onItemClick = onItemSelected,
                 onSeeAll = onNavigateToSection?.let { nav -> { nav("movies") } },
                 onToggleWatched = onToggleWatched,
+                onPlay = { id -> onPlayCard(id, false) },
             )
         }
         if (s.recentSeries.isNotEmpty()) {
@@ -252,6 +265,7 @@ private fun ReadyContent(
                 onItemClick = onItemSelected,
                 onSeeAll = onNavigateToSection?.let { nav -> { nav("series") } },
                 onToggleWatched = onToggleWatched,
+                onPlay = { id -> onPlayCard(id, true) },
             )
         }
         if (s.topRated.isNotEmpty()) {
@@ -263,6 +277,7 @@ private fun ReadyContent(
                 onItemClick = onItemSelected,
                 onSeeAll = onNavigateToSection?.let { nav -> { nav("movies") } },
                 onToggleWatched = onToggleWatched,
+                onPlay = { id -> onPlayCard(id, false) },
             )
         }
         Box(modifier = Modifier.padding(bottom = 16.dp))
@@ -292,6 +307,9 @@ private fun ContinueWatchingShelf(
     onItemClick: (String) -> Unit,
     onRemoveFromContinueWatching: ((String) -> Unit)? = null,
     onToggleWatched: ((String) -> Unit)? = null,
+    /** A card's menu "play" - "resume" where its bar shows it was stopped
+     *  part way. */
+    onPlay: ((String) -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // MediaRow's shelf title: the web's h2, in the heading face.
@@ -344,6 +362,10 @@ private fun ContinueWatchingShelf(
                         cardWidth = cardWidth,
                         onRemoveFromContinueWatching = onRemoveFromContinueWatching?.let { cb -> { cb(cw.id) } },
                         onToggleWatched = onToggleWatched?.let { cb -> { cb(cw.id) } },
+                        onPlay = onPlay?.let { cb -> { cb(cw.id) } },
+                        // "resume" where the player resumes it, as its bar shows.
+                        resumes = showProgress && !cw.upNext &&
+                            cloud.nalet.chino.mobile.ui.detail.resumesAt(cw.positionSec, cw.durationSec.toDouble()),
                     )
                 }
             }
