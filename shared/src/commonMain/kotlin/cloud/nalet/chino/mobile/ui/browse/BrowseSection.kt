@@ -41,6 +41,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -72,6 +73,9 @@ import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cloud.nalet.chino.mobile.data.AppContainer
+import cloud.nalet.chino.mobile.data.downloads.Reach
+import cloud.nalet.chino.mobile.ui.downloads.InformationBanner
+import cloud.nalet.chino.mobile.ui.downloads.unreachableBanner
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.theme.PosterImage
 import com.composables.icons.lucide.Check
@@ -155,7 +159,67 @@ fun BrowseSection(
     }
     LaunchedEffect(shouldLoadMore) { if (shouldLoadMore) model.loadMore() }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    // The server gone - found by this grid's own ask or by any other - the
+    // banner over the list the phone has; back, the list asked again where
+    // it is the one the phone knew.
+    val reach by container.serverReach.state.collectAsState()
+    val offline = state.offline || reach == Reach.Unreachable
+    LaunchedEffect(reach, state.offline) { if (state.offline && reach == Reach.Reachable) model.refresh() }
+
+    BrowseContent(
+        state = state,
+        pageTitle = pageTitle,
+        banner = unreachableBanner(container, offline),
+        gridState = gridState,
+        awaitingTitles = awaitingTitles,
+        onFilter = { q ->
+            filter = q
+            model.setFilter(q)
+        },
+        onRetry = model::retry,
+        onRetryLoadMore = model::retryLoadMore,
+        onItemSelected = onItemSelected,
+        onToggleWatched = model::toggleWatched,
+        // A movie plays itself; a series its episode, else its page opens
+        // (chino-web's usePlayTitle).
+        onPlay = onPlay?.let { play ->
+            { id ->
+                if (type == "series") {
+                    playScope.launch {
+                        cloud.nalet.chino.mobile.ui.home.seriesEpisodeToPlay(container.chinoApi, id)
+                            ?.let(play) ?: onItemSelected(id)
+                    }
+                } else {
+                    play(id)
+                }
+            }
+        },
+    )
+}
+
+/**
+ * The grid of [state]: its heading, the filters, the titles; where the
+ * server can't be reached, the information [banner] above it all, fixed
+ * under the top bar as on a title's page - the grid scrolls under it, the
+ * banner stays - and a couldn't-load under it says no reason of its own.
+ */
+@Composable
+internal fun BrowseContent(
+    state: BrowseUiState,
+    pageTitle: String,
+    banner: String?,
+    gridState: LazyGridState,
+    awaitingTitles: Boolean = false,
+    onFilter: (BrowseQuery) -> Unit,
+    onRetry: () -> Unit,
+    onRetryLoadMore: () -> Unit,
+    onItemSelected: (String) -> Unit,
+    onToggleWatched: (String) -> Unit,
+    onPlay: ((itemId: String) -> Unit)?,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+    banner?.let { InformationBanner(it, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)) }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
     // Column count tuned so the grid posters track the Home shelf card size
     // (small, ~3-across on a phone, scaling up on wider screens) instead of
     // 2 oversized columns. 16dp padding/gap matches the Home rows.
@@ -198,10 +262,7 @@ fun BrowseSection(
             BrowseFilters(
                 value = state.filter,
                 genres = state.genres,
-                onChange = { q ->
-                    filter = q
-                    model.setFilter(q)
-                },
+                onChange = onFilter,
             )
         }
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -219,8 +280,10 @@ fun BrowseSection(
                     title = couldntLoadTitle(pageTitle),
                     failure = failure,
                     details = state.errorDetails,
-                    onTryAgain = model::retry,
+                    onTryAgain = onRetry,
                     modifier = Modifier.padding(vertical = 32.dp),
+                    // "Can't reach the server." once: the banner says it.
+                    saysWhy = browseSaysWhy(failure, offline = banner != null),
                 )
             }
             state.items.isEmpty() && state.loading -> item(span = { GridItemSpan(maxLineSpan) }) {
@@ -247,21 +310,8 @@ fun BrowseSection(
                         onClick = { onItemSelected(item.id) },
                         // #188: mark-watched/unwatched from the card overflow
                         // menu — flips the green ✓ badge optimistically.
-                        onToggleWatched = { model.toggleWatched(item.id) },
-                        // A movie plays itself; a series its episode, else
-                        // its page opens (chino-web's usePlayTitle).
-                        onPlay = onPlay?.let { play ->
-                            {
-                                if (type == "series") {
-                                    playScope.launch {
-                                        cloud.nalet.chino.mobile.ui.home.seriesEpisodeToPlay(container.chinoApi, item.id)
-                                            ?.let(play) ?: onItemSelected(item.id)
-                                    }
-                                } else {
-                                    play(item.id)
-                                }
-                            }
-                        },
+                        onToggleWatched = { onToggleWatched(item.id) },
+                        onPlay = onPlay?.let { play -> { play(item.id) } },
                     )
                 }
                 // Loading sentinel, else the count at the end of the list in
@@ -288,7 +338,7 @@ fun BrowseSection(
                                     style = cloud.nalet.chino.mobile.ui.theme.ChinoMono,
                                     modifier = Modifier
                                         .heightIn(min = 48.dp)
-                                        .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = model::retryLoadMore)
+                                        .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onRetryLoadMore)
                                         .padding(horizontal = 8.dp, vertical = 14.dp),
                                 )
                             }
@@ -305,6 +355,7 @@ fun BrowseSection(
                 }
             }
         }
+    }
     }
     }
 }

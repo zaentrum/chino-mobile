@@ -5,7 +5,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.LoadFailure
 import cloud.nalet.chino.mobile.data.api.loadFailure
-import cloud.nalet.chino.mobile.data.api.loadDetails
+import cloud.nalet.chino.mobile.data.downloads.Reach
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.paging.Paged
 import cloud.nalet.chino.mobile.data.paging.loadFirstPages
@@ -13,6 +13,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
@@ -35,6 +36,9 @@ data class BrowseUiState(
     val error: LoadFailure? = null,
     /** What separates the cases, under "details": the answer's status. */
     val errorDetails: String? = null,
+    /** The server can't be reached: the grid is the list the phone knows
+     *  for its filter ([KnownBrowse]), under the banner. */
+    val offline: Boolean = false,
 ) {
     val items: List<Item> get() = paged.items
 
@@ -72,13 +76,25 @@ class BrowseScreenModel(
 
     init {
         screenModelScope.launch {
-            val genres = runCatching { container.chinoApi.listGenres().genres }.getOrDefault(emptyList())
+            val owner = owner()
+            // The genres the server gave last where it doesn't answer: the
+            // chips stay as they were.
+            val genres = attempt { container.chinoApi.listGenres().genres }
+                .onSuccess { KnownBrowse.putGenres(owner, it) }
+                .getOrElse { KnownBrowse.genres(owner).orEmpty() }
             val baseUrl = container.config.apiBaseUrl.trimEnd('/')
-            val streamToken = runCatching { container.streamTokenManager.valid() }.getOrDefault("")
+            // Minted again without an answer: the token the posters on the
+            // phone are signed with.
+            val streamToken = attempt { container.streamTokenManager.valid() }
+                .getOrElse { container.streamTokenManager.current.value.orEmpty() }
             _state.update { it.copy(genres = genres, baseUrl = baseUrl, streamToken = streamToken) }
         }
         reload(_state.value.filter, rows = initialRows)
     }
+
+    /** The grids' lists are kept per server and account ([KnownBrowse]). */
+    private suspend fun owner(): String =
+        container.config.apiBaseUrl + "|" + (container.accountStore.activeAccountId.first() ?: "")
 
     fun setFilter(q: BrowseQuery) {
         if (q == _state.value.filter) return
@@ -109,6 +125,11 @@ class BrowseScreenModel(
                     onFailure = { current.copy(loading = false, loadMoreFailed = true) },
                 )
             }
+            val now = _state.value
+            page.onSuccess { if (now.filter == filter) KnownBrowse.putList(owner(), type, filter, now.paged) }
+            // A page without an answer: the server asked, so the banner and
+            // the bell follow where it is gone.
+            page.onFailure { e -> if (e.loadFailure(singleThing = false) == LoadFailure.NoAnswer) container.serverReach.check() }
         }
     }
 
@@ -120,6 +141,14 @@ class BrowseScreenModel(
 
     /** Retry after the first page failed: the same filter, from the start. */
     fun retry() = reload(_state.value.filter)
+
+    /** The server answers again while the grid is the list the phone knows:
+     *  the same filter asked again, as many rows as it shows, the list on
+     *  screen until the new one is in. */
+    fun refresh() {
+        val s = _state.value
+        reload(s.filter, rows = s.items.size, keepShown = true)
+    }
 
     /**
      * #188: toggle the fully-watched flag for a grid item from its card
@@ -152,26 +181,39 @@ class BrowseScreenModel(
     }
 
     /** From the first page with the filters [q]; [rows] > 0 asks for the
-     *  pages after it too, until that many are in (loadFirstPages). */
-    private fun reload(q: BrowseQuery, rows: Int = 0) {
+     *  pages after it too, until that many are in (loadFirstPages). Where
+     *  the server can't be reached, the list the phone knows for [q]
+     *  ([browseFirstLoad]). [keepShown]: the list on screen stays until the
+     *  new one is in, and a failure leaves it as it is. */
+    private fun reload(q: BrowseQuery, rows: Int = 0, keepShown: Boolean = false) {
         loadJob?.cancel()
         _state.update {
-            it.copy(filter = q, paged = Paged(), loading = true, loadMoreFailed = false, error = null)
+            if (keepShown) it.copy(filter = q, loading = true)
+            else it.copy(filter = q, paged = Paged(), loading = true, loadMoreFailed = false, error = null, offline = false)
         }
         loadJob = screenModelScope.launch {
             val pages = attempt { loadFirstPages(rows, pageSize, Item::id) { offset -> fetchPage(q, offset) } }
+            val owner = owner()
+            pages.onSuccess { KnownBrowse.putList(owner, type, q, it.paged) }
+            val load = browseFirstLoad(
+                pages,
+                known = KnownBrowse.list(owner, type, q),
+                // The server asked, as the app's other requests do: the
+                // banner and the bell follow from its answer.
+                reachable = { container.serverReach.check() == Reach.Reachable },
+            )
             _state.update { current ->
                 if (current.filter != q) return@update current
-                pages.fold(
-                    onSuccess = { first ->
-                        current.copy(
-                            paged = first.paged,
-                            loading = false,
-                            loadMoreFailed = first.laterPageFailed,
-                            error = null,
-                        )
-                    },
-                    onFailure = { e -> current.copy(loading = false, error = e.loadFailure(singleThing = false), errorDetails = e.loadDetails()) },
+                if (keepShown && load.error != null && current.items.isNotEmpty()) {
+                    return@update current.copy(loading = false, offline = load.offline)
+                }
+                current.copy(
+                    paged = load.paged,
+                    loading = false,
+                    loadMoreFailed = load.laterPageFailed,
+                    error = load.error,
+                    errorDetails = load.errorDetails,
+                    offline = load.offline,
                 )
             }
         }

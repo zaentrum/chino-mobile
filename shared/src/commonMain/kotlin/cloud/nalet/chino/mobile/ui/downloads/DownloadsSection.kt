@@ -53,10 +53,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.LocalAppContainer
+import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.downloads.DELETE_ALL_TITLE
 import cloud.nalet.chino.mobile.data.downloads.DeletedNotice
 import cloud.nalet.chino.mobile.data.downloads.DownloadEntry
 import cloud.nalet.chino.mobile.data.downloads.DownloadStatus
+import kotlinx.coroutines.flow.MutableStateFlow
 import cloud.nalet.chino.mobile.data.downloads.Downloads
 import cloud.nalet.chino.mobile.data.downloads.EMPTY_SENTENCE
 import cloud.nalet.chino.mobile.data.downloads.EMPTY_TITLE
@@ -370,6 +372,19 @@ private fun EmptyDownloads() {
         )
         Text(text = EMPTY_SENTENCE, color = ChinoMuted, fontSize = 14.sp, textAlign = TextAlign.Center)
     }
+}
+
+/**
+ * What the banner of a screen that needs the server says while it can't be
+ * reached ([offline]) - Home, Movies, Shows: "Can't reach the server. Your
+ * downloads still play." where one plays, else "Can't reach the server.",
+ * as the downloads screen says it; null while it answers.
+ */
+@Composable
+internal fun unreachableBanner(container: AppContainer, offline: Boolean): String? {
+    val downloads by remember(container) { container.downloads?.entries ?: MutableStateFlow(emptyList()) }.collectAsState()
+    if (!offline) return null
+    return if (downloads.any { it.status is DownloadStatus.Downloaded }) UNREACHABLE_BANNER else UNREACHABLE_BANNER_NOTHING
 }
 
 /**

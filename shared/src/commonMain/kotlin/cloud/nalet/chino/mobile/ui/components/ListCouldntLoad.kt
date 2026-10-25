@@ -19,7 +19,8 @@ import cloud.nalet.chino.mobile.ui.auth.AuthScreen
  *  - no access (403): "you don't have access to this", nothing under it -
  *    the shell's tabs are the way on;
  *  - else what couldn't load ([title], in the screen's own words), the
- *    reason, and "try again"; the status under details.
+ *    reason - not where a banner above already says it ([saysWhy] false) -
+ *    and "try again"; the status under details.
  */
 @Composable
 fun ListCouldntLoad(
@@ -28,6 +29,7 @@ fun ListCouldntLoad(
     details: String?,
     onTryAgain: () -> Unit,
     modifier: Modifier = Modifier,
+    saysWhy: Boolean = true,
 ) {
     when (failure) {
         LoadFailure.SignedOut -> {
@@ -44,7 +46,7 @@ fun ListCouldntLoad(
         )
         else -> CouldntLoad(
             title = title,
-            sentence = failure.sentence(),
+            sentence = if (saysWhy) failure.sentence() else null,
             action = "try again",
             onAction = onTryAgain,
             modifier = modifier,
