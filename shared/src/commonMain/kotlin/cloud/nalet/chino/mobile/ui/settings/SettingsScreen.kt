@@ -241,12 +241,11 @@ fun SettingsSection() {
             // audio language; the player auto-picks the closest matching
             // track on first load. "Original" follows the item's source
             // language. Manual switches in the player menu only affect the
-            // current playback. Mirrors chino-web's Audio section.
+            // current playback.
             SectionHeading("Audio")
             Text(
-                text = "Default audio language. Picks the closest matching track on each item. " +
-                    "Choose Original to follow the item's source language. Manual switches in the " +
-                    "player only affect the current playback.",
+                // docs/chino playback, "The audio setting": the same in every app.
+                text = AUDIO_SETTING_TEXT,
                 color = ChinoMuted,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 4.dp),
@@ -261,9 +260,7 @@ fun SettingsSection() {
             SectionHeading("Subtitles")
             Text(
                 // docs/chino subtitles, "The setting": the same in every app.
-                text = "Subtitles in the language you pick here come on when a title's audio is in another language. " +
-                    "Otherwise, only the foreign-language parts get subtitles, where a title has them. " +
-                    "A choice in the player applies only to what's playing now.",
+                text = SUBTITLE_SETTING_TEXT,
                 color = ChinoMuted,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 4.dp),
@@ -313,6 +310,20 @@ fun SettingsSection() {
         }
     }
 }
+
+/** The text under the audio setting, word for word as docs/chino playback
+ *  ("The audio setting") gives it for every app. */
+internal const val AUDIO_SETTING_TEXT =
+    "Titles play with audio in the language you pick here, where they have it. " +
+        "With Original, each title plays in the language it was made in. " +
+        "A choice in the player applies only to what's playing now."
+
+/** The text under the subtitle setting, word for word as docs/chino
+ *  subtitles ("The setting") gives it for every app. */
+internal const val SUBTITLE_SETTING_TEXT =
+    "Subtitles in the language you pick here come on when a title's audio is in another language. " +
+        "Otherwise, only the foreign-language parts get subtitles, where a title has them. " +
+        "A choice in the player applies only to what's playing now."
 
 /** Holder for the pre-captured screenshot while the dialog is open. Plain
  *  class on purpose — a data class would lint on ByteArray equals/hashCode. */
