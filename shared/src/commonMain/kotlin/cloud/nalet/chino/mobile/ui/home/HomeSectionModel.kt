@@ -13,6 +13,7 @@ import cloud.nalet.chino.mobile.data.api.loadDetails
 import cloud.nalet.chino.mobile.data.api.loadFailure
 import cloud.nalet.chino.mobile.data.api.sentence
 import cloud.nalet.chino.mobile.data.api.signInRefused
+import cloud.nalet.chino.mobile.data.downloads.Reach
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -43,8 +44,8 @@ sealed interface HomeUiState {
          *  0:58" and "start over", "play S01E01"; none where it is not known
          *  yet - "play", which finds the episode when pressed. */
         val heroPlays: Map<String, HeroPlay> = emptyMap(),
-        /** The server didn't answer: the rows are what the phone knows from
-         *  before ([KnownHome]), under the banner. */
+        /** The server can't be reached: the rows are what the phone knows
+         *  from before ([KnownHome]), under the banner ([homeLoad]). */
         val offline: Boolean = false,
         /** Continue watching couldn't load, and the phone knows none of it:
          *  its couldn't-load line in its place, never nothing. */
@@ -290,12 +291,14 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                         known,
                         playedHere,
                         lastToken = container.streamTokenManager.current.value,
+                        // One row without an answer among answers: the
+                        // server asked, as the app's other requests do.
+                        reachable = { container.serverReach.check() == Reach.Reachable },
                     )
                     val view = load.view
                     KnownHome.put(key, view.toKeep)
-                    // No answer: the whole app hears the server can't be
-                    // reached - the banner, the bell gone - as on its other
-                    // screens.
+                    // The server can't be reached: the whole app hears it -
+                    // the banner, the bell gone - as on its other screens.
                     if (view.offline) container.serverReach.report(answered = false)
                     val pool = heroDef.await()
                     // Asked again each load; where an ask fails, the seasons

@@ -37,6 +37,9 @@ class HomeOfflineTest {
 
     private val known = KnownRows(feed = listOf(film, episode), recentMovies = movies, recentSeries = emptyList(), topRated = emptyList())
 
+    /** Where every row had its answer, or none did, the server is not asked. */
+    private val notAsked: suspend () -> Boolean = { error("the server asked") }
+
     @Test
     fun theServerAnswersTheRowsAsItGaveThemNoBanner() {
         val view = homeView(answered(listOf(film, episode)), answered(movies), answered(emptyList()), answered(emptyList()), known = null)
@@ -121,7 +124,7 @@ class HomeOfflineTest {
         clockMs += StreamTokenManager.TOKEN_LIFE_MS - StreamTokenManager.SLACK_MS
         val token = ask { tokens.valid() }
         assertTrue(token.failure is IOException)
-        val load = homeLoad(failed(noAnswer), failed(noAnswer), failed(noAnswer), failed(noAnswer), token, known, lastToken = tokens.current.value)
+        val load = homeLoad(failed(noAnswer), failed(noAnswer), failed(noAnswer), failed(noAnswer), token, known, lastToken = tokens.current.value, reachable = notAsked)
         // The banner, the rows the phone knows, the hero that resumes.
         assertTrue(load.view.offline)
         assertEquals(listOf(film), load.view.continueWatching)
@@ -130,14 +133,48 @@ class HomeOfflineTest {
         // Signed with the token the posters on screen have.
         assertEquals("t-morning", load.streamToken)
         // The mint alone without an answer: the rows as the server gave them.
-        val rows = homeLoad(answered(listOf(film)), answered(movies), answered(emptyList()), answered(emptyList()), token, known = null)
+        val rows = homeLoad(answered(listOf(film)), answered(movies), answered(emptyList()), answered(emptyList()), token, known = null, reachable = notAsked)
         assertFalse(rows.view.offline)
         assertEquals(movies, rows.view.recentMovies)
         assertEquals("", rows.streamToken)
         // A sign-in the server refuses on the mint: Home's own page for it.
         val refused = failed<String>(ApiStatusException(401, "/api/v1/me/stream-token"))
-        val thrown = assertFailsWith<ApiStatusException> { homeLoad(failed(noAnswer), failed(noAnswer), failed(noAnswer), failed(noAnswer), refused, known) }
+        val thrown = assertFailsWith<ApiStatusException> { homeLoad(failed(noAnswer), failed(noAnswer), failed(noAnswer), failed(noAnswer), refused, known, reachable = notAsked) }
         assertEquals(401, thrown.status)
+    }
+
+    @Test
+    fun oneSlowRowAmongAnswersIsNoWordOnTheServerItIsAskedNoBannerWhereItAnswers() = runTest {
+        val topRated = listOf(Item(id = "m3", title = "Long Shadows", kind = "movie"))
+        val known = known.copy(topRated = topRated)
+        // The top-rated query alone too slow (a socket timeout is no answer),
+        // the other three answered: the server asked, and it answers.
+        var asked = 0
+        val slow = homeLoad(
+            answered(listOf(film)), answered(movies), answered(emptyList()), failed(noAnswer), answered("t"), known,
+            reachable = { asked++; true },
+        )
+        assertEquals(1, asked)
+        assertFalse(slow.view.offline)
+        // The row as the phone knows it, nothing said.
+        assertEquals(topRated, slow.view.topRated)
+        assertEquals(listOf(film), slow.view.continueWatching)
+        assertNull(slow.view.continueWatchingFailed)
+        // Continue watching the one without an answer, and nothing known of
+        // it: it says it couldn't load, with its own reason - no banner.
+        val feedSlow = homeLoad(failed(noAnswer), answered(movies), answered(emptyList()), answered(emptyList()), answered("t"), null, reachable = { true })
+        assertFalse(feedSlow.view.offline)
+        assertEquals(ShelfFailure(sentence = "Can't reach the server.", details = "no answer"), feedSlow.view.continueWatchingFailed)
+        // The server asked doesn't answer either: offline, the banner.
+        val gone = homeLoad(answered(listOf(film)), answered(movies), answered(emptyList()), failed(noAnswer), answered("t"), known, reachable = { false })
+        assertTrue(gone.view.offline)
+        // A status is an answer: a 500 beside a row without one is the
+        // server there, asked too.
+        assertEquals(HomeReach.Unsure, homeReach(failed<Int>(ApiStatusException(500, "/api/v1/items")), failed<Int>(noAnswer)))
+        assertEquals(HomeReach.NoAnswer, homeReach(failed<Int>(noAnswer), failed<Int>(noAnswer)))
+        assertEquals(HomeReach.Answered, homeReach(answered(1), failed<Int>(ApiStatusException(500, "/api/v1/items"))))
+        // Every row without an answer: offline at once, the server not asked.
+        assertTrue(homeLoad(failed(noAnswer), failed(noAnswer), failed(noAnswer), failed(noAnswer), answered("t"), known, reachable = notAsked).view.offline)
     }
 
     @Test

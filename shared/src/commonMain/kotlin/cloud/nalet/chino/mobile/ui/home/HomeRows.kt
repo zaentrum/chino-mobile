@@ -54,6 +54,29 @@ internal object KnownHome {
  *  reached - and what tells the cases apart, under details. */
 data class ShelfFailure(val sentence: String?, val details: String?)
 
+/** What one load's row asks say of the server ([homeReach]). */
+internal enum class HomeReach {
+    /** Each had its answer: rows, or a status. */
+    Answered,
+
+    /** None had an answer: the server can't be reached. */
+    NoAnswer,
+
+    /** One went without an answer where others had theirs - too slow, or
+     *  dropped on its way: by itself no word on the server, which is asked
+     *  ([cloud.nalet.chino.mobile.data.downloads.ServerReach.check]). */
+    Unsure,
+}
+
+/** What Home's row asks say of the server: one with an answer - its rows,
+ *  or a status (a 500 is the server answering) - says it is there. */
+internal fun homeReach(vararg asks: Asked<*>): HomeReach =
+    when (asks.count { it.failure?.loadFailure(singleThing = false) == LoadFailure.NoAnswer }) {
+        0 -> HomeReach.Answered
+        asks.size -> HomeReach.NoAnswer
+        else -> HomeReach.Unsure
+    }
+
 /** What Home shows of one load ([homeView]). */
 internal data class HomeView(
     val continueWatching: List<ContinueWatchingItem>,
@@ -61,8 +84,8 @@ internal data class HomeView(
     val recentMovies: List<Item>,
     val recentSeries: List<Item>,
     val topRated: List<Item>,
-    /** The server didn't answer: Home shows what the phone knows, under the
-     *  banner, and the app hears the server can't be reached. */
+    /** The server can't be reached: Home shows what the phone knows, under
+     *  the banner, and the app hears it. */
     val offline: Boolean,
     /** Continue watching couldn't load and the phone knows none of it. */
     val continueWatchingFailed: ShelfFailure?,
@@ -78,8 +101,9 @@ internal data class HomeView(
  * title), so a partly watched title still resumes - and a row it never knew,
  * empty. Continue watching never goes silently: where the phone knows
  * none of it, it couldn't load, with the reason ([ShelfFailure]). [offline]
- * where a row had no answer at all, as the design system's banner says it
- * for a list still on the screen.
+ * where the server can't be reached - by default where no row had an answer
+ * ([homeReach]) - as the design system's banner says it for a list still on
+ * the screen; one row without an answer among answers is that row's alone.
  */
 internal fun homeView(
     feed: Asked<List<ContinueWatchingItem>>,
@@ -88,9 +112,8 @@ internal fun homeView(
     topRated: Asked<List<Item>>,
     known: KnownRows?,
     playedHere: Map<String, Int> = emptyMap(),
+    offline: Boolean = homeReach(feed, recentMovies, recentSeries, topRated) == HomeReach.NoAnswer,
 ): HomeView {
-    val failures = listOfNotNull(feed.failure, recentMovies.failure, recentSeries.failure, topRated.failure)
-    val offline = failures.any { it.loadFailure(singleThing = false) == LoadFailure.NoAnswer }
     val shownFeed = feed.value ?: known?.feed?.map { row -> playedHere[row.id]?.let { row.copy(positionSec = it) } ?: row }
     val failed = feed.failure?.takeIf { shownFeed == null }?.let { e ->
         ShelfFailure(
@@ -126,8 +149,13 @@ internal class HomeLoad(val view: HomeView, val streamToken: String)
  * shows): a mint that had no answer is one ask more that didn't, never the
  * whole page gone. A sign-in the server refuses on the mint (a 401 or 403)
  * is thrown, for Home's own page for it with its ways on.
+ *
+ * Offline - the banner, and the app hearing the server can't be reached -
+ * where no row had an answer; where one went without among answers, only
+ * if the server, asked now ([reachable]), doesn't answer either: a slow
+ * query or a dropped request is no word on the server.
  */
-internal fun homeLoad(
+internal suspend fun homeLoad(
     feed: Asked<List<ContinueWatchingItem>>,
     recentMovies: Asked<List<Item>>,
     recentSeries: Asked<List<Item>>,
@@ -136,10 +164,16 @@ internal fun homeLoad(
     known: KnownRows?,
     playedHere: Map<String, Int> = emptyMap(),
     lastToken: String? = null,
+    reachable: suspend () -> Boolean,
 ): HomeLoad {
     token.failure?.takeIf { it.signInRefused }?.let { throw it }
+    val offline = when (homeReach(feed, recentMovies, recentSeries, topRated)) {
+        HomeReach.Answered -> false
+        HomeReach.NoAnswer -> true
+        HomeReach.Unsure -> !reachable()
+    }
     return HomeLoad(
-        view = homeView(feed, recentMovies, recentSeries, topRated, known, playedHere),
+        view = homeView(feed, recentMovies, recentSeries, topRated, known, playedHere, offline),
         streamToken = token.value ?: lastToken.orEmpty(),
     )
 }
