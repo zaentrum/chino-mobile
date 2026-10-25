@@ -431,6 +431,18 @@ class SubtitleMenuTest {
         assertEquals(listOf("emb-2" to "English"), many.top.map { it.id to it.label })
         // Two sidecars alone: the first.
         assertEquals(listOf("side-1"), menu(listOf(S("side-1", "en"), S("side-2", "en"))).top.map { it.id })
+        // A title that only cuts the region short reads as its untitled twin:
+        // once, the file's own.
+        val cutShort = listOf(
+            S("emb-2", "es-419", embedded = true),
+            S("emb-3", "es-419", "LAT", embedded = true),
+            S("emb-4", "pt-BR", "BR", embedded = true),
+            S("side-pt", "pt-BR"),
+        )
+        assertEquals(
+            listOf("emb-4" to "Portuguese (Brazil)", "emb-2" to "Spanish (Latin America)"),
+            entries(menu(cutShort, serverLanguages = emptyList())).map { it.id to it.label },
+        )
     }
 
     @Test

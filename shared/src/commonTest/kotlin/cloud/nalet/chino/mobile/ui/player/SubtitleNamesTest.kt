@@ -368,8 +368,19 @@ class SubtitleNamesTest {
             listOf("Thai · AI", "Ukrainian · AI", "Haitian Creole · AI"),
             subtitleLabels(listOf(t("tha", "AI"), t("ukr", "AI"), t("hat", "AI"))),
         )
+        // Nor the start of a word: "AI" begins "Ainu", but a made track says so.
+        assertEquals("Ainu · AI", name("ain", "AI"))
         // A word of the name still says it: "English" on a British track.
         assertEquals("English (United Kingdom)", name("en-GB", "English"))
+        // And so does the start of one, the region or the script cut short:
+        // the track reads as its untitled twin with the same tag, and shows
+        // once.
+        assertEquals(
+            listOf("Spanish (Latin America)", "Portuguese (Brazil)", "Chinese (Traditional)", "Spanish (Latin America)", "Portuguese"),
+            subtitleLabels(listOf(t("es-419", "LAT"), t("pt-BR", "BR"), t("zh-Hant", "Trad"), t("es-419", "Español LAT"), t("por", "Port"))),
+        )
+        // A code title that only repeats the language: "NO" on a Bokmål track.
+        assertEquals(listOf("Norwegian Bokmål", "Norwegian Bokmål"), subtitleLabels(listOf(t("nb", "NO"), t("nob", "NO"))))
     }
 
     @Test

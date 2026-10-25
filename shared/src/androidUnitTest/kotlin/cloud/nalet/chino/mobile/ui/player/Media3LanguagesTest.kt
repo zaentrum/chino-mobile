@@ -19,6 +19,9 @@ class Media3LanguagesTest {
         assertEquals("no-nob", lang)
         assertEquals("Norwegian Bokmål", subtitleLabel(SubtitleLabelInput(lang, "NB")))
         assertEquals("nb", subtitleLanguage(lang, "NB"))
+        // "NO" only repeats the language too, and "BR" the region.
+        assertEquals("Norwegian Bokmål", subtitleLabel(SubtitleLabelInput(lang, "NO")))
+        assertEquals("Portuguese (Brazil)", subtitleLabel(SubtitleLabelInput(asMedia3Gives("pt-BR"), "BR")))
     }
 
     @Test

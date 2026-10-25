@@ -837,16 +837,15 @@ private fun readTitle(title: String, code: String?): Pair<String?, String> {
 fun subtitleLanguage(lang: String?, title: String?): String =
     languageTag(readTitle(titleWithoutKind(title?.trim().orEmpty()), lang).first)
 
-/** Whether [words] stand in [text] as words of their own, not letters
- *  inside a word: "english" in "english (united kingdom)", not "ai" in
- *  "thai". chino-web's hasWords. */
-private fun hasWords(text: String, words: String): Boolean {
+/** Whether [words] stand in [text] from the start of a word of it, whole or
+ *  its first letters: "english" in "english (united kingdom)", "br" in
+ *  "portuguese (brazil)", "trad" in "chinese (traditional)" - not letters
+ *  inside a word, "ai" in "thai". chino-web's startsWord. */
+private fun startsWord(text: String, words: String): Boolean {
     if (words.isEmpty()) return false
     var i = text.indexOf(words)
     while (i >= 0) {
-        val before = text.getOrNull(i - 1)
-        val after = text.getOrNull(i + words.length)
-        if (before?.isLetterOrDigit() != true && after?.isLetterOrDigit() != true) return true
+        if (text.getOrNull(i - 1)?.isLetterOrDigit() != true) return true
         i = text.indexOf(words, i + 1)
     }
     return false
@@ -859,8 +858,10 @@ private fun hasWords(text: String, words: String): Boolean {
  * ("Chinese (Traditional)" for "繁體中文", "Spanish (Latin America)" for
  * "Español (Latinoamérica)"); the track's own title where it says more than
  * that ("English · Commentary", "German · AI", "Chinese · Cantonese") - not
- * the words of it that only name the language again, in any language
- * ("Deutsch", "中文") - or alone for a track tagged with no language, else
+ * the words of it that only name the language again, in any language or
+ * cut short ("Deutsch", "中文", "BR" on Brazilian Portuguese, "Trad" on
+ * Traditional Chinese, "NO" on Norwegian Bokmål) - or alone for a track
+ * tagged with no language, else
  * "Unknown"; then its kind in words - "foreign-language parts only" for a
  * forced one, "for deaf and hard of hearing" for one with sound described,
  * both in that order. A title that says the kind itself ("English SDH",
@@ -878,10 +879,12 @@ fun subtitleLabel(track: SubtitleLabelInput): String {
         title.isEmpty() || lower == name.lowercase() || namesLanguage(title, lang) -> name
         !hasLanguage(lang) -> title
         lower.contains(name.lowercase()) -> title
-        // "English" on a British English track: the name says it already -
-        // as words of it, not letters inside one ("AI" on a Thai track is
-        // no "Thai").
-        hasWords(name.lowercase(), lower) -> name
+        // "English" on a British English track, "BR" on a Brazilian one,
+        // "Trad" on a Traditional Chinese one: the name says it already -
+        // from the start of a word of it, not letters inside one ("AI" on a
+        // Thai track is no "Thai"). A title that says the platform made the
+        // track always stays ("AI" on an Ainu one).
+        !isAiSubtitle(title) && startsWord(name.lowercase(), lower) -> name
         else -> "$name · $title"
     }
     val kinds = listOfNotNull(FORCED_SUBTITLE_KIND.takeIf { forced }, SDH_SUBTITLE_KIND.takeIf { sdh })
