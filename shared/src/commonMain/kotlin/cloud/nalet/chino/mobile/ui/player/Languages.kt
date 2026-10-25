@@ -823,6 +823,21 @@ private fun readTitle(title: String, code: String?): Pair<String?, String> {
 fun subtitleLanguage(lang: String?, title: String?): String =
     languageTag(readTitle(titleWithoutKind(title?.trim().orEmpty()), lang).first)
 
+/** Whether [words] stand in [text] as words of their own, not letters
+ *  inside a word: "english" in "english (united kingdom)", not "ai" in
+ *  "thai". chino-web's hasWords. */
+private fun hasWords(text: String, words: String): Boolean {
+    if (words.isEmpty()) return false
+    var i = text.indexOf(words)
+    while (i >= 0) {
+        val before = text.getOrNull(i - 1)
+        val after = text.getOrNull(i + words.length)
+        if (before?.isLetterOrDigit() != true && after?.isLetterOrDigit() != true) return true
+        i = text.indexOf(words, i + 1)
+    }
+    return false
+}
+
 /**
  * One subtitle's label: the language's name, its script or region in it
  * ("German", "Chinese (Simplified)", "No dialogue" for zxx) - a script or a
@@ -849,8 +864,10 @@ fun subtitleLabel(track: SubtitleLabelInput): String {
         title.isEmpty() || lower == name.lowercase() || namesLanguage(title, lang) -> name
         !hasLanguage(lang) -> title
         lower.contains(name.lowercase()) -> title
-        // "English" on a British English track: the name says it already.
-        name.lowercase().contains(lower) -> name
+        // "English" on a British English track: the name says it already -
+        // as words of it, not letters inside one ("AI" on a Thai track is
+        // no "Thai").
+        hasWords(name.lowercase(), lower) -> name
         else -> "$name · $title"
     }
     val kinds = listOfNotNull(FORCED_SUBTITLE_KIND.takeIf { forced }, SDH_SUBTITLE_KIND.takeIf { sdh })

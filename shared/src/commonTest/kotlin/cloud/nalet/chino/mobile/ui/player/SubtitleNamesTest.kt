@@ -362,6 +362,14 @@ class SubtitleNamesTest {
             listOf("German · AI", "English · AI", "Chinese (Simplified) · AI"),
             subtitleLabels(listOf(t("de", "AI"), t("en", "AI"), t("zh-Hans", "AI"))),
         )
+        // In a language whose name has the letters inside it, too: "AI" is
+        // no word of "Thai" or "Ukrainian".
+        assertEquals(
+            listOf("Thai · AI", "Ukrainian · AI", "Haitian Creole · AI"),
+            subtitleLabels(listOf(t("tha", "AI"), t("ukr", "AI"), t("hat", "AI"))),
+        )
+        // A word of the name still says it: "English" on a British track.
+        assertEquals("English (United Kingdom)", name("en-GB", "English"))
     }
 
     @Test
