@@ -376,8 +376,10 @@ internal fun SectionHeading(text: String) {
     )
 }
 
+/** A row that opens or does something: its label, a line under it, and
+ *  the chevron icon every screen draws. */
 @Composable
-private fun ActionRow(
+internal fun ActionRow(
     label: String,
     subtitle: String,
     /** A row that deletes something: its label in the destructive red. */
