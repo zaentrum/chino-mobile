@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.ChevronRight
 import com.composables.icons.lucide.Lucide
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -396,7 +397,8 @@ private fun ActionRow(
             Text(text = label, color = if (destructive) ChinoRed else Color.White, fontSize = 14.sp)
             Text(text = subtitle, color = ChinoMuted, fontSize = 12.sp)
         }
-        Text(text = ">", color = ChinoMuted, fontSize = 16.sp)
+        // The chevron every other screen draws, an icon - not a typed ">".
+        Icon(imageVector = Lucide.ChevronRight, contentDescription = null, tint = ChinoMuted, modifier = Modifier.size(20.dp))
     }
 }
 
