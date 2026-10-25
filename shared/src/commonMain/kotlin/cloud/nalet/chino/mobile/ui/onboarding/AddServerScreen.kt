@@ -69,6 +69,7 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.LocalAppRestart
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
+import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
 import cloud.nalet.chino.mobile.ui.shell.LogoMark
 
 /**
@@ -124,6 +125,12 @@ class AddServerScreen(private val changeServer: Boolean = false) : Screen {
         }
 
         val probing = state is AddServerState.Probing
+        // Changing server runs to its end once started - the TV's last
+        // position written, the accounts removed, the new server saved -
+        // and the restart above is this screen's to start: system Back waits
+        // while it connects, as the "Cancel" link below does, so the app is
+        // never left on the old server with no account.
+        SystemBackHandler(enabled = probing && changeServer) {}
 
         // Changing to another server deletes the downloads of this one:
         // asked once the new server answered.
