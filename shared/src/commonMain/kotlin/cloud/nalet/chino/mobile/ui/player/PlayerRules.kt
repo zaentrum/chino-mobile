@@ -199,9 +199,38 @@ object PlayerButtons {
     fun seek(positionMs: Long, durationMs: Long): PlayerButtonName {
         val length = durationMs.coerceAtLeast(0L)
         val at = formatTime(positionMs.coerceIn(0L, if (length > 0) length else Long.MAX_VALUE) / 1000)
-        return PlayerButtonName("seek", if (length > 0) "$at of ${formatTime(length / 1000)}" else at)
+        return PlayerButtonName(SEEK_NAME, if (length > 0) "$at of ${formatTime(length / 1000)}" else at)
     }
+
+    /** The seek bar's name, as [seek] gives it. */
+    const val SEEK_NAME = "seek"
 }
+
+/**
+ * Where the seek bar tells a screen reader it is - its state
+ * ([PlayerButtons.seek]) and its value: the position played, to the second,
+ * except while the screen reader's focus is on the bar ([focusOnBar]) and the
+ * title plays ([playing]): then it holds what it told last ([spokenMs]).
+ * TalkBack reads out a focused slider's state each time it changes, over the
+ * film's sound; a bar that followed the clock would say "3:52 of 10:29",
+ * "3:53 of 10:29", ... for as long as the focus stays. Held, the bar tells the
+ * time as the focus lands on it - it followed the clock until then - and
+ * again when the title stops, or when the viewer seeks: a seek sets it to
+ * where it goes.
+ */
+fun seekBarSpokenMs(spokenMs: Long, positionMs: Long, playing: Boolean, focusOnBar: Boolean): Long =
+    if (playing && focusOnBar) spokenMs else positionMs.coerceAtLeast(0L) / 1000 * 1000
+
+/**
+ * Where a screen reader that sets the seek bar to [targetMs] seeks: as far
+ * from the position played ([positionMs]) as [targetMs] is from where the
+ * bar told it it is ([spokenMs], held while the title plays -
+ * [seekBarSpokenMs]), within the title. A screen reader works from what it
+ * read: its step on, a [SEEK_STEP_MS] past that, goes as far on from the
+ * picture - never back towards the time it read as its focus landed.
+ */
+fun seekBarSetMs(targetMs: Long, spokenMs: Long, positionMs: Long, durationMs: Long): Long =
+    (positionMs + (targetMs - spokenMs)).coerceIn(0L, durationMs.coerceAtLeast(0L))
 
 /** How far a screen reader's own gesture on the seek bar moves it: 10 s, as
  *  a skip does. */

@@ -197,6 +197,29 @@ class PlayerRulesTest {
     }
 
     @Test
+    fun theSeekBarHoldsItsTimeForAScreenReaderFocusedOnItWhileTheTitlePlays() {
+        // Off the bar, or the title not playing: the position, to the second.
+        assertEquals(68_000L, seekBarSpokenMs(spokenMs = 60_000, positionMs = 68_750, playing = true, focusOnBar = false))
+        assertEquals(68_000L, seekBarSpokenMs(spokenMs = 60_000, positionMs = 68_750, playing = false, focusOnBar = true))
+        assertEquals(0L, seekBarSpokenMs(spokenMs = 60_000, positionMs = -40, playing = false, focusOnBar = false))
+        // On it while the title plays: what it told last.
+        assertEquals(60_000L, seekBarSpokenMs(spokenMs = 60_000, positionMs = 68_750, playing = true, focusOnBar = true))
+    }
+
+    @Test
+    fun aScreenReaderSettingTheSeekBarMovesFromThePositionPlayedAsFarAsFromWhatItRead() {
+        // Read 1:08, the picture at 1:20: a step of 10 s goes to 1:30.
+        assertEquals(90_000L, seekBarSetMs(targetMs = 78_000, spokenMs = 68_000, positionMs = 80_000, durationMs = 653_000))
+        // A step back, to 0:58 from what it read: 1:10.
+        assertEquals(70_000L, seekBarSetMs(targetMs = 58_000, spokenMs = 68_000, positionMs = 80_000, durationMs = 653_000))
+        // Not held: where it says.
+        assertEquals(300_000L, seekBarSetMs(targetMs = 300_000, spokenMs = 67_000, positionMs = 67_000, durationMs = 653_000))
+        // Never past the end, never before the start.
+        assertEquals(653_000L, seekBarSetMs(targetMs = 653_000, spokenMs = 640_000, positionMs = 650_000, durationMs = 653_000))
+        assertEquals(0L, seekBarSetMs(targetMs = 0, spokenMs = 5_000, positionMs = 2_000, durationMs = 653_000))
+    }
+
+    @Test
     fun heldSidewaysThePlayerHidesTheSystemBarsAsInFullscreen() {
         assertEquals(true, playerHidesSystemBars(fullscreen = false, landscape = true))
         assertEquals(true, playerHidesSystemBars(fullscreen = true, landscape = false))

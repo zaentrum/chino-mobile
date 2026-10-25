@@ -1366,6 +1366,11 @@ private fun PlaybackSurface(
     }
 
     var positionMs by remember { mutableStateOf(state.resumeMs) }
+    // Where the seek bar tells a screen reader it is: the position, held
+    // while TalkBack's focus is on the bar and the title plays, set by a
+    // seek (seekBarSpokenMs) - a focused bar reads no clock out over the film.
+    var spokenPositionMs by remember { mutableStateOf(seekBarSpokenMs(0L, state.resumeMs, playing = false, focusOnBar = false)) }
+    val screenReaderFocus by rememberScreenReaderFocus()
     var durationMs by remember { mutableStateOf(0L) }
     var isPlaying by remember { mutableStateOf(state.autoPlay) }
     var bufferedMs by remember { mutableStateOf(0L) }
@@ -1389,6 +1394,7 @@ private fun PlaybackSurface(
     fun seekTo(ms: Long) {
         guard.expectSeek(ms / 1000.0)
         player.seekTo(ms)
+        spokenPositionMs = seekBarSpokenMs(spokenPositionMs, ms, playing = false, focusOnBar = false)
     }
 
     // Hoisted "user is interacting" flags. ANY of these → suppress auto-hide.
@@ -1651,7 +1657,19 @@ private fun PlaybackSurface(
     var markedWatched by remember { mutableStateOf(false) }
     LaunchedEffect(player) {
         while (true) {
-            if (!scrubbing) positionMs = player.currentPosition
+            if (!scrubbing) {
+                positionMs = player.currentPosition
+                // Playing, or about to once it has buffered: the bar holds
+                // under TalkBack's focus; paused or at the end it tells.
+                val playing = player.playWhenReady &&
+                    (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+                spokenPositionMs = seekBarSpokenMs(
+                    spokenPositionMs,
+                    positionMs,
+                    playing = playing,
+                    focusOnBar = screenReaderFocus == ScreenReaderFocus.SeekBar,
+                )
+            }
             durationMs = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
             bufferedMs = player.bufferedPosition
             // Only a position the player reports while playing counts as
@@ -1732,14 +1750,14 @@ private fun PlaybackSurface(
     var chromeVisible by remember { mutableStateOf(true) }
     var lastInteraction by remember { mutableStateOf(cloud.nalet.chino.mobile.currentTimeMillis()) }
     val noteInteraction: () -> Unit = { lastInteraction = cloud.nalet.chino.mobile.currentTimeMillis() }
-    val screenReaderFocused by rememberScreenReaderFocused()
-    LaunchedEffect(lastInteraction, isPlaying, scrubbing, volumeDragging, openPopover, screenReaderFocused) {
+    val screenReaderOnControls = screenReaderFocus != ScreenReaderFocus.None
+    LaunchedEffect(lastInteraction, isPlaying, scrubbing, volumeDragging, openPopover, screenReaderOnControls) {
         chromeVisible = true
         val grace = controlsHideAfterMs(
             playing = isPlaying,
             dragging = scrubbing || volumeDragging,
             menuOpen = openPopover != OpenPopover.NONE,
-            screenReaderOnThem = screenReaderFocused,
+            screenReaderOnThem = screenReaderOnControls,
         ) ?: return@LaunchedEffect
         delay(grace)
         chromeVisible = false
@@ -1959,6 +1977,8 @@ private fun PlaybackSurface(
             Chrome(
                 state = state,
                 positionMs = displayPositionMs,
+                // A drag the viewer makes tells where it goes, as the times do.
+                spokenPositionMs = if (scrubbing) scrubPreviewMs else spokenPositionMs,
                 durationMs = durationMs,
                 bufferedMs = bufferedMs,
                 isPlaying = isPlaying,
@@ -2265,6 +2285,8 @@ private fun SkipSegmentButton(label: String, onClick: () -> Unit) {
 private fun Chrome(
     state: PlayState,
     positionMs: Long,
+    /** Where the seek bar tells a screen reader it is ([seekBarSpokenMs]). */
+    spokenPositionMs: Long,
     durationMs: Long,
     bufferedMs: Long,
     isPlaying: Boolean,
@@ -2435,6 +2457,7 @@ private fun Chrome(
                         onScrubStart = onScrubStart,
                         onScrubUpdate = onScrubUpdate,
                         onScrubCommit = onScrubCommit,
+                        spokenPositionMs = spokenPositionMs,
                     )
                 }
                 BottomControls(
@@ -2608,7 +2631,10 @@ private fun Modifier.fadeAtEnd(scroll: androidx.compose.foundation.ScrollState):
  * state the position and the title's length ("1:07 of 10:53"), its range
  * the title in seconds, and a seek it can set - TalkBack's own gesture
  * moves it [SEEK_STEP_MS] at a time. Without a length yet it shows where it
- * is and seeks nowhere.
+ * is and seeks nowhere. What it tells is [spokenPositionMs], held while
+ * TalkBack's focus is on it and the title plays ([seekBarSpokenMs]), so a
+ * focused bar doesn't read the clock out over the film; a seek it sets goes
+ * from the position played ([seekBarSetMs]).
  */
 @Composable
 internal fun Scrubber(
@@ -2623,6 +2649,8 @@ internal fun Scrubber(
     onScrubStart: (Long) -> Unit,
     onScrubUpdate: (Long) -> Unit,
     onScrubCommit: (Long) -> Unit,
+    /** Where the bar tells a screen reader it is ([seekBarSpokenMs]). */
+    spokenPositionMs: Long = positionMs,
 ) {
     val durationSafe = durationMs.coerceAtLeast(1L)
     val density = LocalDensity.current
@@ -2631,20 +2659,20 @@ internal fun Scrubber(
     // on touch there's no hover, so press/drag is the analogue). Reset on
     // release/commit.
     var previewMs by remember { mutableStateOf<Long?>(null) }
-    val seek = PlayerButtons.seek(positionMs, durationMs)
+    val seek = PlayerButtons.seek(spokenPositionMs, durationMs)
     Row(
         modifier = Modifier.clearAndSetSemantics {
             contentDescription = seek.name
             seek.state?.let { stateDescription = it }
             val lengthSec = durationMs.coerceAtLeast(0L) / 1000f
             progressBarRangeInfo = ProgressBarRangeInfo(
-                current = (positionMs / 1000f).coerceIn(0f, lengthSec),
+                current = (spokenPositionMs / 1000f).coerceIn(0f, lengthSec),
                 range = 0f..lengthSec,
                 steps = seekSteps(durationMs),
             )
             if (durationMs > 0) {
                 setProgress { targetSec ->
-                    onScrubCommit((targetSec * 1000f).toLong().coerceIn(0L, durationMs))
+                    onScrubCommit(seekBarSetMs((targetSec * 1000f).toLong(), spokenPositionMs, positionMs, durationMs))
                     true
                 }
             }

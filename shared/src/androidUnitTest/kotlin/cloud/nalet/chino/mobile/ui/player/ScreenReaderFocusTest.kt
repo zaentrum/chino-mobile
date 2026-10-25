@@ -57,12 +57,13 @@ class ScreenReaderFocusTest {
             }
         }
         host.accessibilityDelegate = before
-        val seen = mutableListOf<Boolean>()
+        val seen = mutableListOf<ScreenReaderFocus>()
         val watch = AccessibilityFocusWatch(host) { seen += it }
         host.requestSendAccessibilityEvent(child, event(AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED))
         host.requestSendAccessibilityEvent(child, event(AccessibilityEvent.TYPE_VIEW_CLICKED))
         host.requestSendAccessibilityEvent(child, event(AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED))
-        assertEquals(listOf(true, false), seen)
+        // A view that isn't the seek bar: on its content, then nowhere.
+        assertEquals(listOf(ScreenReaderFocus.Content, ScreenReaderFocus.None), seen)
         assertEquals(
             listOf(
                 AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED,
@@ -86,10 +87,10 @@ class ScreenReaderFocusTest {
         compose.setContent {
             view = LocalView.current
             if (showing) {
-                val focused by rememberScreenReaderFocused()
+                val focus by rememberScreenReaderFocus()
                 Column {
                     ChromeButton(icon = Lucide.Pause, onClick = {}, name = PlayerButtons.playPause(true))
-                    Text(if (focused) "on a control" else "nowhere")
+                    Text(if (focus != ScreenReaderFocus.None) "on a control" else "nowhere")
                 }
             }
         }
@@ -121,10 +122,10 @@ class ScreenReaderFocusTest {
         var view: View? = null
         compose.setContent {
             view = LocalView.current
-            val focused by rememberScreenReaderFocused()
+            val focus by rememberScreenReaderFocus()
             Column {
                 ChromeButton(icon = Lucide.Pause, onClick = {}, name = PlayerButtons.playPause(true))
-                Text(if (focused) "on a control" else "nowhere")
+                Text(if (focus != ScreenReaderFocus.None) "on a control" else "nowhere")
             }
         }
         fun send(type: Int) = compose.runOnUiThread { view!!.parent.requestSendAccessibilityEvent(view, event(type)) }
