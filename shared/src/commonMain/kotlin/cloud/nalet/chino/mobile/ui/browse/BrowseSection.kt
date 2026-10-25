@@ -62,6 +62,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -181,15 +183,15 @@ fun BrowseSection(
         modifier = Modifier.fillMaxSize(),
     ) {
         // Page title spans the full grid width as a header row: the web's
-        // h1, in the heading face.
+        // h1, in the heading face - mono, so lowercase, as "downloads" is.
         item(span = { GridItemSpan(maxLineSpan) }) {
             Text(
-                text = pageTitle,
+                text = pageHeading(pageTitle),
                 color = Color.White,
                 fontSize = 36.sp,
                 fontWeight = FontWeight.Bold,
                 style = ChinoHeading,
-                modifier = Modifier.padding(bottom = 16.dp),
+                modifier = Modifier.padding(bottom = 16.dp).semantics { heading() },
             )
         }
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -420,4 +422,9 @@ private fun BrowseCard(
 /** What a browse page that couldn't load is headed: what couldn't load, in
  *  the screen's own word - its heading's ("Movies": "couldn't load the
  *  movies"). */
+/** A grid screen's heading: its tab's word ([pageTitle]: "Movies",
+ *  "Shows") in the mono face's lowercase - "movies", "shows" - as every
+ *  heading in that face is (the design system's voice). */
+internal fun pageHeading(pageTitle: String): String = pageTitle.trim().lowercase()
+
 internal fun couldntLoadTitle(pageTitle: String): String = "couldn't load the ${pageTitle.trim().lowercase()}"

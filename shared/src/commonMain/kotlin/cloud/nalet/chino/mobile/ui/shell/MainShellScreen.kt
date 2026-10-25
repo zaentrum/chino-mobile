@@ -228,7 +228,8 @@ private fun SectionContent(
                 container = container,
                 screen = screen,
                 type = "movie",
-                pageTitle = "Movies",
+                // The tab's own word.
+                pageTitle = Section.Movies.label,
                 onItemSelected = onItemSelected,
                 onPlay = onPlay,
             )
@@ -238,7 +239,7 @@ private fun SectionContent(
                 container = container,
                 screen = screen,
                 type = "series",
-                pageTitle = "Shows",
+                pageTitle = Section.Series.label,
                 onItemSelected = onItemSelected,
                 onPlay = onPlay,
             )
@@ -260,12 +261,14 @@ private fun SectionContent(
  *  VoiceOver, its icon's description, and is not drawn. */
 enum class Section(val label: String, val icon: ImageVector) {
     // Order MUST match chino-web's nav (ChinoSidebar / ChinoMobileNav) and the
-    // TV side-rail: Home, Movies, Series, Watchlist, Zap, Settings. The nav
+    // TV side-rail: Home, Movies, Shows, Watchlist, Zap, Settings. The nav
     // iterates Section.entries, so this declaration order IS the on-screen
     // order.
     Home("Home", Lucide.House),
     Movies("Movies", Lucide.Film),
-    Series("Series", Lucide.Tv),
+    // The word its screen uses (docs/chino words: one word for one thing):
+    // "Shows", as chino-web's screen says it.
+    Series("Shows", Lucide.Tv),
     // Watchlist — the cross-platform hub of per-list poster shelves.
     Watchlist("Watchlist", Lucide.Bookmark),
     // Zap — the vertical reels discovery mode (web flavour). Lucide Zap glyph
