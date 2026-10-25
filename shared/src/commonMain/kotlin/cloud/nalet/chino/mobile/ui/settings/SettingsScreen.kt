@@ -127,9 +127,12 @@ fun SettingsSection() {
     // What the server offers: a bug report goes only where it takes them.
     val features by container.serverReach.features.collectAsState()
     // The server's subtitle languages (GET /subtitles/languages), asked once
-    // a session as the player's menu asks; null until it answers.
-    val serverSubtitleLanguages by produceState<List<String>?>(initialValue = null, container) {
-        value = container.subtitleLanguages.get()
+    // a session as the player's menu asks; null until it answers - and
+    // while it doesn't (offline, a 5xx), never taken for a server that
+    // names none: asked again as the server answers again.
+    val reach by container.serverReach.state.collectAsState()
+    val serverSubtitleLanguages by produceState<List<String>?>(initialValue = null, container, reach) {
+        container.subtitleLanguages.answered()?.let { value = it }
     }
     val signOut: (castingSaid: Boolean) -> Unit = { castingSaid ->
         val id = activeAccount?.id

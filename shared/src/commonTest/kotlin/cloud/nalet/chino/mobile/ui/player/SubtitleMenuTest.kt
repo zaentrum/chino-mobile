@@ -479,6 +479,24 @@ class ServerSubtitleLanguagesTest {
     }
 
     @Test
+    fun settingsTellsNoAnswerFromNone() = runTest {
+        val languages = ServerSubtitleLanguages { server.api.subtitleLanguages().languages }
+        // Offline, or a 5xx: not known - never "names none", which is every language.
+        reply = { throw IOException("no connection") }
+        assertEquals(null, languages.answered())
+        reply = { respondText("upstream down", HttpStatusCode.ServiceUnavailable) }
+        assertEquals(null, languages.answered())
+        // A 200 with none, and a server before the route, name none.
+        reply = { respondJson("""{"languages":[]}""") }
+        assertEquals(emptyList(), languages.answered())
+        val before = ServerSubtitleLanguages { server.api.subtitleLanguages().languages }
+        reply = { respondText("404 page not found", HttpStatusCode.NotFound) }
+        assertEquals(emptyList(), before.answered())
+        // Settings' choices: "Off" and the current one while not known.
+        assertEquals(listOf("off", "fr"), cloud.nalet.chino.mobile.ui.settings.subtitleSettingChoices(null, "fr").map { it.code })
+    }
+
+    @Test
     fun noAnswerIsNoneForNowAndTheNextMenuAsksAgain() = runTest {
         reply = { throw IOException("no connection") }
         val languages = ServerSubtitleLanguages { server.api.subtitleLanguages().languages }

@@ -20,16 +20,25 @@ class ServerSubtitleLanguages(private val fetch: suspend () -> List<String>) {
     @Volatile
     private var known: List<String>? = null
 
-    /** The server's languages, asked for the first time they are wanted. */
-    suspend fun get(): List<String> = lock.withLock {
+    /** The server's languages, asked for the first time they are wanted;
+     *  none for now where it did not answer (the menu's rule). */
+    suspend fun get(): List<String> = answered().orEmpty()
+
+    /**
+     * What the server answered - its languages, none for a server that names
+     * none or has no such route (404) - or null where it did not answer, or
+     * refused otherwise: not knowing is not "none". Settings asks this way,
+     * where none means every language; asked again next time.
+     */
+    suspend fun answered(): List<String>? = lock.withLock {
         known ?: try {
             fetch().filter { it.isNotBlank() }.also { known = it }
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiStatusException) {
-            if (e.status == 404) emptyList<String>().also { known = it } else emptyList()
+            if (e.status == 404) emptyList<String>().also { known = it } else null
         } catch (e: Exception) {
-            emptyList()
+            null
         }
     }
 

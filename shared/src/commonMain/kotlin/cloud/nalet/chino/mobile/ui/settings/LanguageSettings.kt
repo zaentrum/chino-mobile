@@ -37,7 +37,8 @@ fun isChosen(value: String, code: String): Boolean {
  * Each language once, named as the player's menus name it. The [current]
  * setting, where it is none of them - set before, or on another server - is
  * offered after them, so the setting shows what it is. Until the server has
- * answered (null), "Off" and the current setting alone.
+ * answered (null) - and while it doesn't: offline, a 5xx, which say nothing
+ * of its languages - "Off" and the current setting alone.
  */
 fun subtitleSettingChoices(serverLanguages: List<String>?, current: String): List<LanguageChoice> {
     val off = listOf(LanguageChoice(SUBTITLES_OFF, "Off"))
