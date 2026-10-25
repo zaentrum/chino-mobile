@@ -76,9 +76,9 @@ import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
 import cloud.nalet.chino.mobile.data.downloads.SIGN_OUT_TITLE
 import cloud.nalet.chino.mobile.data.downloads.yourDownloadsGoSentence
 import cloud.nalet.chino.mobile.ui.components.Avatar
+import cloud.nalet.chino.mobile.ui.components.WatchedButton
 import cloud.nalet.chino.mobile.ui.detail.DetailScreen
 import com.composables.icons.lucide.ArrowLeft
-import com.composables.icons.lucide.EyeOff
 import com.composables.icons.lucide.LogOut
 import com.composables.icons.lucide.Lucide
 import coil3.compose.AsyncImage
@@ -98,8 +98,9 @@ import kotlinx.coroutines.launch
  * The history renders as a COMPACT ROW LIST in the spirit of the detail
  * page's episodes list (same card surface + #21262D dividers), but denser:
  * each row is a small thumbnail (landscape still for episodes, poster
- * otherwise), title + meta line, then a right-aligned watched date and an
- * unwatch (EyeOff) action reusing the existing DELETE
+ * otherwise), title + meta line, then a right-aligned watched date and the
+ * title actions' watched toggle, on - a dark check on green, named
+ * "watched" - whose press takes the title off, through the DELETE
  * /me/items/{id}/watched contract ([ChinoApi.deleteWatched]). Tapping a
  * row pushes Detail (same as Watchlist).
  *
@@ -247,8 +248,8 @@ class ProfileScreen : Screen {
 
                     list.isEmpty() -> item {
                         Text(
-                            text = "Nothing watched yet. Watched items appear here once you " +
-                                "finish a movie or episode (or mark one watched on a detail page).",
+                            text = "Nothing watched yet. A movie or an episode shows here once you " +
+                                "finish it, or mark it as watched.",
                             color = ChinoMuted,
                             fontSize = 14.sp,
                         )
@@ -396,12 +397,14 @@ private fun IdentityCard(displayName: String, email: String, onSignOut: () -> Un
 /**
  * One watch-history row. The detail page's EpisodeRow idiom, denser: 56dp
  * thumbnail (landscape still for episodes, 2:3 poster otherwise), title +
- * meta line, then a right-aligned watched date and the unwatch (EyeOff)
- * action. The whole row clicks through to Detail; the EyeOff tap is
- * consumed locally so it doesn't also open the row.
+ * meta line, then a right-aligned watched date and the watched toggle, on:
+ * the check on green, one icon for one meaning on every screen (docs/chino
+ * title actions), as a title's page draws it. The whole row clicks through
+ * to Detail; the toggle's tap is consumed locally so it doesn't also open
+ * the row.
  */
 @Composable
-private fun HistoryRow(
+internal fun HistoryRow(
     item: Item,
     seriesTitle: String?,
     baseUrl: String,
@@ -493,20 +496,7 @@ private fun HistoryRow(
         watchedDateLabel(item.watchedAt)?.let {
             Text(text = it, color = ChinoMuted, fontSize = 12.sp, maxLines = 1)
         }
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(RectangleShape)
-                .clickable(onClick = onUnwatch),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Lucide.EyeOff,
-                contentDescription = "Mark as unwatched",
-                tint = ChinoMuted,
-                modifier = Modifier.size(16.dp),
-            )
-        }
+        WatchedButton(watched = true, onToggle = onUnwatch)
     }
 }
 
