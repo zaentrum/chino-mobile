@@ -20,6 +20,7 @@ import cloud.nalet.chino.mobile.ui.downloads.SeriesDownloadSummary
 import cloud.nalet.chino.mobile.ui.downloads.InformationBanner
 import cloud.nalet.chino.mobile.data.downloads.Reach
 import cloud.nalet.chino.mobile.data.downloads.UNREACHABLE_BANNER
+import cloud.nalet.chino.mobile.data.downloads.UNREACHABLE_BANNER_NOTHING
 import cloud.nalet.chino.mobile.data.api.LoadFailure
 import cloud.nalet.chino.mobile.data.api.sentence
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
@@ -408,11 +409,15 @@ private fun ReadyContent(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
-            // From the phone: the server can't be reached, the downloads play
-            // all the same - on top, under the Back / Home row.
+            // From the phone: the server can't be reached - and the downloads
+            // play all the same, where this title's do - on top, under the
+            // Back / Home row.
             if (ready.offline != null) {
                 InformationBanner(
-                    UNREACHABLE_BANNER,
+                    offlineBanner(
+                        onThePhone = if (ready.seasons.isNotEmpty()) ready.seasons.flatMap { s -> s.episodes.map { it.id } } else listOf(item.id),
+                        waitingForCheck = ready.offline.waitingForCheck,
+                    ),
                     modifier = Modifier
                         .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(start = 16.dp, end = 16.dp, top = HERO_BUTTONS_TOP + HERO_BUTTON_SIZE + 12.dp, bottom = 12.dp),
@@ -503,10 +508,10 @@ private fun ReadyContent(
                                 item.kind == "series" && ready.offline != null && ready.seasons.isNotEmpty() -> {
                                     {
                                         val offline = ready.offline
-                                        val ids = ready.seasons.flatMap { s -> s.episodes.map { it.id } }
+                                        val episodes = ready.seasons.flatMap { it.episodes }
                                         OfflineSeriesSummary(
-                                            episodes = ids.size,
-                                            anyWaitsForCheck = ids.any { it in offline.waitingForCheck },
+                                            episodes = episodesOnThePhone(episodes),
+                                            anyWaitsForCheck = episodes.any { it.id in offline.waitingForCheck },
                                         )
                                     }
                                 }
@@ -646,6 +651,22 @@ private fun ReadyContent(
         )
     }
 }
+
+/**
+ * The banner on top of the page from the phone: "Your downloads still play"
+ * only where this title plays - the movie, or one of the series' episodes
+ * [onThePhone] - and not while all of it waits for its check with the
+ * server ([waitingForCheck]), its Play dimmed below; else only that the
+ * server can't be reached.
+ */
+internal fun offlineBanner(onThePhone: List<String>, waitingForCheck: Set<String>): String =
+    if (onThePhone.any { it !in waitingForCheck }) UNREACHABLE_BANNER else UNREACHABLE_BANNER_NOTHING
+
+/** How many episodes the files on the phone hold, as the season's offer
+ *  counts them: a file of S03E18–19 counts two, though the page from the
+ *  phone lists only its holder. */
+internal fun episodesOnThePhone(episodes: List<cloud.nalet.chino.mobile.data.api.Episode>): Int =
+    fileEntries(episodes).sumOf { maxOf(it.held.size, it.last - it.first + 1) }
 
 /** How long the page waits, back on it, before it refreshes quietly: the
  *  player sends its last progress save as it closes. */
@@ -1012,7 +1033,7 @@ private fun SeasonRow(
                 val device = cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind.current
                 Text(
                     text = when {
-                        offline != null -> cloud.nalet.chino.mobile.data.downloads.episodesOnThePhoneLabel(season.episodes.size, device)
+                        offline != null -> cloud.nalet.chino.mobile.data.downloads.episodesOnThePhoneLabel(episodesOnThePhone(season.episodes), device)
                         season.episodes.size == 1 -> "1 episode"
                         else -> "${season.episodes.size} episodes"
                     },
@@ -1231,7 +1252,9 @@ private fun EpisodeRow(
     }
     val details: @Composable (Modifier) -> Unit = { modifier ->
         Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = modifier) {
-            val epNum = episodeCode(episode.seasonNumber, episode.episodeNumber, lastEpisodeNumber.takeIf { several })
+            // A file of several episodes is named for them all (S03E18–19),
+            // from the phone too, where only its holder is listed.
+            val epNum = episodeCode(episode.seasonNumber, episode.episodeNumber, lastEpisodeNumber.takeIf { several || (it ?: 0) > (episode.episodeNumber ?: 0) })
             val epRuntimeMin = fileDurationMs?.let { ((it + 30_000L) / 60_000L).toInt() } ?: 0
             // What a box holds, in place of a title: so many episodes in one
             // file, each by its number and title. Text, not controls.
