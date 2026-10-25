@@ -82,6 +82,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
@@ -2952,6 +2953,8 @@ internal fun BottomControls(
                 // lets the user confirm "the only audio is JAP".
                 AudioLangChip(
                     language = audioChipText,
+                    // The track as the audio menu names it, else its language.
+                    name = PlayerButtons.audio(activeAudio?.label ?: languageName(audioChipText)),
                     enabled = audioTracks.isNotEmpty(),
                     onClick = { onTogglePopover(OpenPopover.AUDIO) },
                     accent = openPopover == OpenPopover.AUDIO,
@@ -3150,19 +3153,21 @@ internal fun ChromeButton(
 /** Compact pill chip showing the current audio track's language as its ISO
  *  639-2/T code (e.g. "ENG", "DEU", "JPN"), "—" for a film without dialogue
  *  (zxx), or "Audio" for a track that names no language ("und", or no tag) —
- *  [audioChipLabel], as chino-web's audio chip reads; the whole name to a
- *  screen reader. When `enabled` (multi-track file), tapping
- *  the chip opens the AudioMenuCard via the shared OpenPopover state.
- *  Single-track files render a non-tappable chip (no menu, same look). */
+ *  [audioChipLabel], as chino-web's audio chip reads. To a screen reader a
+ *  button like the others round it: named "audio", its value the track
+ *  playing as the audio menu names it ([name]), never the code. When
+ *  `enabled` (the player lists its tracks), tapping the chip opens the
+ *  AudioMenuCard via the shared OpenPopover state; before, the same chip,
+ *  a button that can't be pressed yet. */
 @Composable
 private fun AudioLangChip(
     language: String,
+    name: PlayerButtonName,
     enabled: Boolean,
     accent: Boolean,
     onClick: () -> Unit,
 ) {
     val label = audioChipLabel(language)
-    val description = "Audio: ${languageName(language)}"
     // Solid over the picture: the surface colour, the accent while its menu
     // is open (with a dark label).
     val bg = if (accent) ChinoCloudBlue else ChinoSurfaceHi
@@ -3170,12 +3175,16 @@ private fun AudioLangChip(
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(bg)
-            .let {
-                if (enabled) it.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onClick,
-                ) else it
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = enabled,
+                role = androidx.compose.ui.semantics.Role.Button,
+                onClick = onClick,
+            )
+            .semantics {
+                contentDescription = name.name
+                name.state?.let { stateDescription = it }
             }
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
@@ -3184,7 +3193,8 @@ private fun AudioLangChip(
             color = if (accent) ChinoOnFill else Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.semantics { contentDescription = description },
+            // The code is what the eye reads; the name says the track.
+            modifier = Modifier.clearAndSetSemantics {},
         )
     }
 }

@@ -1,11 +1,19 @@
 package cloud.nalet.chino.mobile.ui.player
 
 import androidx.compose.ui.semantics.Role
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.TrackGroup
+import androidx.media3.common.Tracks
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
@@ -37,7 +45,9 @@ class PlayerButtonNamesTest {
         muted: Boolean = false,
         fullscreen: Boolean = false,
         subtitleOn: String? = "English · for deaf and hard of hearing",
+        audioTracks: List<AudioTrack> = emptyList(),
         onPlayPause: () -> Unit = {},
+        onAudio: () -> Unit = {},
     ) {
         compose.setContent {
             BottomControls(
@@ -54,7 +64,7 @@ class PlayerButtonNamesTest {
                 canNext = true,
                 hasQualities = true,
                 info = null,
-                audioTracks = emptyList(),
+                audioTracks = audioTracks,
                 onPlayPause = onPlayPause,
                 onSkipBack = {},
                 onSkipForward = {},
@@ -63,7 +73,7 @@ class PlayerButtonNamesTest {
                 onVolumeDragStart = {},
                 onVolumeDragEnd = {},
                 onToggleCaptions = {},
-                onTogglePopover = {},
+                onTogglePopover = { if (it == OpenPopover.AUDIO) onAudio() },
                 onSelectSpeed = {},
                 onToggleFullscreen = {},
                 onPrevEpisode = {},
@@ -90,6 +100,37 @@ class PlayerButtonNamesTest {
         val clickable = compose.onAllNodes(hasClickAction()).fetchSemanticsNodes()
         assertTrue(clickable.isNotEmpty())
         for (node in clickable) {
+            val name = node.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString().orEmpty()
+            assertTrue(name.isNotBlank(), "a button without a name: ${node.config}")
+        }
+    }
+
+    /** One audio track as the player lists it. */
+    private fun audio(language: String, label: String, selected: Boolean): AudioTrack {
+        val format = Format.Builder().setId(label).setSampleMimeType(MimeTypes.AUDIO_AAC).setLanguage(language).setLabel(label).build()
+        val group = Tracks.Group(TrackGroup(format), false, intArrayOf(C.FORMAT_HANDLED), booleanArrayOf(selected))
+        return AudioTrack(id = label, label = label, detail = "AAC · Stereo", language = language, name = label, selected = selected, playable = true, group = group, trackIndex = 0)
+    }
+
+    @Test
+    fun theAudioChipIsANamedButtonItsValueTheTrackPlayingNeverTheCode() {
+        var opened = 0
+        controls(
+            audioTracks = listOf(audio("eng", "English", selected = false), audio("eng", "English · Commentary", selected = true)),
+            onAudio = { opened++ },
+        )
+        compose.onNodeWithContentDescription("audio")
+            .assert(button)
+            .assert(state("English · Commentary"))
+            .performClick()
+        compose.runOnIdle { assertEquals(1, opened) }
+        // The code is drawn, not read: no "ENG", no "Audio: English".
+        compose.onAllNodesWithText("ENG", useUnmergedTree = true).assertCountEquals(0)
+        assertTrue(compose.onAllNodes(hasContentDescription("Audio", substring = true, ignoreCase = false)).fetchSemanticsNodes().isEmpty())
+        // Lowercase, as "volume", "subtitles", "speed", "quality".
+        assertEquals(PlayerButtonName("audio", "German"), PlayerButtons.audio("German"))
+        // Still no button without a name.
+        for (node in compose.onAllNodes(hasClickAction()).fetchSemanticsNodes()) {
             val name = node.config.getOrNull(SemanticsProperties.ContentDescription)?.joinToString().orEmpty()
             assertTrue(name.isNotBlank(), "a button without a name: ${node.config}")
         }

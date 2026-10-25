@@ -177,6 +177,11 @@ object PlayerButtons {
     /** The speed menu, with the speed ("normal", "1.5x"). */
     fun speed(rate: Float) = PlayerButtonName("speed", speedLabel(rate))
 
+    /** The audio menu - the chip with the track's code, "ENG" - with the
+     *  track playing, as the audio menu names it ("English", "English ·
+     *  Commentary"). */
+    fun audio(track: String) = PlayerButtonName("audio", track)
+
     /** The quality menu, with the quality's name ("Auto", "Medium (720p)"). */
     fun quality(name: String) = PlayerButtonName("quality", name)
 
