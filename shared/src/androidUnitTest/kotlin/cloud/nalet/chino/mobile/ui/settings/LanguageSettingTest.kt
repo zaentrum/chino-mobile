@@ -1,12 +1,18 @@
 package cloud.nalet.chino.mobile.ui.settings
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasText
@@ -69,6 +75,30 @@ class LanguageSettingTest {
     @Test
     fun everyLanguageIsOneMenuTooTheOwnFirst() {
         opensUnderItsFieldAsWideAsIt(subtitleSettingChoices(emptyList(), "off", device = "de-CH"), "off", "off")
+    }
+
+    @Test
+    fun openedLowOnThePageTheMenuScrollsIntoViewNeverUnderWhatFollows() {
+        val scroll = ScrollState(0)
+        compose.setContent {
+            // The page's room above the bottom bar, the field at its foot.
+            Column(modifier = Modifier.width(360.dp).height(600.dp).verticalScroll(scroll)) {
+                Spacer(modifier = Modifier.height(540.dp))
+                LanguageSetting(
+                    name = "subtitle language",
+                    value = "off",
+                    choices = subtitleSettingChoices(emptyList(), "off", device = "de-CH"),
+                    onSelect = {},
+                )
+                Spacer(modifier = Modifier.height(400.dp))
+            }
+        }
+        compose.onNode(hasText("German") and radio).assertDoesNotExist()
+        compose.onNodeWithContentDescription("subtitle language").performClick()
+        // In view: its first rows, "off" and the phone's own language.
+        compose.onNode(hasText("off") and radio).assertIsDisplayed()
+        compose.onNode(hasText("German") and radio).assertIsDisplayed()
+        compose.runOnIdle { assertTrue(scroll.value > 0) }
     }
 
     @Test

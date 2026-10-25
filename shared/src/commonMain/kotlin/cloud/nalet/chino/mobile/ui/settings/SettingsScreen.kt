@@ -50,6 +50,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -431,7 +435,9 @@ internal fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Uni
  * offered), the one set in the accent blue behind a small filled square.
  * Picking one writes the preference and closes the menu; a screen reader
  * hears the field as a dropdown with what is set, and each row as a radio
- * button, picked or not. A long menu scrolls within its height.
+ * button, picked or not. A long menu scrolls within its height. Opened low
+ * on the page, the page scrolls so the menu shows whole, above the bottom
+ * bar, never under it.
  */
 @Composable
 internal fun LanguageSetting(
@@ -443,6 +449,13 @@ internal fun LanguageSetting(
 ) {
     var open by remember { mutableStateOf(false) }
     val picked = choices.firstOrNull { isChosen(value, it.code) } ?: choices.first()
+    // The open menu scrolled into the page's view, once it is laid out.
+    val menuInView = remember { BringIntoViewRequester() }
+    LaunchedEffect(open) {
+        if (!open) return@LaunchedEffect
+        withFrameNanos { }
+        menuInView.bringIntoView()
+    }
     Column(modifier = Modifier.fillMaxWidth().clip(RectangleShape).background(ChinoSurface)) {
         Row(
             modifier = Modifier
@@ -469,6 +482,7 @@ internal fun LanguageSetting(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .bringIntoViewRequester(menuInView)
                     .border(BorderStroke(1.dp, ChinoBorder), RectangleShape)
                     .heightIn(max = LANGUAGE_MENU_MAX_HEIGHT)
                     .verticalScroll(scroll)

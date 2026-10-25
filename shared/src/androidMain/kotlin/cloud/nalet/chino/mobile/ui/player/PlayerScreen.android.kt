@@ -8,6 +8,10 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -770,7 +774,7 @@ private fun downloadedPlayState(
 
 internal enum class OpenPopover { NONE, SPEED, AUDIO, CAPTIONS, INFO, VOLUME, QUALITY }
 
-private data class SubtitleTrack(
+internal data class SubtitleTrack(
     val id: String,
     /** What the menu shows ([withMenuLabels]). */
     val label: String,
@@ -3275,11 +3279,13 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
  * rest of a title's tracks, which opens below it: never every track.
  * Each language's tracks together, plain, for deaf and hard of hearing,
  * foreign-language parts only, AI; two that read the same show once. One subtitle at a time: picking one replaces the
- * one on. "more languages" starts open where the one on is among them. A
- * title with no subtitles lists "off" alone. Scrolls where it is long.
+ * one on. "more languages" starts open where the one on is among them;
+ * opened at the menu's foot, the menu scrolls so its first rows show, the
+ * row that opened them above them. A title with no subtitles lists "off"
+ * alone. Scrolls where it is long.
  */
 @Composable
-private fun CaptionsMenuCard(
+internal fun CaptionsMenuCard(
     tracks: List<SubtitleTrack>,
     subtitlePref: String,
     audioPref: String,
@@ -3289,6 +3295,16 @@ private fun CaptionsMenuCard(
     val anySelected = tracks.any { it.selected }
     val menu = remember(tracks, subtitlePref, audioPref, serverLanguages) { subtitleMenuOf(tracks, subtitlePref, audioPref, serverLanguages) }
     var moreOpen by remember(menu) { mutableStateOf(menu.more.any { it.selected }) }
+    // Opened by a tap: "more languages" and its first rows scrolled into the
+    // menu's view - opened at its foot, they would wait under it.
+    val moreInView = remember { BringIntoViewRequester() }
+    var opened by remember(menu) { mutableIntStateOf(0) }
+    LaunchedEffect(opened) {
+        if (opened == 0) return@LaunchedEffect
+        // Once the rows are laid out.
+        withFrameNanos { }
+        moreInView.bringIntoView()
+    }
     Box(
         modifier = Modifier
             .width(320.dp)
@@ -3319,36 +3335,48 @@ private fun CaptionsMenuCard(
             }
             menu.top.forEach { t -> SubtitleRow(t, onSelect) }
             if (menu.more.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { moreOpen = !moreOpen }
-                        .semantics {
-                            role = androidx.compose.ui.semantics.Role.Button
-                            stateDescription = if (moreOpen) "open" else "closed"
-                        }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PickedDot(selected = false)
-                    Text(
-                        text = "more languages",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Icon(
-                        imageVector = if (moreOpen) Lucide.ChevronDown else Lucide.ChevronRight,
-                        contentDescription = null,
-                        tint = Color(0xFF8B949E),
-                        modifier = Modifier.size(16.dp),
-                    )
+                // The row and the first ones it opens: what is scrolled into
+                // view as it opens.
+                Column(modifier = Modifier.fillMaxWidth().bringIntoViewRequester(moreInView)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                moreOpen = !moreOpen
+                                if (moreOpen) opened++
+                            }
+                            .semantics {
+                                role = androidx.compose.ui.semantics.Role.Button
+                                stateDescription = if (moreOpen) "open" else "closed"
+                            }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PickedDot(selected = false)
+                        Text(
+                            text = "more languages",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            imageVector = if (moreOpen) Lucide.ChevronDown else Lucide.ChevronRight,
+                            contentDescription = null,
+                            tint = Color(0xFF8B949E),
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                    if (moreOpen) menu.more.take(MORE_LANGUAGES_IN_VIEW).forEach { t -> SubtitleRow(t, onSelect) }
                 }
-                if (moreOpen) menu.more.forEach { t -> SubtitleRow(t, onSelect) }
+                if (moreOpen) menu.more.drop(MORE_LANGUAGES_IN_VIEW).forEach { t -> SubtitleRow(t, onSelect) }
             }
         }
     }
 }
+
+/** How many of the rows "more languages" opens are scrolled into view with
+ *  it. */
+private const val MORE_LANGUAGES_IN_VIEW = 3
 
 /** One track of the subtitles menu: its box and its name. */
 @Composable
