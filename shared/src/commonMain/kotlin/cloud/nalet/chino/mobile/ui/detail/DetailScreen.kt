@@ -65,6 +65,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -400,36 +401,34 @@ private fun ReadyContent(
         // landscape the action row stays near the fold instead of the tall
         // 21:9 image eating the whole screen.
         val backdropH = minOf(maxWidth * 9f / 21f, maxHeight * 0.6f)
+        // The page from the phone has a top bar of its own - Back / Home,
+        // then the banner - that never scrolls (docs/chino downloads: the
+        // banner on top, under the top bar); the server's page floats Back
+        // / Home over its backdrop.
+        val fromThePhone = ready.offline != null
         // How far the poster and content ride up over the backdrop: web's
         // 128dp where the backdrop is tall enough, less on a phone, whose
         // 21:9 backdrop is short — the poster starts below the Back / Home
-        // row instead of under it (heroOverlap).
+        // row instead of under it (heroOverlap). Under the phone's top bar
+        // nothing is over the backdrop.
         val overlap = heroOverlap(
             backdropHeight = backdropH,
             topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+            buttonsOver = !fromThePhone,
         )
         // A phone's episode rows where the hero stacks (the page under 600dp,
         // isWideDetail below); a tablet's stay as they are.
         val compactEpisodes = maxWidth < 600.dp
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-        ) {
-            // From the phone: the server can't be reached - and the downloads
-            // play all the same, where this title's do - on top, under the
-            // Back / Home row.
-            if (ready.offline != null) {
-                InformationBanner(
-                    offlineBanner(
-                        onThePhone = if (ready.seasons.isNotEmpty()) ready.seasons.flatMap { s -> s.episodes.map { it.id } } else listOf(item.id),
-                        waitingForCheck = ready.offline.waitingForCheck,
-                    ),
-                    modifier = Modifier
-                        .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(start = 16.dp, end = 16.dp, top = HERO_BUTTONS_TOP + HERO_BUTTON_SIZE + 12.dp, bottom = 12.dp),
+        TitlePageFrame(
+            banner = ready.offline?.let { offline ->
+                offlineBanner(
+                    onThePhone = if (ready.seasons.isNotEmpty()) ready.seasons.flatMap { s -> s.episodes.map { it.id } } else listOf(item.id),
+                    waitingForCheck = offline.waitingForCheck,
                 )
-            }
+            },
+            onBack = onBack,
+            onHome = onHome,
+        ) {
             // Backdrop hero — web uses `aspect-[21/9] max-h-[60vh]`.
             Box(modifier = Modifier.fillMaxWidth().height(backdropH)) {
                 AsyncImage(
@@ -623,42 +622,95 @@ private fun ReadyContent(
                 Box(modifier = Modifier.height(32.dp))
             }
         }
-        // Back + Home buttons — overlay the backdrop top-left. Web:
-        // `absolute top-4 left-4 p-2 rounded-full bg-black/50`. The
-        // `windowInsetsPadding(statusBars)` pushes them below the system
-        // status bar (clock + battery) when running edge-to-edge; without
-        // it the chips collide with the system bar on tablets and look
-        // clipped. Same fix as the player's TopBar. Home resets to the app
-        // root (chino-web parity) and sits next to Back with the same styling.
-        Row(
-            modifier = Modifier
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(start = 16.dp, top = HERO_BUTTONS_TOP),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            OverlayIconButton(
-                icon = Lucide.ArrowLeft,
-                contentDescription = "Back",
-                onClick = onBack,
-            )
-            OverlayIconButton(
-                icon = Lucide.House,
-                contentDescription = "Home",
-                onClick = onHome,
+    }
+}
+
+/**
+ * A title's page around its [content], which scrolls ([scroll]). From the
+ * phone - a [banner] to show - the page has a top bar of its own, Back /
+ * Home and the Cast button on the page's colour, and the banner under it:
+ * neither scrolls, so the page never passes under the buttons or the banner
+ * (docs/chino downloads: the banner on top, under the top bar). From the
+ * server, Back / Home and the Cast button float over the backdrop, under
+ * the status bar. Home resets to the app root (chino-web parity).
+ */
+@Composable
+internal fun TitlePageFrame(
+    banner: String?,
+    onBack: () -> Unit,
+    onHome: () -> Unit,
+    scroll: androidx.compose.foundation.ScrollState = rememberScrollState(),
+    cast: @Composable (Modifier) -> Unit = { PageCastButton(it) },
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (banner != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(ChinoBg2)
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(top = HERO_BUTTONS_TOP),
+                ) {
+                    BackAndHome(onBack = onBack, onHome = onHome, modifier = Modifier.padding(start = 16.dp))
+                    cast(Modifier.align(Alignment.TopEnd).padding(end = 16.dp))
+                }
+                InformationBanner(banner, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(scroll),
+                content = content,
             )
         }
-        // The Cast button, on the right of the same row: Google's icon in the
-        // overlay buttons' square, there while a device is on the network.
-        CastButton(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(end = 16.dp, top = HERO_BUTTONS_TOP)
-                .size(HERO_BUTTON_SIZE)
-                .clip(RectangleShape)
-                .background(ChinoSurfaceHi),
-        )
+        if (banner == null) {
+            // The `windowInsetsPadding(statusBars)` pushes them below the
+            // system status bar (clock + battery) when running edge-to-edge;
+            // without it the chips collide with the system bar on tablets.
+            BackAndHome(
+                onBack = onBack,
+                onHome = onHome,
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(start = 16.dp, top = HERO_BUTTONS_TOP),
+            )
+            cast(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(end = 16.dp, top = HERO_BUTTONS_TOP),
+            )
+        }
     }
+}
+
+/**
+ * Back and Home, side by side on one solid surface with a 1 dp divider
+ * between them: whatever scrolls under the pair shows neither through the
+ * buttons nor through a gap between them. Home resets to the app root.
+ */
+@Composable
+internal fun BackAndHome(onBack: () -> Unit, onHome: () -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier = modifier.height(HERO_BUTTON_SIZE).background(ChinoSurfaceHi)) {
+        OverlayIconButton(icon = Lucide.ArrowLeft, contentDescription = "Back", onClick = onBack)
+        Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(ChinoBorder))
+        OverlayIconButton(icon = Lucide.House, contentDescription = "Home", onClick = onHome)
+    }
+}
+
+/** The Cast button of a title's page: Google's icon in the Back / Home
+ *  buttons' square, there while a device is on the network. */
+@Composable
+private fun PageCastButton(modifier: Modifier = Modifier) {
+    CastButton(
+        modifier = modifier
+            .size(HERO_BUTTON_SIZE)
+            .clip(RectangleShape)
+            .background(ChinoSurfaceHi),
+    )
 }
 
 /**
@@ -696,8 +748,8 @@ private val HERO_BUTTON_SIZE = 40.dp
  * and a 12dp gap. A phone's 21:9 backdrop is short, so there the poster
  * starts below the buttons instead of under them; never below 0.
  */
-internal fun heroOverlap(backdropHeight: Dp, topInset: Dp): Dp {
-    val belowButtons = topInset + HERO_BUTTONS_TOP + HERO_BUTTON_SIZE + 12.dp
+internal fun heroOverlap(backdropHeight: Dp, topInset: Dp, buttonsOver: Boolean = true): Dp {
+    val belowButtons = if (buttonsOver) topInset + HERO_BUTTONS_TOP + HERO_BUTTON_SIZE + 12.dp else 0.dp
     return (backdropHeight - belowButtons).coerceIn(0.dp, 128.dp)
 }
 

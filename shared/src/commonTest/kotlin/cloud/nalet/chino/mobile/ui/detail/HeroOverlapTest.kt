@@ -20,6 +20,14 @@ class HeroOverlapTest {
     }
 
     @Test
+    fun underThePhonesOwnTopBarNothingIsOverTheBackdropWebsOverlapAtMost() {
+        // The page from the phone: Back / Home and the banner above the
+        // backdrop, not over it.
+        assertEquals(128.dp, heroOverlap(backdropHeight = 176.dp, topInset = 28.dp, buttonsOver = false))
+        assertEquals(100.dp, heroOverlap(backdropHeight = 100.dp, topInset = 28.dp, buttonsOver = false))
+    }
+
+    @Test
     fun aBackdropShorterThanTheButtonsDoesNotRideUpAtAll() {
         assertEquals(0.dp, heroOverlap(backdropHeight = 60.dp, topInset = 24.dp))
     }
