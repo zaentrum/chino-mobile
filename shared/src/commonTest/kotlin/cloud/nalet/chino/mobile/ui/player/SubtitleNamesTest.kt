@@ -144,12 +144,20 @@ class SubtitleNamesTest {
                 // Another language's own name is something else.
                 t("de", "Español") to "German · Español",
                 // Inside a part with other words, only the language's name
-                // goes - not the label's own name, which says it once - and a
-                // word that is a code elsewhere is a word ("und" is German
-                // for "and").
+                // goes, and a word that is a code elsewhere is a word ("und"
+                // is German for "and").
                 t("de", "Deutsch Kommentar") to "German · Kommentar",
                 t("de", "Kommentar und Analyse") to "German · Kommentar und Analyse",
-                t("eng", "English Commentary") to "English Commentary",
+                // The label's own name before what the title adds: said
+                // once, as every label says it.
+                t("eng", "English Commentary") to "English · Commentary",
+                t("ger", "German AI") to "German · AI",
+                t("tha", "Thai AI") to "Thai · AI",
+                t("ukr", "Ukrainian AI") to "Ukrainian · AI",
+                t("eng", "ENGLISH Commentary") to "English · Commentary",
+                t("eng", "English: Director's Commentary") to "English · Director's Commentary",
+                // Elsewhere in the title, the title as it is.
+                t("eng", "Commentary in English") to "Commentary in English",
             ),
         )
     }
@@ -333,7 +341,7 @@ class SubtitleNamesTest {
         assertEquals(
             listOf(
                 "English · Commentary",
-                "English Commentary",
+                "English · Commentary",
                 "English · Commentary · for deaf and hard of hearing",
                 "German · Signs & Songs · foreign-language parts only",
                 "English (United Kingdom)",

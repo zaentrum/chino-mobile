@@ -134,6 +134,14 @@ class SubtitleMenuTest {
         )
         // "AI" as a word of its own, in capitals: not inside "MAIN", not "Plain".
         assertEquals(listOf(false, false, true), listOf("MAIN", "Plain", "AI (preview)").map(::isAiSubtitle))
+        // A made track whose title names its language first reads as the
+        // others do, last in its language.
+        val made = menu(
+            listOf(S("side-de", "ger", "German AI"), S("emb-2", "ger", embedded = true), S("side-th", "tha", "Thai AI")),
+            preferred = "off",
+            serverLanguages = listOf("de", "th"),
+        )
+        assertEquals(listOf("German", "German · AI", "Thai · AI"), labels(made.top))
     }
 
     @Test

@@ -213,7 +213,8 @@ class LanguagesTest {
         assertEquals(
             listOf(
                 "English · Commentary",
-                "English Commentary",
+                // The name again before what the title adds: said once.
+                "English · Commentary",
                 "English · Commentary · for deaf and hard of hearing",
                 "German · Signs & Songs · foreign-language parts only",
                 // "English" on a British English track: the name says it.

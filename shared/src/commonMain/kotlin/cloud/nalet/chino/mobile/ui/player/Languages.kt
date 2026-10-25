@@ -863,7 +863,8 @@ private fun startsWord(text: String, words: String): Boolean {
  * that ("English · Commentary", "German · AI", "Chinese · Cantonese") - not
  * the words of it that only name the language again, in any language or
  * cut short ("Deutsch", "中文", "BR" on Brazilian Portuguese, "Trad" on
- * Traditional Chinese, "NO" on Norwegian Bokmål) - or alone for a track
+ * Traditional Chinese, "NO" on Norwegian Bokmål), and the name it begins
+ * with said once ("German AI" is "German · AI") - or alone for a track
  * tagged with no language, else
  * "Unknown"; then its kind in words - "foreign-language parts only" for a
  * forced one, "for deaf and hard of hearing" for one with sound described,
@@ -881,7 +882,10 @@ fun subtitleLabel(track: SubtitleLabelInput): String {
     val label = when {
         title.isEmpty() || lower == name.lowercase() || namesLanguage(title, lang) -> name
         !hasLanguage(lang) -> title
-        lower.contains(name.lowercase()) -> title
+        // The name again before what the title adds ("German AI", "English
+        // Commentary"): said once, as every other label says it ("German ·
+        // AI"). Elsewhere in the title, the title as it is.
+        lower.contains(name.lowercase()) -> afterName(title, name)?.let { "$name · $it" } ?: title
         // "English" on a British English track, "BR" on a Brazilian one,
         // "Trad" on a Traditional Chinese one: the name says it already -
         // from the start of a word of it, not letters inside one ("AI" on a
@@ -892,6 +896,20 @@ fun subtitleLabel(track: SubtitleLabelInput): String {
     }
     val kinds = listOfNotNull(FORCED_SUBTITLE_KIND.takeIf { forced }, SDH_SUBTITLE_KIND.takeIf { sdh })
     return (listOf(label) + kinds).joinToString(" · ")
+}
+
+/** What a title says after the language's [name] it begins with, as a word
+ *  of its own: "AI" of "German AI", "Commentary" of "English Commentary".
+ *  Null for a title that doesn't begin with the
+ *  name ("Commentary in English"), begins with a longer word ("Englishman"),
+ *  or says nothing after it. */
+private fun afterName(title: String, name: String): String? {
+    if (!title.startsWith(name, ignoreCase = true)) return null
+    val rest = title.substring(name.length)
+    if (rest.firstOrNull()?.isLetterOrDigit() == true) return null
+    var t = rest.replace(LEADING_SEPARATORS, "").trim()
+    if ((t.startsWith("(") && t.endsWith(")")) || (t.startsWith("[") && t.endsWith("]"))) t = t.substring(1, t.length - 1).trim()
+    return t.takeIf { it.isNotEmpty() }
 }
 
 /** The subtitle labels, one per track, in order ([subtitleLabel]). Two that
