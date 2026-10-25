@@ -765,7 +765,7 @@ private fun downloadedPlayState(
     serverSubtitleLanguages = serverLanguages,
 )
 
-private enum class OpenPopover { NONE, SPEED, AUDIO, CAPTIONS, INFO, VOLUME, QUALITY }
+internal enum class OpenPopover { NONE, SPEED, AUDIO, CAPTIONS, INFO, VOLUME, QUALITY }
 
 private data class SubtitleTrack(
     val id: String,
@@ -2395,6 +2395,10 @@ private fun Chrome(
                     muted = muted,
                     volume = volume,
                     captionsOn = captionsOn,
+                    // What the subtitles and quality buttons say to a
+                    // screen reader: the one on, as their menus name it.
+                    subtitleOn = subtitleTracks.firstOrNull { it.selected }?.label?.takeIf { captionsOn },
+                    qualityName = qualityNameOf(currentQuality, state.qualities),
                     fullscreen = fullscreen,
                     playbackSpeed = playbackSpeed,
                     openPopover = openPopover,
@@ -2468,6 +2472,7 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
             ChromeButton(
                 icon = Lucide.ArrowLeft,
                 onClick = onBack,
+                name = PlayerButtons.back,
                 variant = ChromeBtnVariant.Neutral,
             )
             // Home — resets to the app root (chino-web parity). Sits next to
@@ -2475,6 +2480,7 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
             ChromeButton(
                 icon = Lucide.House,
                 onClick = onHome,
+                name = PlayerButtons.home,
                 variant = ChromeBtnVariant.Neutral,
             )
             // The web player's `h1.text-lg font-medium truncate`. It takes the
@@ -2824,11 +2830,15 @@ private fun TrickplayPreview(
 }
 
 @Composable
-private fun BottomControls(
+internal fun BottomControls(
     isPlaying: Boolean,
     muted: Boolean,
     volume: Float,
     captionsOn: Boolean,
+    /** The subtitle on, as the menu names it; null for none. */
+    subtitleOn: String?,
+    /** The quality playing, as the quality menu names it. */
+    qualityName: String,
     fullscreen: Boolean,
     playbackSpeed: Float,
     openPopover: OpenPopover,
@@ -2866,6 +2876,7 @@ private fun BottomControls(
             ChromeButton(
                 icon = if (isPlaying) Lucide.Pause else Lucide.Play,
                 onClick = onPlayPause,
+                name = PlayerButtons.playPause(isPlaying),
                 variant = ChromeBtnVariant.Neutral,
             )
             // Compact volume: just the icon by default; tapping it reveals
@@ -2875,6 +2886,7 @@ private fun BottomControls(
             ChromeButton(
                 icon = if (muted || volume == 0f) Lucide.VolumeX else Lucide.Volume2,
                 onClick = { onTogglePopover(OpenPopover.VOLUME) },
+                name = PlayerButtons.volume(muted, volume),
                 variant = if (openPopover == OpenPopover.VOLUME) ChromeBtnVariant.Accent else ChromeBtnVariant.Neutral,
             )
             AnimatedVisibility(
@@ -2916,6 +2928,7 @@ private fun BottomControls(
             ChromeButton(
                 icon = Lucide.Captions,
                 onClick = onToggleCaptions,
+                name = PlayerButtons.subtitles(subtitleOn),
                 variant = if (captionsOn || openPopover == OpenPopover.CAPTIONS) {
                     ChromeBtnVariant.Accent
                 } else {
@@ -2925,6 +2938,7 @@ private fun BottomControls(
             ChromeButton(
                 icon = Lucide.Gauge,
                 onClick = { onTogglePopover(OpenPopover.SPEED) },
+                name = PlayerButtons.speed(playbackSpeed),
                 variant = if (openPopover == OpenPopover.SPEED) ChromeBtnVariant.Accent else ChromeBtnVariant.Neutral,
             )
             // Quality gear — only when the menu has more than one row
@@ -2934,6 +2948,7 @@ private fun BottomControls(
                 ChromeButton(
                     icon = Lucide.Settings2,
                     onClick = { onTogglePopover(OpenPopover.QUALITY) },
+                    name = PlayerButtons.quality(qualityName),
                     variant = if (openPopover == OpenPopover.QUALITY) ChromeBtnVariant.Accent else ChromeBtnVariant.Neutral,
                 )
             }
@@ -2945,6 +2960,7 @@ private fun BottomControls(
                 ChromeButton(
                     icon = Lucide.ChevronLeft,
                     onClick = onPrevEpisode,
+                    name = PlayerButtons.previousEpisode,
                     variant = ChromeBtnVariant.Neutral,
                 )
             }
@@ -2952,6 +2968,7 @@ private fun BottomControls(
                 ChromeButton(
                     icon = Lucide.ChevronRight,
                     onClick = onNextEpisode,
+                    name = PlayerButtons.nextEpisode,
                     variant = ChromeBtnVariant.Neutral,
                 )
             }
@@ -2961,11 +2978,13 @@ private fun BottomControls(
             ChromeButton(
                 icon = Lucide.Info,
                 onClick = { onTogglePopover(OpenPopover.INFO) },
+                name = PlayerButtons.info,
                 variant = if (openPopover == OpenPopover.INFO) ChromeBtnVariant.Accent else ChromeBtnVariant.Neutral,
             )
             ChromeButton(
                 icon = if (fullscreen) Lucide.Minimize else Lucide.Maximize,
                 onClick = onToggleFullscreen,
+                name = PlayerButtons.fullscreen(fullscreen),
                 variant = ChromeBtnVariant.Neutral,
             )
         }
@@ -3048,12 +3067,15 @@ private fun VolumeSlider(
     }
 }
 
-private enum class ChromeBtnVariant { Neutral, Primary, Accent }
+internal enum class ChromeBtnVariant { Neutral, Primary, Accent }
 
+/** One of the player's round buttons: its icon, and for a screen reader its
+ *  [name] - what it does - and its state ([PlayerButtons]); a button. */
 @Composable
-private fun ChromeButton(
+internal fun ChromeButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit,
+    name: PlayerButtonName,
     variant: ChromeBtnVariant = ChromeBtnVariant.Neutral,
     enabled: Boolean = true,
 ) {
@@ -3075,8 +3097,13 @@ private fun ChromeButton(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 enabled = enabled,
+                role = androidx.compose.ui.semantics.Role.Button,
                 onClick = onClick,
-            ),
+            )
+            .semantics {
+                contentDescription = name.name
+                name.state?.let { stateDescription = it }
+            },
         contentAlignment = Alignment.Center,
     ) {
         Icon(

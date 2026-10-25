@@ -149,6 +149,45 @@ fun speedLabel(rate: Float): String = when {
     else -> "${rate}x"
 }
 
+/** What a screen reader says of one of the player's round buttons: what it
+ *  does ([name]) and the state it is in ([state]), none where the name says
+ *  it ("pause"). */
+data class PlayerButtonName(val name: String, val state: String? = null)
+
+/**
+ * The player's round buttons, each named by what it does and with its state,
+ * as chino-web's player names its buttons - in the chrome's lowercase. An
+ * icon alone says nothing to a screen reader; these do.
+ */
+object PlayerButtons {
+    val back = PlayerButtonName("back")
+    val home = PlayerButtonName("home")
+
+    /** What pressing it does: "pause" while it plays, "play" while it doesn't. */
+    fun playPause(playing: Boolean) = PlayerButtonName(if (playing) "pause" else "play")
+
+    /** The volume, which it opens: "muted", else how loud ("80%"). */
+    fun volume(muted: Boolean, volume: Float) =
+        PlayerButtonName("volume", if (muted || volume <= 0f) "muted" else "${kotlin.math.round(volume.coerceIn(0f, 1f) * 100).toInt()}%")
+
+    /** The subtitles menu, with the subtitle on ([on], as the menu names
+     *  it), else "off". */
+    fun subtitles(on: String?) = PlayerButtonName("subtitles", on?.takeIf { it.isNotBlank() } ?: "off")
+
+    /** The speed menu, with the speed ("normal", "1.5x"). */
+    fun speed(rate: Float) = PlayerButtonName("speed", speedLabel(rate))
+
+    /** The quality menu, with the quality's name ("Auto", "Medium (720p)"). */
+    fun quality(name: String) = PlayerButtonName("quality", name)
+
+    val previousEpisode = PlayerButtonName("previous episode")
+    val nextEpisode = PlayerButtonName("next episode")
+    val info = PlayerButtonName("playback info")
+
+    /** What pressing it does: "exit fullscreen" in fullscreen, else "fullscreen". */
+    fun fullscreen(on: Boolean) = PlayerButtonName(if (on) "exit fullscreen" else "fullscreen")
+}
+
 /** Whether the player hides the system bars: in fullscreen, and whenever the
  *  phone is held sideways - the picture fills the screen then, and the
  *  status bar would sit over its top. A swipe from the edge brings them
