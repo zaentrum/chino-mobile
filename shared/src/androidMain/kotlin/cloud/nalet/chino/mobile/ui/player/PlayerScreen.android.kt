@@ -238,6 +238,8 @@ actual class PlayerScreen actual constructor(
         val close: () -> Unit = { closeAs(PlayerClose.ByViewer) }
         val closeByItself: () -> Unit = { closeAs(PlayerClose.ByItself) }
         BackHandler(enabled = true, onBack = close)
+        // The player's black edge to edge, the display cutout's strip too.
+        PlayerWindowEffect()
 
         var ready: PlayState? by remember { mutableStateOf(null) }
         // Stopped for good, and why (PlaybackFailure.kt); "try again" starts
@@ -1067,6 +1069,29 @@ private fun playerReportContext(itemId: String, extraId: String?): Map<String, S
     put("screen", "player")
     put("itemId", itemId)
     extraId?.let { put("extraId", it) }
+}
+
+/** What shows behind the player's picture, where its window has no content
+ *  of its own - the strip beside the display cutout, held sideways. */
+internal const val PLAYER_WINDOW_BACKGROUND: Int = android.graphics.Color.BLACK
+
+/**
+ * While the player shows, its window's background is the player's black
+ * ([PLAYER_WINDOW_BACKGROUND]): held sideways, the strip the content keeps
+ * clear of beside the display cutout shows the window's background - it was
+ * the app's navy beside the picture's black pillarbox. As it was once the
+ * player closes. The picture and the chrome keep to the safe area as before.
+ * No-ops if the host LocalContext isn't an Activity.
+ */
+@Composable
+internal fun PlayerWindowEffect() {
+    val ctx = LocalContext.current
+    DisposableEffect(ctx) {
+        val window = (ctx as? Activity)?.window ?: return@DisposableEffect onDispose {}
+        val before = window.decorView.background
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(PLAYER_WINDOW_BACKGROUND))
+        onDispose { window.setBackgroundDrawable(before) }
+    }
 }
 
 /** Hides system bars while mounted; restores on dispose. No-ops if the
