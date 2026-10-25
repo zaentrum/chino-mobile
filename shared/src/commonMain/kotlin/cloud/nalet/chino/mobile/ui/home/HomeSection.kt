@@ -64,7 +64,9 @@ import kotlinx.coroutines.launch
 fun HomeSection(
     container: AppContainer,
     onItemSelected: (String) -> Unit = {},
-    onPlay: (String) -> Unit = onItemSelected,
+    /** Plays a title or an episode: from its start, or where the player
+     *  resumes it. */
+    onPlay: (itemId: String, fromStart: Boolean) -> Unit = { id, _ -> onItemSelected(id) },
     // #150: jump to a full overview section ("movies" or "series") from a
     // rail's trailing "See all" tile. Wired by MainShellScreen to the
     // bottom-nav / side-rail section switch. Mirrors chino-web's
@@ -136,15 +138,18 @@ fun HomeSection(
         is HomeUiState.Ready -> ReadyContent(
             s,
             onItemSelected,
-            onPlay,
-            // The hero holds series too, and a series is not itself
-            // playable: it plays its episode, else opens its page
-            // (chino-web's usePlayTitle).
-            onPlayHero = { id ->
-                if (s.heroPool.firstOrNull { it.id == id }?.kind == "series") {
-                    model.seriesEpisode(id) { episode -> if (episode != null) onPlay(episode) else onItemSelected(id) }
-                } else {
-                    onPlay(id)
+            // The hero's first button as the title's page has it: a movie
+            // resumed or played, a series' episode by its code; "start over"
+            // plays it from its start. A series whose episode isn't known
+            // yet finds it now, else opens its page (chino-web's
+            // usePlayTitle).
+            onPlayHero = { id, startOver ->
+                val play = s.heroPlays[id]
+                when {
+                    play != null -> onPlay(play.playId, startOver || play.fromStart)
+                    s.heroPool.firstOrNull { it.id == id }?.kind == "series" ->
+                        model.seriesEpisode(id) { episode -> if (episode != null) onPlay(episode, false) else onItemSelected(id) }
+                    else -> onPlay(id, startOver)
                 }
             },
             // The hero title's Trailer does what its page's does: this
@@ -166,8 +171,7 @@ fun HomeSection(
 private fun ReadyContent(
     s: HomeUiState.Ready,
     onItemSelected: (String) -> Unit,
-    onPlay: (String) -> Unit,
-    onPlayHero: (String) -> Unit,
+    onPlayHero: (itemId: String, startOver: Boolean) -> Unit,
     onTrailerHero: (String, TrailerChoice) -> Unit,
     onRemoveFromContinueWatching: (String) -> Unit,
     onToggleWatched: (String) -> Unit,
@@ -189,6 +193,7 @@ private fun ReadyContent(
                 pool = s.heroPool,
                 baseUrl = s.baseUrl,
                 streamToken = s.streamToken,
+                plays = s.heroPlays,
                 onMoreInfo = onItemSelected,
                 onPlay = onPlayHero,
                 onTrailer = onTrailerHero,

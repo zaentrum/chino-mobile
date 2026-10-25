@@ -34,3 +34,20 @@ fun playAction(savedSec: Int, durationSec: Double): PlayAction {
  *  last minute of [durationSec] (0 when unknown). */
 fun resumesAt(savedSec: Int, durationSec: Double): Boolean =
     resumeStartSec(ResumeInput(savedSec = savedSec, durationSec = durationSec)) > 0
+
+/** The play button's label: "resume 1:43" where the player resumes, else
+ *  "play" - on a title's page and on Home's hero alike. */
+val PlayAction.label: String
+    get() = when (this) {
+        is PlayAction.Resume -> "resume ${positionClock(sec)}"
+        PlayAction.Play -> "play"
+    }
+
+/** A position as a clock: "1:43", "1:02:05". */
+fun positionClock(s: Int): String {
+    if (s < 0) return "0:00"
+    val h = s / 3600
+    val m = (s % 3600) / 60
+    val sec = (s % 60).toString().padStart(2, '0')
+    return if (h > 0) "$h:${m.toString().padStart(2, '0')}:$sec" else "$m:$sec"
+}

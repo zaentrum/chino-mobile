@@ -81,6 +81,7 @@ import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cloud.nalet.chino.mobile.data.model.Item
+import cloud.nalet.chino.mobile.ui.home.HeroPlay
 import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
 import cloud.nalet.chino.mobile.ui.trailer.trailerChoice
 import kotlinx.coroutines.delay
@@ -103,8 +104,13 @@ fun HeroBanner(
     baseUrl: String,
     streamToken: String,
     rotateEveryMs: Long = 12_000L,
+    /** Each title's first button, by its id: "resume 0:58" with "start
+     *  over", "play S01E01"; "play" for one not in it. */
+    plays: Map<String, HeroPlay> = emptyMap(),
     onMoreInfo: ((String) -> Unit)? = null,
-    onPlay: ((String) -> Unit)? = null,
+    /** The first button ([startOver] false) or "start over" of the title
+     *  with that id. */
+    onPlay: ((itemId: String, startOver: Boolean) -> Unit)? = null,
     /** The Trailer of the title with that id: its [TrailerChoice]. */
     onTrailer: ((String, TrailerChoice) -> Unit)? = null,
 ) {
@@ -157,6 +163,7 @@ fun HeroBanner(
             ) { page ->
                 HeroContent(
                     item = pool[page],
+                    play = plays[pool[page].id],
                     baseUrl = baseUrl,
                     streamToken = streamToken,
                     isWide = isWide,
@@ -207,16 +214,17 @@ fun HeroBanner(
 @Composable
 private fun HeroContent(
     item: Item,
+    play: HeroPlay?,
     baseUrl: String,
     streamToken: String,
     isWide: Boolean,
     dots: Boolean,
     onMoreInfo: ((String) -> Unit)?,
-    onPlay: ((String) -> Unit)?,
+    onPlay: ((String, Boolean) -> Unit)?,
     onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
-    if (isWide) HeroContentWide(item, baseUrl, streamToken, onMoreInfo, onPlay, onTrailer)
-    else HeroContentNarrow(item, baseUrl, streamToken, dots, onMoreInfo, onPlay, onTrailer)
+    if (isWide) HeroContentWide(item, play, baseUrl, streamToken, onMoreInfo, onPlay, onTrailer)
+    else HeroContentNarrow(item, play, baseUrl, streamToken, dots, onMoreInfo, onPlay, onTrailer)
 }
 
 /** Between a phone's hero picture and the buttons under it. */
@@ -236,12 +244,13 @@ private val HERO_BUTTON_PADDING_NARROW = 12.dp
 @Composable
 private fun HeroContentNarrow(
     item: Item,
+    play: HeroPlay?,
     baseUrl: String,
     streamToken: String,
     /** The rotation dots take a row under the buttons. */
     dots: Boolean,
     onMoreInfo: ((String) -> Unit)?,
-    onPlay: ((String) -> Unit)?,
+    onPlay: ((String, Boolean) -> Unit)?,
     onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
     // Phone hero after chino-web's mobile hero: the backdrop the hero's
@@ -298,7 +307,7 @@ private fun HeroContentNarrow(
             horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
             verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
         ) {
-            HeroButtons(item, narrow = true, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
+            HeroButtons(item, play, narrow = true, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
         }
         Box(modifier = Modifier.height(16.dp + if (dots) HERO_DOTS_ROW else 0.dp))
     }
@@ -307,10 +316,11 @@ private fun HeroContentNarrow(
 @Composable
 private fun HeroContentWide(
     item: Item,
+    play: HeroPlay?,
     baseUrl: String,
     streamToken: String,
     onMoreInfo: ((String) -> Unit)?,
-    onPlay: ((String) -> Unit)?,
+    onPlay: ((String, Boolean) -> Unit)?,
     onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -350,6 +360,7 @@ private fun HeroContentWide(
         )
         HeroTextAndButtons(
             item = item,
+            play = play,
             buttonsWidth = (maxWidth * HERO_PICTURE_START - HERO_WIDE_START - 16.dp).coerceAtLeast(TITLE_ACTION_HEIGHT),
             onMoreInfo = onMoreInfo,
             onPlay = onPlay,
@@ -383,9 +394,10 @@ private val HERO_OVERVIEW_LINE = 28.sp
 @Composable
 private fun HeroTextAndButtons(
     item: Item,
+    play: HeroPlay?,
     buttonsWidth: Dp,
     onMoreInfo: ((String) -> Unit)?,
-    onPlay: ((String) -> Unit)?,
+    onPlay: ((String, Boolean) -> Unit)?,
     onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
     SubcomposeLayout(modifier = Modifier.fillMaxSize()) { constraints ->
@@ -397,7 +409,7 @@ private fun HeroTextAndButtons(
                 horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
                 verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
             ) {
-                HeroButtons(item, narrow = false, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
+                HeroButtons(item, play, narrow = false, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
             }
         }.map { it.measure(Constraints(maxWidth = buttonsWidth.roundToPx())) }
         val head = subcompose("head") {
@@ -448,30 +460,43 @@ private fun HeroTextAndButtons(
 }
 
 /**
- * The hero's buttons, the title actions as on a title's page: "play", dark
- * on the accent; "see details" and "trailer" on the plain surface - 48 dp,
- * solid, the labels in the mono face. The trailer by its page's rule
- * (trailerChoice), with the trailer's one icon: this server's trailer plays,
- * a link opens; without either, no button. On a phone ([narrow]) the
- * labelled ones have less room at their sides and the trailer is its icon
- * alone, named "trailer", so the three share one line.
+ * The hero's buttons, the title actions as on a title's page: "play" - or
+ * "resume 0:58" and "start over" for a title partly watched, a series'
+ * episode by its code ([play]) - dark on the accent; "see details" and
+ * "trailer" on the plain surface - 48 dp, solid, the labels in the mono
+ * face. The trailer by its page's rule (trailerChoice), with the trailer's
+ * one icon: this server's trailer plays, a link opens; without either, no
+ * button. On a phone ([narrow]) the labelled ones have less room at their
+ * sides and the trailer is its icon alone, named "trailer", so play, see
+ * details and trailer share one line; with "start over" they wrap between
+ * buttons.
  */
 @Composable
 private fun HeroButtons(
     item: Item,
+    play: HeroPlay?,
     narrow: Boolean,
     onMoreInfo: ((String) -> Unit)?,
-    onPlay: ((String) -> Unit)?,
+    onPlay: ((String, Boolean) -> Unit)?,
     onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
     val padding = if (narrow) HERO_BUTTON_PADDING_NARROW else TITLE_ACTION_PADDING
     TitleActionButton(
-        label = "play",
+        label = play?.label ?: "play",
         icon = Lucide.Play,
         primary = true,
-        onClick = { onPlay?.invoke(item.id) },
+        onClick = { onPlay?.invoke(item.id, false) },
         horizontalPadding = padding,
     )
+    if (play?.resumes == true) {
+        TitleActionButton(
+            label = "start over",
+            icon = null,
+            primary = false,
+            onClick = { onPlay?.invoke(item.id, true) },
+            horizontalPadding = padding,
+        )
+    }
     TitleActionButton(
         label = "see details",
         icon = null,

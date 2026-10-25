@@ -216,7 +216,7 @@ private fun SectionContent(
             HomeSection(
                 container,
                 onItemSelected = onItemSelected,
-                onPlay = onPlay,
+                onPlay = { id, fromStart -> nav.push(PlayerScreen(itemId = id, fromStart = fromStart)) },
                 onNavigateToSection = onNavigateToSection,
                 // The hero title's trailer, in the player's extra mode.
                 onPlayTrailer = { id, extraId -> nav.push(PlayerScreen(itemId = id, extraId = extraId)) },

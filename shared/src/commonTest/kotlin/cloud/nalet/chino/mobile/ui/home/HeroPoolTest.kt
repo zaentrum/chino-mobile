@@ -159,6 +159,53 @@ class HeroPoolTest {
         assertNull(firstEpisode(emptyList()))
     }
 
+    @Test
+    fun theHerosFirstButtonIsTheTitlePagesForAMovie() {
+        val film = item("m1", "movie").copy(durationMs = 888_000)
+        // Not in Continue watching: "play", nothing beside it.
+        assertEquals(HeroPlay("m1", "play", resumes = false, fromStart = false), heroPlay(film, emptyList(), null))
+        // Partly watched: "resume 0:58", and "start over" beside it.
+        val partly = listOf(ContinueWatchingItem(id = "m1", title = "M1", positionSec = 58, durationSec = 888, type = "movie"))
+        assertEquals(HeroPlay("m1", "resume 0:58", resumes = true, fromStart = false), heroPlay(film, partly, null))
+        // Over an hour in: the hours too.
+        val long = listOf(ContinueWatchingItem(id = "m1", title = "M1", positionSec = 3_725, durationSec = 7_200, type = "movie"))
+        assertEquals("resume 1:02:05", heroPlay(film, long, null)?.label)
+        // Where the player wouldn't resume - its last minutes, or barely
+        // started - "play", as on its page.
+        val atTheEnd = listOf(ContinueWatchingItem(id = "m1", title = "M1", positionSec = 870, durationSec = 888, type = "movie"))
+        assertEquals("play", heroPlay(film, atTheEnd, null)?.label)
+        val barely = listOf(ContinueWatchingItem(id = "m1", title = "M1", positionSec = 12, durationSec = 888, type = "movie"))
+        assertEquals("play", heroPlay(film, barely, null)?.label)
+        // The feed without a length: the title's own.
+        val noLength = listOf(ContinueWatchingItem(id = "m1", title = "M1", positionSec = 300, type = "movie"))
+        assertEquals("resume 5:00", heroPlay(film, noLength, null)?.label)
+    }
+
+    @Test
+    fun theHerosFirstButtonForASeriesNamesItsEpisodeAsItsPageDoes() {
+        val show = item("s1", "series")
+        fun ep(id: String, n: Int) = Episode(id = id, title = id, seasonNumber = 1, episodeNumber = n, parentId = "s1", durationMs = 2_700_000)
+        val seasons = listOf(Season(1, listOf(ep("s1e1", 1), ep("s1e2", 2), ep("s1e3", 3))))
+        // Nothing watched: S01E01, from its start.
+        assertEquals(HeroPlay("s1e1", "play S01E01", resumes = false, fromStart = true), heroPlay(show, emptyList(), seasons))
+        // An episode partly watched: "resume S01E03", and "start over".
+        val inS01E03 = listOf(
+            ContinueWatchingItem(id = "s1e3", title = "s1e3", positionSec = 600, durationSec = 2_700, type = "episode", parentId = "s1", seasonNumber = 1, episodeNumber = 3),
+        )
+        assertEquals(HeroPlay("s1e3", "resume S01E03", resumes = true, fromStart = false), heroPlay(show, inS01E03, null))
+        // After a finished one: the next, from its start.
+        val upNext = listOf(
+            ContinueWatchingItem(id = "s1e2", title = "s1e2", upNext = true, type = "episode", parentId = "s1", seasonNumber = 1, episodeNumber = 2),
+        )
+        assertEquals(HeroPlay("s1e2", "play S01E02", resumes = false, fromStart = true), heroPlay(show, upNext, null))
+        // Neither a row nor its seasons: not known yet - "play", found when pressed.
+        assertNull(heroPlay(show, emptyList(), null))
+        // The seasons are asked only where the feed doesn't say the episode.
+        assertTrue(heroNeedsSeasons("s1", emptyList()))
+        assertTrue(heroNeedsSeasons("s1", listOf(row("s1e3", type = "episode", parent = "s1"))))
+        assertEquals(false, heroNeedsSeasons("s1", inS01E03))
+    }
+
     private fun seasons() = listOf(
         Season(0, listOf(episode("sp1", 1))),
         Season(2, listOf(episode("s2e1", 1))),

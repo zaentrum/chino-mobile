@@ -3,6 +3,10 @@ package cloud.nalet.chino.mobile.ui.home
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.api.Season
 import cloud.nalet.chino.mobile.data.model.Item
+import cloud.nalet.chino.mobile.ui.detail.PlayAction
+import cloud.nalet.chino.mobile.ui.detail.label
+import cloud.nalet.chino.mobile.ui.detail.playAction
+import cloud.nalet.chino.mobile.ui.detail.seriesPlayTarget
 import cloud.nalet.chino.mobile.ui.trailer.localTrailer
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.hours
@@ -78,6 +82,51 @@ internal fun firstEpisode(seasons: List<Season>): String? {
     val regular = withEpisodes.filter { it.season >= 1 }
     val season = (regular.ifEmpty { withEpisodes }).minByOrNull { it.season } ?: return null
     return season.episodes.minByOrNull { it.episodeNumber ?: Int.MAX_VALUE }?.id
+}
+
+/**
+ * What the hero's first button plays and says, as the title's page has it
+ * (docs/chino title actions): "resume 0:58", with "start over" beside it,
+ * for a movie partly watched, "play" otherwise; a series' episode by its
+ * code - "play S01E01", "resume S01E03" and "start over", "play S01E02"
+ * after a finished one.
+ */
+data class HeroPlay(
+    /** What plays: the movie, or the series' episode. */
+    val playId: String,
+    val label: String,
+    /** It resumes, and "start over" stands beside it. */
+    val resumes: Boolean,
+    /** Its first button plays from the start: a series' next episode, or
+     *  S01E01. A movie's "play" lets the player decide, as its page's does. */
+    val fromStart: Boolean,
+)
+
+/**
+ * The hero's first button for [item] ([HeroPlay]): a movie by its row in
+ * Continue watching ([feed], the most recent first) - where the player
+ * resumes it, the rule its page's button follows ([playAction]) - a series
+ * by the episode its page's first button plays ([seriesPlayTarget]), from
+ * the feed and its [seasons]. Null for a series whose episode is not known
+ * yet (no row in the feed, no seasons): the hero says "play" and finds it
+ * when pressed.
+ */
+fun heroPlay(item: Item, feed: List<ContinueWatchingItem>, seasons: List<Season>?): HeroPlay? {
+    if (item.kind == "series") {
+        val target = seriesPlayTarget(item.id, feed, seasons.orEmpty()) ?: return null
+        return HeroPlay(target.episodeId, target.label, target.resumes, fromStart = !target.resumes)
+    }
+    val row = feed.firstOrNull { it.id == item.id && it.type != "episode" }
+    val durationSec = row?.durationSec?.takeIf { it > 0 }?.toDouble() ?: ((item.durationMs ?: 0L) / 1000.0)
+    val action = playAction(row?.positionSec ?: 0, durationSec)
+    return HeroPlay(item.id, action.label, resumes = action is PlayAction.Resume, fromStart = false)
+}
+
+/** Whether the hero needs [seriesId]'s seasons to name its episode: no row
+ *  of it in the feed that says the episode's numbers. */
+internal fun heroNeedsSeasons(seriesId: String, feed: List<ContinueWatchingItem>): Boolean {
+    val row = feed.firstOrNull { it.type == "episode" && it.parentId == seriesId } ?: return true
+    return row.seasonNumber == null || row.episodeNumber == null
 }
 
 /**

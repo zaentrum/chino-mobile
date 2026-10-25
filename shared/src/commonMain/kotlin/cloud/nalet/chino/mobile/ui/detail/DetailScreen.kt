@@ -872,7 +872,7 @@ private fun ActionRow(
             // player would start it.
             playAction is PlayAction.Resume -> {
                 TitleActionButton(
-                    label = "resume ${fmtDur(playAction.sec)}",
+                    label = playAction.label,
                     icon = Lucide.Play,
                     primary = true,
                     onClick = onResume,
@@ -912,14 +912,6 @@ private class TitleListState(
     val inWatchlistOf: (String) -> Boolean,
     val toggleWatchlist: (String) -> Unit,
 )
-
-private fun fmtDur(s: Int): String {
-    if (s < 0) return "0:00"
-    val h = s / 3600
-    val m = (s % 3600) / 60
-    val sec = (s % 60).toString().padStart(2, '0')
-    return if (h > 0) "$h:${m.toString().padStart(2, '0')}:$sec" else "$m:$sec"
-}
 
 @Composable
 private fun Center(content: @Composable () -> Unit) {

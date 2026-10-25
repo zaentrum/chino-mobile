@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
@@ -111,6 +112,42 @@ class TitleActionsLayoutTest {
         assertEquals(play.top, details.top)
         assertEquals(play.top, trailer.top)
         assertEquals(FontFamily.Monospace, fontFamilyOf("see details"))
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h891dp")
+    fun aPartlyWatchedTitleOnTheHeroSaysResumeAndStartOverAsItsPageDoes() {
+        val played = mutableListOf<Pair<String, Boolean>>()
+        compose.setContent {
+            Box(modifier = Modifier.width(360.dp)) {
+                HeroBanner(
+                    pool = listOf(film),
+                    baseUrl = "http://localhost",
+                    streamToken = "t",
+                    plays = mapOf("f1" to cloud.nalet.chino.mobile.ui.home.HeroPlay("f1", "resume 0:58", resumes = true, fromStart = false)),
+                    onPlay = { id, startOver -> played += id to startOver },
+                )
+            }
+        }
+        val picture = compose.onNodeWithContentDescription("Harbour Lights").getBoundsInRoot()
+        val resume = compose.onNodeWithText("resume 0:58").assertHeightIsEqualTo(TITLE_ACTION_HEIGHT).getBoundsInRoot()
+        val startOver = compose.onNodeWithText("start over").assertHeightIsEqualTo(TITLE_ACTION_HEIGHT).getBoundsInRoot()
+        compose.onNodeWithText("see details").assertHeightIsEqualTo(TITLE_ACTION_HEIGHT)
+        // Nothing on the still; "start over" right after "resume".
+        for (b in listOf(resume, startOver)) assertTrue(b.top >= picture.bottom + HERO_PICTURE_GAP - 0.5.dp, "$b under $picture")
+        assertEquals(resume.top, startOver.top)
+        assertEquals(FontFamily.Monospace, fontFamilyOf("start over"))
+        compose.onNodeWithText("resume 0:58").performClick()
+        compose.onNodeWithText("start over").performClick()
+        compose.runOnIdle { assertEquals(listOf("f1" to false, "f1" to true), played) }
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h891dp")
+    fun aTitleNotStartedOnTheHeroSaysPlayAloneNoStartOver() {
+        heroAt(360.dp)
+        compose.onNodeWithText("play").assertHeightIsEqualTo(TITLE_ACTION_HEIGHT)
+        compose.onNodeWithText("start over").assertDoesNotExist()
     }
 
     @Test

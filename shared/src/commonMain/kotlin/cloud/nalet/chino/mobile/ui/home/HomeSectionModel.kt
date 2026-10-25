@@ -5,6 +5,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
 import cloud.nalet.chino.mobile.data.api.ProgressBody
+import cloud.nalet.chino.mobile.data.api.Season
 import cloud.nalet.chino.mobile.data.api.NO_ANSWER_SENTENCE
 import cloud.nalet.chino.mobile.data.api.catalogueMessage
 import cloud.nalet.chino.mobile.data.api.loadDetails
@@ -37,6 +38,10 @@ sealed interface HomeUiState {
         val topRated: List<Item>,
         val baseUrl: String,
         val streamToken: String,
+        /** Each hero title's first button, by its id ([heroPlay]): "resume
+         *  0:58" and "start over", "play S01E01"; none where it is not known
+         *  yet - "play", which finds the episode when pressed. */
+        val heroPlays: Map<String, HeroPlay> = emptyMap(),
     ) : HomeUiState
     /** [signInRefused]: the server refuses the sign-in (a 401 or 403), so
      *  the page offers the ways out - another server, signing in again. */
@@ -53,6 +58,15 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
     private val _state = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
 
+    /** The seasons of the hero's series, where the hero needed them to name
+     *  an episode ([heroNeedsSeasons]). */
+    private var heroSeasons: Map<String, List<Season>> = emptyMap()
+
+    /** The hero's first buttons for [pool] after the Continue watching
+     *  [feed] - as the titles' pages have them. */
+    private fun heroPlaysOf(pool: List<Item>, feed: List<ContinueWatchingItem>): Map<String, HeroPlay> =
+        pool.mapNotNull { item -> heroPlay(item, feed, heroSeasons[item.id])?.let { item.id to it } }.toMap()
+
     init { load() }
 
     /**
@@ -67,8 +81,10 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
         val current = _state.value
         val dur = (current as? HomeUiState.Ready)?.continueWatching?.find { it.id == id }?.durationSec ?: 0
         if (current is HomeUiState.Ready) {
+            val feed = (current.continueWatching + current.nextUp).filterNot { it.id == id }
             _state.value = current.copy(
                 continueWatching = current.continueWatching.filterNot { it.id == id },
+                heroPlays = heroPlaysOf(current.heroPool, feed),
             )
         }
         screenModelScope.launch {
@@ -91,6 +107,7 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                 _state.value = latest.copy(
                     continueWatching = refreshed.filter { !it.upNext },
                     nextUp = refreshed.filter { it.upNext },
+                    heroPlays = heroPlaysOf(latest.heroPool, refreshed),
                 )
             }
         }
@@ -233,10 +250,23 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                         }.getOrDefault(emptyList())
                     }
                     val tokenDef = async { container.streamTokenManager.valid() }
+                    // The hero names a series' episode as its page does
+                    // ("play S01E01"): its seasons, where the feed doesn't
+                    // say the episode's numbers - asked beside the rails.
+                    val heroSeasonsDef = async {
+                        val feed = cwDef.await()
+                        heroDef.await()
+                            .filter { it.kind == "series" && heroNeedsSeasons(it.id, feed) }
+                            .map { s -> s.id to async { runCatching { container.chinoApi.seriesEpisodes(s.id).seasons }.getOrNull() } }
+                            .mapNotNull { (id, seasons) -> seasons.await()?.let { id to it } }
+                            .toMap()
+                    }
 
                     val cw = cwDef.await()
+                    val pool = heroDef.await()
+                    heroSeasons = heroSeasonsDef.await()
                     HomeUiState.Ready(
-                        heroPool = heroDef.await(),
+                        heroPool = pool,
                         continueWatching = cw.filter { !it.upNext },
                         nextUp = cw.filter { it.upNext },
                         recentMovies = recentMoviesDef.await(),
@@ -244,6 +274,7 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                         topRated = topRatedDef.await(),
                         baseUrl = container.config.apiBaseUrl.trimEnd('/'),
                         streamToken = tokenDef.await(),
+                        heroPlays = heroPlaysOf(pool, cw),
                     )
                 }
             } catch (e: Exception) {
