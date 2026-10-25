@@ -43,13 +43,18 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import com.composables.icons.lucide.BookmarkFilled
 import com.composables.icons.lucide.Check
@@ -77,6 +82,14 @@ import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
@@ -569,7 +582,10 @@ private fun YearRatingChipRow(item: Item) {
  * for a title stopped part way ([resumes]) - the watched toggle ("mark as
  * watched", "watched"), and "remove from continue watching" where the card
  * is in it; each where its action is wired. Its items in the mono face,
- * lowercase, as every menu's (chino-web 039233b).
+ * lowercase, as every menu's (chino-web 039233b). It opens over the card it
+ * is placed on - the poster, its anchor - from the card's leading edge, and
+ * stays inside the page's 16 dp gutter however near an edge the card is
+ * ([CardMenuPosition]): never flush with the screen's edge.
  */
 @Composable
 internal fun CardMenu(
@@ -581,11 +597,59 @@ internal fun CardMenu(
     onToggleWatched: (() -> Unit)? = null,
     onRemoveFromContinueWatching: (() -> Unit)? = null,
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        onPlay?.let { play -> CardMenuItem(if (resumes) CARD_RESUME else CARD_PLAY, Lucide.Play) { onDismiss(); play() } }
-        // Its state, in the words of the title page's toggle.
-        onToggleWatched?.let { toggle -> CardMenuItem(watchedName(watched), Lucide.Check) { onDismiss(); toggle() } }
-        onRemoveFromContinueWatching?.let { remove -> CardMenuItem(REMOVE_FROM_CONTINUE_WATCHING, Lucide.X) { onDismiss(); remove() } }
+    if (!expanded) return
+    val density = LocalDensity.current
+    val position = remember(density) { with(density) { CardMenuPosition(gutter = CARD_MENU_GUTTER.roundToPx(), drop = CARD_MENU_DROP.roundToPx()) } }
+    Popup(popupPositionProvider = position, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
+        // The menu's own surface, square as every shape of the design system.
+        Surface(
+            shape = RectangleShape,
+            color = MenuDefaults.containerColor,
+            tonalElevation = MenuDefaults.TonalElevation,
+            shadowElevation = MenuDefaults.ShadowElevation,
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(IntrinsicSize.Max)
+                    .widthIn(max = CARD_MENU_MAX_WIDTH)
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 8.dp),
+            ) {
+                onPlay?.let { play -> CardMenuItem(if (resumes) CARD_RESUME else CARD_PLAY, Lucide.Play) { onDismiss(); play() } }
+                // Its state, in the words of the title page's toggle.
+                onToggleWatched?.let { toggle -> CardMenuItem(watchedName(watched), Lucide.Check) { onDismiss(); toggle() } }
+                onRemoveFromContinueWatching?.let { remove -> CardMenuItem(REMOVE_FROM_CONTINUE_WATCHING, Lucide.X) { onDismiss(); remove() } }
+            }
+        }
+    }
+}
+
+/** The page's gutter, which a card's menu stays inside. */
+internal val CARD_MENU_GUTTER = 16.dp
+
+/** How far below the poster's top a card's menu starts. */
+private val CARD_MENU_DROP = 6.dp
+
+/** At most this wide, as a menu is (Material's 280 dp). */
+private val CARD_MENU_MAX_WIDTH = 280.dp
+
+/**
+ * Where a card's menu opens: from the leading edge of its anchor - the card's
+ * poster - [drop] below its top; moved in where it would reach past the
+ * window's [gutter] on either side, or below it, so it is always inside the
+ * page's gutter. In pixels.
+ */
+internal class CardMenuPosition(private val gutter: Int, private val drop: Int) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val start = if (layoutDirection == LayoutDirection.Ltr) anchorBounds.left else anchorBounds.right - popupContentSize.width
+        val x = start.coerceAtMost(windowSize.width - gutter - popupContentSize.width).coerceAtLeast(gutter)
+        val y = (anchorBounds.top + drop).coerceAtMost(windowSize.height - gutter - popupContentSize.height).coerceAtLeast(gutter)
+        return IntOffset(x, y)
     }
 }
 
@@ -852,7 +916,8 @@ fun MediaCard(
             // its status marks, the saved bookmark, the watched check and the
             // progress bar (the design system's title actions).
             if (hasMenu) {
-                Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)) {
+                // The poster is the menu's anchor.
+                Box(modifier = Modifier.matchParentSize()) {
                     CardMenu(
                         expanded = menuOpen,
                         onDismiss = { menuOpen = false },

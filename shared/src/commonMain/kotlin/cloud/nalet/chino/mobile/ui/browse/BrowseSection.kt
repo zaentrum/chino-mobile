@@ -368,7 +368,8 @@ private fun BrowseCard(
             // drawn over the artwork but its status marks (the design
             // system's title actions).
             if (onToggleWatched != null || onPlay != null) {
-                Box(modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)) {
+                // The poster is the menu's anchor.
+                Box(modifier = Modifier.matchParentSize()) {
                     CardMenu(
                         expanded = menuOpen,
                         onDismiss = { menuOpen = false },
