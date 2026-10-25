@@ -16,7 +16,8 @@ class LanguageSettingsTest {
     @Test
     fun theSubtitleSettingOffersOffThenTheServersLanguagesInItsOrder() {
         val choices = subtitleSettingChoices(listOf("en", "de", "zh-Hans"), current = "off")
-        assertEquals(listOf("Off", "English", "German", "Chinese (Simplified)"), names(choices))
+        // "off", as the player's subtitles menu says it.
+        assertEquals(listOf("off", "English", "German", "Chinese (Simplified)"), names(choices))
         assertEquals(listOf("off", "en", "de", "zh-Hans"), choices.map { it.code })
         // Each name as the player's menus give it.
         for (c in choices.drop(1)) assertEquals(languageName(c.code), c.name)
@@ -26,7 +27,7 @@ class LanguageSettingsTest {
     fun eachLanguageOnceHoweverTheServerOrTheSettingSpellsIt() {
         // "eng" set before, "en" the server's: one, and it is the one on.
         val choices = subtitleSettingChoices(listOf("en", "eng", "EN", "de", "und", ""), current = "eng")
-        assertEquals(listOf("Off", "English", "German"), names(choices))
+        assertEquals(listOf("off", "English", "German"), names(choices))
         assertTrue(isChosen("eng", "en"))
         assertTrue(isChosen("deu", "de"))
         assertFalse(isChosen("zh-Hans", "zh-Hant"))
@@ -37,16 +38,16 @@ class LanguageSettingsTest {
     @Test
     fun aSettingNoneOfTheServersLanguagesIsShownAfterThem() {
         // French set before, on a server that names English and German.
-        assertEquals(listOf("Off", "English", "German", "French"), names(subtitleSettingChoices(listOf("en", "de"), current = "fra")))
-        // Until the server answers: Off and the setting alone.
-        assertEquals(listOf("Off", "French"), names(subtitleSettingChoices(null, current = "fra")))
-        assertEquals(listOf("Off"), names(subtitleSettingChoices(null, current = "off")))
+        assertEquals(listOf("off", "English", "German", "French"), names(subtitleSettingChoices(listOf("en", "de"), current = "fra")))
+        // Until the server answers: off and the setting alone.
+        assertEquals(listOf("off", "French"), names(subtitleSettingChoices(null, current = "fra")))
+        assertEquals(listOf("off"), names(subtitleSettingChoices(null, current = "off")))
     }
 
     @Test
     fun aServerThatNamesNoneOffersEveryLanguageByName() {
         val choices = subtitleSettingChoices(emptyList(), current = "off")
-        assertEquals("Off", choices.first().name)
+        assertEquals("off", choices.first().name)
         val languages = names(choices.drop(1))
         // Every ISO 639-1 language, by its name, once each, alphabetically.
         assertTrue(languages.size > 150, "${languages.size}")
@@ -56,6 +57,33 @@ class LanguageSettingsTest {
         assertEquals(languages.sortedBy { it.lowercase() }.take(5), languages.take(5))
         assertTrue(languages.indexOf("Breton") < languages.indexOf("Catalan"))
     }
+
+    @Test
+    fun whereEveryLanguageIsOfferedThePersonsOwnComeFirstThenTheOthersAlphabetically() {
+        // Nothing set and a phone in German (Switzerland): German first,
+        // never Abkhazian.
+        val choices = subtitleSettingChoices(emptyList(), current = "off", device = "de-CH")
+        assertEquals(listOf("off", "de"), choices.take(2).map { it.code })
+        assertEquals("German", choices[1].name)
+        val rest = names(choices.drop(2))
+        assertEquals(rest.sortedBy { it.lowercase() }.take(5), rest.take(5))
+        assertFalse("German" in rest)
+        assertEquals(names(choices).distinct(), names(choices))
+        // The one set, then the phone's; each once.
+        assertEquals(listOf("off", "fr", "de"), subtitleSettingChoices(emptyList(), current = "fra", device = "de-DE").take(3).map { it.code })
+        assertEquals("German", subtitleSettingChoices(emptyList(), current = "ger", device = "de")[1].name)
+        assertFalse(subtitleSettingChoices(emptyList(), current = "ger", device = "de")[2].name == "German")
+        // A phone in Chinese with its script: that script.
+        assertEquals("Chinese (Simplified)", subtitleSettingChoices(emptyList(), current = "off", device = "zh-Hans-CN")[1].name)
+        // A setting with its region stays as it is set.
+        assertEquals("Portuguese (Brazil)", subtitleSettingChoices(emptyList(), current = "pt-BR")[1].name)
+        // No phone language known: every language alphabetically, after off.
+        assertEquals(everyLanguageNames(), names(subtitleSettingChoices(emptyList(), current = "off").drop(1)))
+        // A server that names its languages keeps its order: no own first.
+        assertEquals(listOf("off", "English", "German"), names(subtitleSettingChoices(listOf("en", "de"), current = "off", device = "de")))
+    }
+
+    private fun everyLanguageNames() = cloud.nalet.chino.mobile.ui.player.everyLanguage().map(::languageName)
 
     @Test
     fun theAudioSettingOffersOriginalThenTheAppsLanguagesNamedAsThePlayersAudioMenuNamesThem() {

@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.ui.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import cloud.nalet.chino.mobile.ui.theme.ChinoBorderControl
 import androidx.compose.ui.graphics.RectangleShape
@@ -25,7 +26,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,14 +33,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronRight
+import com.composables.icons.lucide.ChevronUp
 import com.composables.icons.lucide.Lucide
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -279,7 +279,8 @@ fun SettingsSection() {
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
-            LangPickerRow(
+            LanguageSetting(
+                name = "audio language",
                 value = s.preferredAudioLang,
                 choices = audioSettingChoices(s.preferredAudioLang),
                 onSelect = { code -> scope.launch { container.settings.setPreferredAudioLang(code) } },
@@ -296,10 +297,11 @@ fun SettingsSection() {
             )
             // The server's subtitle languages, read from its configuration as
             // the player's menu reads them; every language where it names
-            // none.
-            LangPickerRow(
+            // none, the one set and the phone's first.
+            LanguageSetting(
+                name = "subtitle language",
                 value = s.preferredSubLang,
-                choices = subtitleSettingChoices(serverSubtitleLanguages, s.preferredSubLang),
+                choices = subtitleSettingChoices(serverSubtitleLanguages, s.preferredSubLang, cloud.nalet.chino.mobile.preferredLanguageTags().firstOrNull()),
                 onSelect = { code -> scope.launch { container.settings.setPreferredSubLang(code) } },
             )
         }
@@ -418,99 +420,91 @@ internal fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Uni
     }
 }
 
-/** How many languages a setting shows as chips; more - every language, for
- *  a server that names none - are a menu. */
-private const val CHIPS_AT_MOST = 16
-
-/** A language setting, in the same dark-card idiom as the other Settings
- *  rows: its [choices] (LanguageSettings.kt) as chips, the picked one
- *  filled blue, or - a long list - its name opening a menu of them all.
- *  Picking one writes the preference; a screen reader hears which is
- *  picked. */
+/**
+ * A language setting, one control whatever the server says (docs/chino: a
+ * menu of one choice, as on the TV): a field with the language set ("off",
+ * "Original", "German") that opens its menu under it, inside the page - as
+ * wide as the field, never over the top bar - [choices] by name in their
+ * order (LanguageSettings.kt: the person's own first where every language is
+ * offered), the one set in the accent blue behind a small filled square.
+ * Picking one writes the preference and closes the menu; a screen reader
+ * hears the field as a dropdown with what is set, and each row as a radio
+ * button, picked or not. A long menu scrolls within its height.
+ */
 @Composable
-private fun LangPickerRow(
+internal fun LanguageSetting(
+    /** What the menu is for, to a screen reader: "subtitle language". */
+    name: String,
     value: String,
     choices: List<LanguageChoice>,
     onSelect: (String) -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RectangleShape)
-            .background(ChinoSurface)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-    ) {
-        if (choices.size <= CHIPS_AT_MOST) {
-            FlowRow(
-                modifier = Modifier.selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+    var open by remember { mutableStateOf(false) }
+    val picked = choices.firstOrNull { isChosen(value, it.code) } ?: choices.first()
+    Column(modifier = Modifier.fillMaxWidth().clip(RectangleShape).background(ChinoSurface)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .clickable(role = Role.DropdownList, onClick = { open = !open })
+                .semantics {
+                    contentDescription = name
+                    stateDescription = picked.name
+                }
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(text = picked.name, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = if (open) Lucide.ChevronUp else Lucide.ChevronDown,
+                contentDescription = null,
+                tint = ChinoMuted,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        if (open) {
+            val scroll = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(BorderStroke(1.dp, ChinoBorder), RectangleShape)
+                    .heightIn(max = LANGUAGE_MENU_MAX_HEIGHT)
+                    .verticalScroll(scroll)
+                    .selectableGroup()
+                    .padding(vertical = 4.dp),
             ) {
                 choices.forEach { choice ->
-                    val on = isChosen(value, choice.code)
-                    Box(
+                    val on = choice === picked
+                    Row(
                         modifier = Modifier
-                            .clip(RectangleShape)
-                            .background(if (on) ChinoCloudBlue else ChinoBorder)
-                            .selectable(selected = on, role = Role.RadioButton, onClick = { onSelect(choice.code) })
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .selectable(selected = on, role = Role.RadioButton) {
+                                open = false
+                                onSelect(choice.code)
+                            }
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        // The picked row's square; every row keeps its column.
+                        Box(modifier = Modifier.size(6.dp).background(if (on) ChinoCloudBlue else Color.Transparent))
                         Text(
                             text = choice.name,
-                            color = if (on) ChinoOnFill else Color.White,
-                            fontSize = 13.sp,
+                            color = if (on) ChinoCloudBlue else Color.White,
+                            fontSize = 14.sp,
                             fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
                         )
                     }
                 }
             }
-        } else {
-            LangMenu(value = value, choices = choices, onSelect = onSelect)
         }
     }
 }
 
-/** A long language list: the picked one's name, which opens a menu of
- *  every choice in its order, the picked one in blue. */
-@Composable
-private fun LangMenu(value: String, choices: List<LanguageChoice>, onSelect: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    val picked = choices.firstOrNull { isChosen(value, it.code) } ?: choices.first()
-    Box {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .clip(RectangleShape)
-                .background(ChinoBorder)
-                .clickable(role = Role.DropdownList, onClick = { open = true })
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(text = picked.name, color = Color.White, fontSize = 13.sp, modifier = Modifier.weight(1f))
-            Icon(imageVector = Lucide.ChevronDown, contentDescription = null, tint = ChinoMuted, modifier = Modifier.size(16.dp))
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            choices.forEach { choice ->
-                val on = choice === picked
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = choice.name,
-                            color = if (on) ChinoCloudBlue else Color.White,
-                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                        )
-                    },
-                    onClick = {
-                        open = false
-                        onSelect(choice.code)
-                    },
-                    modifier = Modifier.semantics { selected = on },
-                )
-            }
-        }
-    }
-}
+/** How tall a language setting's open menu is at most: a long one - every
+ *  language - scrolls within it. */
+private val LANGUAGE_MENU_MAX_HEIGHT = 336.dp
 
 /** Pill toggle. 40×22 with a 16×16 knob that shifts left/right. Used by
  *  the settings ToggleRows (the bug-report dialog, now in ui/feedback,

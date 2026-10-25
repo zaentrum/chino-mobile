@@ -3,6 +3,8 @@ package cloud.nalet.chino.mobile.ui.settings
 import cloud.nalet.chino.mobile.ui.player.everyLanguage
 import cloud.nalet.chino.mobile.ui.player.languageName
 import cloud.nalet.chino.mobile.ui.player.languageTag
+import cloud.nalet.chino.mobile.ui.player.normalizeLang
+import cloud.nalet.chino.mobile.ui.player.scriptOfTag
 
 /*
  * The languages Settings offers, and their names: the names the player's
@@ -31,21 +33,34 @@ fun isChosen(value: String, code: String): Boolean {
 
 /**
  * The subtitle setting's choices (docs/chino subtitles, "The setting"):
- * "Off", then the server's subtitle languages ([serverLanguages], GET
- * /subtitles/languages, in its order) - never a list fixed in the app; a
- * server that names none offers every language by name ([everyLanguage]).
- * Each language once, named as the player's menus name it. The [current]
- * setting, where it is none of them - set before, or on another server - is
- * offered after them, so the setting shows what it is. Until the server has
- * answered (null) - and while it doesn't: offline, a 5xx, which say nothing
- * of its languages - "Off" and the current setting alone.
+ * "off", as the player's subtitles menu says it, then the server's subtitle
+ * languages ([serverLanguages], GET /subtitles/languages, in its order) -
+ * never a list fixed in the app; a server that names none offers every
+ * language by name ([everyLanguage]), the person's own first - the one set,
+ * the phone's ([device]) - then the others in alphabetical order, never a
+ * scroll from Abkhazian (the TV's, 1c27a33). Each language once, named as
+ * the player's menus name it. The [current] setting, where it is none of
+ * the server's - set before, or on another server - is offered after them,
+ * so the setting shows what it is. Until the server has answered (null) -
+ * and while it doesn't: offline, a 5xx, which say nothing of its languages
+ * - "off" and the current setting alone.
  */
-fun subtitleSettingChoices(serverLanguages: List<String>?, current: String): List<LanguageChoice> {
-    val off = listOf(LanguageChoice(SUBTITLES_OFF, "Off"))
+fun subtitleSettingChoices(serverLanguages: List<String>?, current: String, device: String? = null): List<LanguageChoice> {
+    val off = listOf(LanguageChoice(SUBTITLES_OFF, SUBTITLES_OFF))
     if (serverLanguages == null) return withCurrent(off, current)
     val named = serverLanguages.map(::languageTag).filter { it.isNotEmpty() }.distinct()
-    val languages = named.ifEmpty { everyLanguage() }
-    return withCurrent(off + languages.map { LanguageChoice(it, languageName(it)) }, current)
+    if (named.isNotEmpty()) return withCurrent(off + named.map { LanguageChoice(it, languageName(it)) }, current)
+    // Every language: the one set and the phone's first, each once, then the
+    // rest alphabetically without them.
+    val every = everyLanguage().map { LanguageChoice(it, languageName(it)) }
+    // The phone's language as a language, with its script ("zh-Hans"), not
+    // its region: "de-CH" is German.
+    val phone = languageTag(device).let { t -> listOf(normalizeLang(t), scriptOfTag(t)).filter { it.isNotEmpty() }.joinToString("-") }
+    val own = listOf(current.takeUnless { it.trim().equals(SUBTITLES_OFF, ignoreCase = true) }.orEmpty(), phone)
+        .filter { languageTag(it).isNotEmpty() }
+        .map { code -> every.firstOrNull { isChosen(code, it.code) } ?: LanguageChoice(code, languageName(code)) }
+        .distinctBy { it.code }
+    return off + own + every.filter { e -> own.none { it.code == e.code } }
 }
 
 /** The languages the audio setting offers besides "Original": the server
