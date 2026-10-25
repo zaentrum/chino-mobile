@@ -112,4 +112,35 @@ class ScreenReaderFocusTest {
         compose.waitForIdle()
         assertEquals(null, parent.accessibilityDelegate)
     }
+
+    @Test
+    fun aScreenReaderTurnedOffWithItsFocusOnAControlLetsTheControlsGo() {
+        val manager = compose.activity.getSystemService(AccessibilityManager::class.java)
+        shadowOf(manager).setEnabled(true)
+        shadowOf(manager).setTouchExplorationEnabled(true)
+        var view: View? = null
+        compose.setContent {
+            view = LocalView.current
+            val focused by rememberScreenReaderFocused()
+            Column {
+                ChromeButton(icon = Lucide.Pause, onClick = {}, name = PlayerButtons.playPause(true))
+                Text(if (focused) "on a control" else "nowhere")
+            }
+        }
+        fun send(type: Int) = compose.runOnUiThread { view!!.parent.requestSendAccessibilityEvent(view, event(type)) }
+        send(AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED)
+        compose.onNodeWithText("on a control").assertExists()
+        // TalkBack off (the volume-key shortcut): no focus cleared comes, as
+        // Compose sends none once accessibility is off - its touch
+        // exploration going off says it.
+        compose.runOnUiThread { shadowOf(manager).setTouchExplorationEnabled(false) }
+        compose.onNodeWithText("nowhere").assertExists()
+        // On again, focus on a control again; then accessibility off as a
+        // whole: the same.
+        compose.runOnUiThread { shadowOf(manager).setTouchExplorationEnabled(true) }
+        send(AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED)
+        compose.onNodeWithText("on a control").assertExists()
+        compose.runOnUiThread { shadowOf(manager).setEnabled(false) }
+        compose.onNodeWithText("nowhere").assertExists()
+    }
 }

@@ -1,10 +1,12 @@
 package cloud.nalet.chino.mobile.ui.player
 
+import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeProvider
 import androidx.compose.runtime.Composable
@@ -19,7 +21,10 @@ import androidx.compose.ui.platform.LocalView
  * screen's content. Compose says so in the accessibility events its view
  * sends up through its parent (focused, focus cleared), which
  * [AccessibilityFocusWatch] reads there on their way. False while no screen
- * reader runs: then no such event is sent.
+ * reader runs: then no such event is sent. A screen reader turned off with
+ * its focus here (TalkBack's volume-key shortcut) sends no focus cleared -
+ * Compose sends nothing once accessibility is off - so its touch exploration
+ * going off, or accessibility as a whole, says it instead.
  */
 @Composable
 internal fun rememberScreenReaderFocused(): State<Boolean> {
@@ -27,7 +32,14 @@ internal fun rememberScreenReaderFocused(): State<Boolean> {
     val focused = remember { mutableStateOf(false) }
     DisposableEffect(view) {
         val watch = (view.parent as? ViewGroup)?.let { parent -> AccessibilityFocusWatch(parent) { on -> focused.value = on } }
+        val manager = view.context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+        val exploring = AccessibilityManager.TouchExplorationStateChangeListener { on -> if (!on) focused.value = false }
+        val enabled = AccessibilityManager.AccessibilityStateChangeListener { on -> if (!on) focused.value = false }
+        manager?.addTouchExplorationStateChangeListener(exploring)
+        manager?.addAccessibilityStateChangeListener(enabled)
         onDispose {
+            manager?.removeTouchExplorationStateChangeListener(exploring)
+            manager?.removeAccessibilityStateChangeListener(enabled)
             watch?.release()
             focused.value = false
         }
