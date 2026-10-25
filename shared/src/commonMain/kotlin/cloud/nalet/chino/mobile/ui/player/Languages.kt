@@ -873,10 +873,9 @@ private fun startsWord(text: String, words: String): Boolean {
  * cut short ("Deutsch", "中文", "BR" on Brazilian Portuguese, "Trad" on
  * Traditional Chinese, "NO" on Norwegian Bokmål), or the tag's own region
  * as a code ("GB" on en-GB, "AT" on de-AT: "English GB" is "English (United
- * Kingdom)"), and the name it begins with said once ("German AI" is "German
- * · AI") - or alone for a track
- * tagged with no language, else
- * "Unknown"; then its kind in words - "foreign-language parts only" for a
+ * Kingdom)"), and the name it begins or ends with said once ("German AI"
+ * and "AI German" are "German · AI") - or alone for a track tagged with no
+ * language, else "Unknown"; then its kind in words - "foreign-language parts only" for a
  * forced one, "for deaf and hard of hearing" for one with sound described,
  * both in that order. A title that says the kind itself ("English SDH",
  * "[CC]", "German (forced)") says it once, in these words. chino-web's
@@ -892,10 +891,11 @@ fun subtitleLabel(track: SubtitleLabelInput): String {
     val label = when {
         title.isEmpty() || lower == name.lowercase() || namesLanguage(title, lang) -> name
         !hasLanguage(lang) -> title
-        // The name again before what the title adds ("German AI", "English
-        // Commentary"): said once, as every other label says it ("German ·
-        // AI"). Elsewhere in the title, the title as it is.
-        lower.contains(name.lowercase()) -> afterName(title, name)?.let { "$name · $it" } ?: title
+        // The name again before or after what the title adds ("German AI",
+        // "AI German", "English Commentary"): said once, before it, as every
+        // other label says it ("German · AI"). Among the title's words, not
+        // at its edge, the title as it is.
+        lower.contains(name.lowercase()) -> besideName(title, name)?.let { "$name · $it" } ?: title
         // "English" on a British English track, "BR" on a Brazilian one,
         // "Trad" on a Traditional Chinese one: the name says it already -
         // from the start of a word of it, not letters inside one ("AI" on a
@@ -908,16 +908,24 @@ fun subtitleLabel(track: SubtitleLabelInput): String {
     return (listOf(label) + kinds).joinToString(" · ")
 }
 
-/** What a title says after the language's [name] it begins with, as a word
- *  of its own: "AI" of "German AI", "Commentary" of "English Commentary".
- *  Null for a title that doesn't begin with the
- *  name ("Commentary in English"), begins with a longer word ("Englishman"),
- *  or says nothing after it. */
-private fun afterName(title: String, name: String): String? {
-    if (!title.startsWith(name, ignoreCase = true)) return null
-    val rest = title.substring(name.length)
-    if (rest.firstOrNull()?.isLetterOrDigit() == true) return null
-    var t = rest.replace(LEADING_SEPARATORS, "").trim()
+/** What a title says besides the language's [name] it begins or ends with,
+ *  as a word of its own: "AI" of "German AI" and of "AI German",
+ *  "Commentary" of "English Commentary" and of "Commentary English". Null
+ *  for a title with the name at neither edge ("Director's English
+ *  Commentary"), at one only inside a longer word ("Englishman"), or that
+ *  says nothing besides it. chino-web's besideName. */
+private fun besideName(title: String, name: String): String? {
+    val n = name.length
+    if (n == 0 || title.length < n) return null
+    // Apart from the rest: at the title's edge, or by a character that is
+    // no letter or digit.
+    fun apart(c: Char?) = c?.isLetterOrDigit() != true
+    val rest = when {
+        title.startsWith(name, ignoreCase = true) && apart(title.getOrNull(n)) -> title.substring(n).replace(LEADING_SEPARATORS, "")
+        title.endsWith(name, ignoreCase = true) && apart(title.getOrNull(title.length - n - 1)) -> title.substring(0, title.length - n)
+        else -> return null
+    }
+    var t = rest.replace(EDGE_SEPARATORS, "").trim()
     if ((t.startsWith("(") && t.endsWith(")")) || (t.startsWith("[") && t.endsWith("]"))) t = t.substring(1, t.length - 1).trim()
     return t.takeIf { it.isNotEmpty() }
 }

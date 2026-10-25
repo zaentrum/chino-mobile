@@ -156,10 +156,41 @@ class SubtitleNamesTest {
                 t("ukr", "Ukrainian AI") to "Ukrainian · AI",
                 t("eng", "ENGLISH Commentary") to "English · Commentary",
                 t("eng", "English: Director's Commentary") to "English · Director's Commentary",
-                // Elsewhere in the title, the title as it is.
-                t("eng", "Commentary in English") to "Commentary in English",
+                // After what the title adds, the same: said once, before it.
+                t("ger", "AI German") to "German · AI",
+                t("eng", "Commentary English") to "English · Commentary",
+                // The language's name at the title's end goes as it does
+                // anywhere: what is left stays, as the web reads it.
+                t("eng", "Commentary in English") to "English · Commentary in",
+                // Among the title's words, not at its edge, the title as it is.
+                t("eng", "Director's English Commentary") to "Director's English Commentary",
             ),
         )
+    }
+
+    @Test
+    fun aTitleThatBeginsOrEndsWithTheNameSaysItOnceBeforeWhatItAdds() {
+        // chino-web's languages.test.ts, row for row.
+        assertNames(
+            listOf(
+                t("eng", "English AI") to "English · AI",
+                t("en", "English Commentary") to "English · Commentary",
+                t("eng", "Commentary - English") to "English · Commentary",
+                t("tha", "Thai AI") to "Thai · AI",
+                t("en-GB", "English (United Kingdom) AI") to "English (United Kingdom) · AI",
+                t("eng", "English AI (SDH)") to "English · AI · for deaf and hard of hearing",
+                // At the end, the same.
+                t("ger", "AI German") to "German · AI",
+                t("eng", "Commentary English") to "English · Commentary",
+                t("en-GB", "Commentary English (United Kingdom)") to "English (United Kingdom) · Commentary",
+                // Inside a longer word, no edge: the title as it is.
+                t("eng", "Englishman") to "Englishman",
+            ),
+        )
+        // An AI track titled so reads as the server's own "AI" sidecar, so
+        // the menu shows them once - the name before it or after it.
+        assertEquals(name("en", "AI"), name("eng", "English AI"))
+        assertEquals(name("de", "AI"), name("ger", "AI German"))
     }
 
     @Test
