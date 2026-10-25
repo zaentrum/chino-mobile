@@ -337,6 +337,41 @@ class SubtitleNamesTest {
     }
 
     @Test
+    fun aCodeThatOnlyRepeatsTheTagsRegionGoes() {
+        // chino-web's languages.test.ts, row for row.
+        assertNames(
+            listOf(
+                t("en-GB", "GB") to "English (United Kingdom)",
+                t("de-AT", "AT") to "German (Austria)",
+                t("es-419", "419") to "Spanish (Latin America)",
+                t("de-AT", "AT (Forced)") to "German (Austria) · foreign-language parts only",
+                // Beside the name too, in any language: the code goes with it.
+                t("en-GB", "English GB") to "English (United Kingdom)",
+                t("de-AT", "German AT") to "German (Austria)",
+                t("de-AT", "Deutsch AT") to "German (Austria)",
+                t("de-CH", "German CH") to "German (Switzerland)",
+                t("es-MX", "Spanish MX") to "Spanish (Mexico)",
+                t("zh-TW", "Chinese TW") to "Chinese (Taiwan)",
+                // Among other words it stays a word.
+                t("de-AT", "AT Commentary") to "German (Austria) · AT Commentary",
+                // Another region than the tag's, or one on a tag with none,
+                // stays.
+                t("de-AT", "CH") to "German (Austria) · CH",
+                t("eng", "GB") to "English · GB",
+                t("de-AT", "German CH") to "German (Austria) · CH",
+                // "AI" stays, even where it is the tag's region too.
+                t("en-AI", "AI") to "English (Anguilla) · AI",
+            ),
+        )
+        // So the track reads as its untitled twin, and the menu shows it once.
+        assertEquals(name("en-GB"), name("en-GB", "GB"))
+        for (title in listOf("GB", "English GB")) {
+            val twins = subtitleLabels(listOf(t("en-GB"), t("en-GB", title)))
+            assertEquals(twins[0], twins[1], title)
+        }
+    }
+
+    @Test
     fun whatElseATitleSaysStaysBeforeTheKind() {
         assertEquals(
             listOf(

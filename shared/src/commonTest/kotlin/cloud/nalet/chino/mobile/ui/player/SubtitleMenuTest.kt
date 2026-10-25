@@ -465,6 +465,12 @@ class SubtitleMenuTest {
             listOf("emb-4" to "Portuguese (Brazil)", "emb-2" to "Spanish (Latin America)"),
             entries(menu(cutShort, serverLanguages = emptyList())).map { it.id to it.label },
         )
+        // So does one that only repeats the tag's region as a code, alone or
+        // beside the name.
+        for (title in listOf("GB", "English GB")) {
+            val region = listOf(S("emb-2", "en-GB", title, embedded = true), S("side-en", "en-GB"))
+            assertEquals(listOf("emb-2" to "English (United Kingdom)"), entries(menu(region)).map { it.id to it.label }, title)
+        }
     }
 
     @Test

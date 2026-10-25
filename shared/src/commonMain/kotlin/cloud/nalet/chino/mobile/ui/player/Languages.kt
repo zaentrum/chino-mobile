@@ -687,14 +687,22 @@ private sealed interface Says {
  * "Cantonese"); null for none of these. In brackets ([bracketed]), a
  * region's code says the region where it is one of the language's
  * ("Português (BR)": [regionCodesOf]). Words inside a longer piece name the
- * language by a name, never by a code: "und" is a German word. chino-web's
- * pieceSays.
+ * language by a name, never by a code ("und" is a German word) - but for
+ * the tag's own region in capitals ("GB" of "English GB" on en-GB).
+ * chino-web's pieceSays.
  */
 private fun pieceSays(text: String, code: String?, whole: Boolean, bracketed: Boolean = false): Says? {
     val t = text.trim()
     if (t.isEmpty()) return null
     val lower = t.lowercase()
     val base = normalizeLang(code)
+    // The tag's own region again, as a code ("GB" on en-GB, "AT" on de-AT),
+    // alone or beside the name ("English GB", "Deutsch AT"): it says nothing
+    // the name doesn't. Among other words it stays a word (readParts). Never
+    // "AI", which says the platform made the track.
+    if (base.isNotEmpty() && BRACKETED_REGION.matches(t) && t != "AI" && t == regionOfTag(namedTag(languageTag(code)))) {
+        return Says.Variant("", t)
+    }
     if (whole && base.isNotEmpty()) {
         if (bracketed && BRACKETED_REGION.matches(t) && t in regionCodesOf(base)) return Says.Variant("", t)
         codeSays(t, code)?.takeIf { it.script.isNotEmpty() || it.region.isNotEmpty() }?.let { return it }
@@ -863,8 +871,10 @@ private fun startsWord(text: String, words: String): Boolean {
  * that ("English · Commentary", "German · AI", "Chinese · Cantonese") - not
  * the words of it that only name the language again, in any language or
  * cut short ("Deutsch", "中文", "BR" on Brazilian Portuguese, "Trad" on
- * Traditional Chinese, "NO" on Norwegian Bokmål), and the name it begins
- * with said once ("German AI" is "German · AI") - or alone for a track
+ * Traditional Chinese, "NO" on Norwegian Bokmål), or the tag's own region
+ * as a code ("GB" on en-GB, "AT" on de-AT: "English GB" is "English (United
+ * Kingdom)"), and the name it begins with said once ("German AI" is "German
+ * · AI") - or alone for a track
  * tagged with no language, else
  * "Unknown"; then its kind in words - "foreign-language parts only" for a
  * forced one, "for deaf and hard of hearing" for one with sound described,
