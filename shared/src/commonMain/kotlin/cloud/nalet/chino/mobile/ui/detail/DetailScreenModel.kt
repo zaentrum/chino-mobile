@@ -43,6 +43,10 @@ sealed interface DetailUiState {
         /** The page built from what is on the phone, while the server cannot
          *  be reached; null for the server's page. */
         val offline: OfflineDetail? = null,
+        /** Series only: what the row's first button plays - "play S01E01",
+         *  "resume S01E03" ([seriesPlayTarget]); null for a movie, a series
+         *  without episodes, and the page from the phone. */
+        val seriesPlay: SeriesPlayTarget? = null,
     ) : DetailUiState {
         /** The play button: what the player will do with [resumePositionSec]. */
         val playAction: PlayAction get() = playAction(resumePositionSec, (item.durationMs ?: 0L) / 1000.0)
@@ -374,7 +378,8 @@ class DetailScreenModel(
         // (web parity: a row the feed stamps duration<=0 stays).
         val runtimeSec = seasons.flatMap { it.episodes }
             .associate { it.id to (it.durationMs ?: 0L) / 1000L }
-        val episodeResume = continueDef.await()
+        val continueWatching = continueDef.await()
+        val episodeResume = continueWatching
             .filter {
                 val durationSec = if (it.durationSec > 0) it.durationSec.toLong() else runtimeSec[it.id] ?: 0L
                 !it.upNext && resumesAt(it.positionSec, durationSec.toDouble())
@@ -389,6 +394,7 @@ class DetailScreenModel(
             similar = similarDef.await(),
             focusEpisodeId = focusEpisodeId,
             episodeResume = episodeResume,
+            seriesPlay = if (item.kind == "series") seriesPlayTarget(item.id, continueWatching, seasons) else null,
         )
     }
 }

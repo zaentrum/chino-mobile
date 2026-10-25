@@ -309,6 +309,11 @@ class DetailScreen(private val itemId: String) : Screen {
                         onEpisodePlay = { episodeId ->
                             nav.push(PlayerScreen(itemId = episodeId, fromStart = false))
                         },
+                        // A series' first button: its episode, resumed or
+                        // from its start.
+                        onSeriesPlay = { episodeId, fromStart ->
+                            nav.push(PlayerScreen(itemId = episodeId, fromStart = fromStart))
+                        },
                         onEpisodeAddToList = { episodeId ->
                             // Warm the episode's memberships so the sheet's
                             // checkmarks seed correctly (only the displayed
@@ -382,6 +387,8 @@ private fun ReadyContent(
     onPersonNavigate: ((String) -> Unit)? = null,
     onEpisodePlay: ((String) -> Unit)? = null,
     onEpisodeAddToList: ((String) -> Unit)? = null,
+    /** A series' first button: the episode it names, from its start or not. */
+    onSeriesPlay: (episodeId: String, fromStart: Boolean) -> Unit = { _, _ -> },
 ) {
     val item = ready.item
     val uriHandler = LocalUriHandler.current
@@ -495,6 +502,7 @@ private fun ReadyContent(
                             liked = liked,
                             watched = watched,
                             isSeries = item.kind == "series",
+                            seriesPlay = ready.seriesPlay,
                             // What needs the server is not there from the phone.
                             trailer = trailer.takeIf { ready.offline == null },
                             serverActions = ready.offline == null,
@@ -523,6 +531,7 @@ private fun ReadyContent(
                             onResume = { onPlay(false) },
                             onPlay = { onPlay(false) },
                             onStartOver = { onPlay(true) },
+                            onSeriesPlay = onSeriesPlay,
                             // This server's trailer plays in the app; a link
                             // opens outside it, as before.
                             onTrailer = { choice ->
@@ -805,6 +814,8 @@ private fun ActionRow(
     liked: Boolean,
     watched: Boolean,
     isSeries: Boolean = false,
+    /** A series' first button: the episode it plays; null: none. */
+    seriesPlay: SeriesPlayTarget? = null,
     /** The Trailer pill's choice; null: no pill. */
     trailer: TrailerChoice? = null,
     /** The download control (ui/downloads), last; null: none. */
@@ -817,6 +828,7 @@ private fun ActionRow(
     onResume: () -> Unit,
     onPlay: () -> Unit,
     onStartOver: () -> Unit,
+    onSeriesPlay: (episodeId: String, fromStart: Boolean) -> Unit = { _, _ -> },
     onTrailer: (TrailerChoice) -> Unit = {},
     onToggleWatchlist: () -> Unit,
     onOpenAddToList: () -> Unit,
@@ -833,8 +845,28 @@ private fun ActionRow(
         verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
     ) {
         when {
-            // Series: no series-level Play — its episodes play.
-            isSeries -> Unit
+            // A series plays an episode, named by its code: the one the
+            // viewer is in ("resume S01E03", and start over, which plays it
+            // from its beginning), the next ("play S01E02"), or S01E01. Its
+            // position is in its row below, not in the button.
+            isSeries -> if (seriesPlay != null) {
+                TitleActionButton(
+                    label = seriesPlay.label,
+                    icon = Lucide.Play,
+                    primary = true,
+                    onClick = { onSeriesPlay(seriesPlay.episodeId, !seriesPlay.resumes) },
+                    enabled = playEnabled,
+                )
+                if (seriesPlay.resumes) {
+                    TitleActionButton(
+                        label = "start over",
+                        icon = null,
+                        primary = false,
+                        onClick = { onSeriesPlay(seriesPlay.episodeId, true) },
+                        enabled = playEnabled,
+                    )
+                }
+            }
             // "resume" only where the player resumes (playAction, the
             // players' own rule): a finished title starts over, as the
             // player would start it.
