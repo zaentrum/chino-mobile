@@ -25,6 +25,42 @@ class Media3LanguagesTest {
     }
 
     @Test
+    fun aScriptOnlyTheTitleTellsComesOnForASettingWithThatScript() {
+        // The file's own tracks as Media3 has them: one code for both
+        // Chinese tracks, the script in the title alone.
+        data class Track(val id: String, val language: String?, val title: String?) {
+            val tag = subtitleLanguage(language, title)
+        }
+        val tracks = listOf(
+            Track("emb-2", asMedia3Gives("chi"), "简体中文"),
+            Track("emb-3", asMedia3Gives("chi"), "繁體中文"),
+            Track("emb-4", asMedia3Gives("eng"), null),
+        )
+        assertEquals(listOf("zh-Hans", "zh-Hant", "en"), tracks.map { it.tag })
+        for (serverLanguages in listOf(emptyList(), listOf("en", "de", "zh-Hans", "zh-Hant"))) {
+            val menu = subtitleMenu(
+                tracks = tracks,
+                tag = { it.tag },
+                forced = { false },
+                sdh = { false },
+                label = { subtitleLabel(SubtitleLabelInput(it.language, it.title)) },
+                preferred = "zh-Hant",
+                serverLanguages = serverLanguages,
+            )
+            val on = autoSubtitleTrack(
+                tracks = menu.top + menu.more,
+                lang = { it.language },
+                forced = { false },
+                text = { true },
+                audioLang = asMedia3Gives("eng"),
+                subtitlePref = "zh-Hant",
+                tag = { it.tag.ifEmpty { it.language.orEmpty() } },
+            )
+            assertEquals("emb-3", on?.id, "$serverLanguages")
+        }
+    }
+
+    @Test
     fun everyLanguageIsNamedAsTheServerTaggedIt() {
         val cases = listOf(
             "nb" to "Norwegian Bokmål",

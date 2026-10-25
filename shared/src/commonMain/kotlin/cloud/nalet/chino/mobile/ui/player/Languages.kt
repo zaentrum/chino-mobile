@@ -1036,21 +1036,26 @@ fun defaultSubtitleLang(audioLang: String?, subtitlePref: String?): String? {
 
 /** The track to switch on by default, or null: one in the language
  *  [defaultSubtitleLang] names, a full one rather than a forced one. A file's
- *  own default flag counts for nothing. */
+ *  own default flag counts for nothing. A setting with its script or region
+ *  takes a track with that one first, by the language the menu lists it by
+ *  ([tag]: its code with what its own title says, [subtitleLanguage] - "chi"
+ *  titled "繁體中文" is "zh-Hant"); [lang] where a track has no more than its
+ *  code. */
 fun <T> defaultSubtitleTrack(
     tracks: List<T>,
     lang: (T) -> String?,
     forced: (T) -> Boolean,
     audioLang: String?,
     subtitlePref: String?,
+    tag: (T) -> String? = lang,
 ): T? {
     val want = defaultSubtitleLang(audioLang, subtitlePref) ?: return null
     val inLang = tracks.filter { normalizeLang(lang(it)) == want }
     // A setting with its script or region ("zh-Hans", from the server's
     // languages) takes a track with that one first, else any of the
     // language.
-    val tag = languageTag(subtitlePref)
-    val pool = inLang.filter { languageTag(lang(it)) == tag }.takeIf { tag != want }.orEmpty().ifEmpty { inLang }
+    val wanted = languageTag(subtitlePref)
+    val pool = inLang.filter { languageTag(tag(it)) == wanted }.takeIf { wanted != want }.orEmpty().ifEmpty { inLang }
     return pool.firstOrNull { !forced(it) } ?: pool.firstOrNull()
 }
 
@@ -1080,7 +1085,8 @@ fun <T> forcedSubtitleTrack(
  * track in the audio's language ([forcedSubtitleTrack]), which is part of
  * the film rather than subtitles to read along. Asked again whenever the
  * audio's language changes, until the viewer picks ([SubtitleSession]).
- * chino-web's autoSubtitleTrack.
+ * A setting's script or region is matched by [tag], the language the menu
+ * lists a track by ([defaultSubtitleTrack]). chino-web's autoSubtitleTrack.
  */
 fun <T> autoSubtitleTrack(
     tracks: List<T>,
@@ -1089,5 +1095,6 @@ fun <T> autoSubtitleTrack(
     text: (T) -> Boolean,
     audioLang: String?,
     subtitlePref: String?,
-): T? = defaultSubtitleTrack(tracks, lang, forced, audioLang, subtitlePref)
+    tag: (T) -> String? = lang,
+): T? = defaultSubtitleTrack(tracks, lang, forced, audioLang, subtitlePref, tag)
     ?: forcedSubtitleTrack(tracks, lang, forced, text, audioLang)

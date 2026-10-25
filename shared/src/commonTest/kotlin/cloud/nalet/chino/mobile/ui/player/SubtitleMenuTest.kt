@@ -87,9 +87,19 @@ class SubtitleMenuTest {
     /** Every entry of the menu, in its order. */
     private fun entries(m: SubtitleMenu<S>) = m.top + m.more
 
-    /** What comes on by itself among the menu's tracks, in its order. */
+    /** What comes on by itself among the menu's tracks, in its order: a
+     *  setting's script or region matched as the menu lists a track, as the
+     *  player asks it. */
     private fun auto(m: SubtitleMenu<S>, audioLang: String?, subtitlePref: String?) =
-        autoSubtitleTrack(m.top + m.more, { it.lang }, { it.isForced }, { !it.picture }, audioLang = audioLang, subtitlePref = subtitlePref)?.id
+        autoSubtitleTrack(
+            m.top + m.more,
+            { it.lang },
+            { it.isForced },
+            { !it.picture },
+            audioLang = audioLang,
+            subtitlePref = subtitlePref,
+            tag = { subtitleLanguage(it.lang, it.title) },
+        )?.id
 
     @Test
     fun theViewersLanguageThenTheServersThenMoreLanguagesWithTheRest() {
@@ -518,6 +528,16 @@ class SubtitleMenuTest {
             listOf("English", "Chinese (Simplified)", "Chinese (Traditional)"),
             labels(menu(tracks, preferred = "en", device = "zh-HK", serverLanguages = emptyList()).top),
         )
+        // A Traditional Chinese setting, English audio: the Traditional track
+        // comes on, its script told by its title alone - with no server
+        // languages, and with a server that names Chinese either way.
+        for (serverLanguages in listOf(emptyList(), listOf("zh"), listOf("en", "de", "zh-Hans", "zh-Hant"))) {
+            assertEquals("emb-4", auto(menu(tracks, preferred = "zh-Hant", serverLanguages = serverLanguages), audioLang = "eng", subtitlePref = "zh-Hant"), "$serverLanguages")
+            assertEquals("emb-3", auto(menu(tracks, preferred = "zh-Hans", serverLanguages = serverLanguages), audioLang = "eng", subtitlePref = "zh-Hans"), "$serverLanguages")
+        }
+        // And a region a title tells: Portugal's Portuguese for a pt-PT setting.
+        val portuguese = listOf(S("emb-2", "por", "Português (Brasil)", embedded = true), S("emb-3", "por", "Português (Portugal)", embedded = true))
+        assertEquals("emb-3", auto(menu(portuguese, preferred = "pt-PT", serverLanguages = emptyList()), audioLang = "eng", subtitlePref = "pt-PT"))
         // Mandarin and Cantonese are two as well.
         assertEquals(
             listOf("Chinese · Mandarin", "Chinese · Cantonese"),

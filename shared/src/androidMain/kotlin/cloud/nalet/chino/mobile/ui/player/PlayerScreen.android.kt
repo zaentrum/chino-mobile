@@ -1477,6 +1477,10 @@ private fun PlaybackSurface(
                         text = { !it.image },
                         audioLang = audioLang,
                         subtitlePref = state.subtitlePref,
+                        // A setting's script or region, matched as the menu
+                        // lists the track: "chi" titled "繁體中文" is the
+                        // Traditional one a "zh-Hant" setting turns on.
+                        tag = { it.tag.ifEmpty { it.language.orEmpty() } },
                     )?.key ?: SUBTITLES_OFF
                     subtitlesSet = false
                 }
