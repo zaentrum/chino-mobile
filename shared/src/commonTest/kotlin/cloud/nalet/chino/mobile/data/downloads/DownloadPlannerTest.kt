@@ -4,6 +4,14 @@ import cloud.nalet.chino.mobile.data.api.FakeServer
 import cloud.nalet.chino.mobile.data.api.respondJson
 import cloud.nalet.chino.mobile.data.api.respondText
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,10 +32,25 @@ class DownloadPlannerTest {
     """.trimIndent()
 
     private val requests = mutableListOf<String>()
+    private val asked = Mutex()
+
+    // A series' episodes, for counts: their play info held by the server
+    // until [countsAnswer] - "count-1", "count-2", ...
+    private val countsAnswer = CompletableDeferred<Unit>()
+    private val twoCountsAsked = CompletableDeferred<Unit>()
+
     private val server = FakeServer { request ->
         val path = request.url.encodedPath
-        requests += path
+        val counts = asked.withLock {
+            requests += path
+            requests.count { it.contains("/v1/items/count-") }
+        }
         when {
+            path.contains("/v1/items/count-") && path.endsWith("/play/info") -> {
+                if (counts >= 2) twoCountsAsked.complete(Unit)
+                countsAnswer.await()
+                respondJson("""{"mode":"packaged","duration_ms":1800000}""")
+            }
             path.endsWith("/v1/items/film/play/info") ->
                 respondJson("""{"mode":"packaged","duration_ms":7200000,"audio_tracks":[{"language":"deu","name":"Deutsch","default":true}]}""")
             path.endsWith("/v1/items/stream/play/info") -> respondJson("""{"mode":"transcode","duration_ms":7200000}""")
@@ -122,6 +145,48 @@ class DownloadPlannerTest {
     fun anEpisodesPlanSavesItsSeriesTitle() = runTest {
         val plan = assertIs<PlanResult.Ready>(planner.plan("ep1", 720, audioPref = "eng")).plan
         assertEquals("Pioneer One", plan.seriesTitle)
+    }
+
+    @Test
+    fun aCountAsksThePlayInfoAloneNeverTheMaster() = runTest {
+        // Whether it can come along, for "3 of 8 downloaded": no size.
+        assertEquals(DownloadOffer.Available(null), planner.canCome("film"))
+        assertEquals(1, requests.count { it.endsWith("/film/play/info") })
+        assertTrue(requests.none { it.endsWith("/master.m3u8") })
+        // Kept: asked again, nothing more is read.
+        assertEquals(DownloadOffer.Available(null), planner.canCome("film"))
+        assertEquals(1, requests.count { it.endsWith("/film/play/info") })
+        // One that only streams, and a server that fails, as an offer says them.
+        assertEquals(DownloadOffer.StreamOnly, planner.canCome("stream"))
+        assertEquals(DownloadOffer.Unknown(DownloadFailure.ServerProblem), planner.canCome("broken"))
+        assertEquals(DownloadOffer.Unknown(DownloadFailure.Gone), planner.canCome("missing"))
+        // A size still reads the master; a count after it reads nothing.
+        assertEquals(DownloadOffer.Available(2_000_000L * 1_800 / 8), planner.offer("ep1", 720, null))
+        val before = requests.size
+        assertEquals(DownloadOffer.Available(null), planner.canCome("ep1"))
+        assertEquals(before, requests.size)
+    }
+
+    @Test
+    fun countsNeverHoldUpASizeAskedForAndStopWhenThePageIsLeft() = runTest {
+        // A series page counting six episodes, the server slow to answer:
+        // two asked at a time, the others waiting their turn.
+        val page = launch {
+            coroutineScope { (1..6).map { n -> async { planner.canCome("count-$n") } }.awaitAll() }
+        }
+        twoCountsAsked.await()
+        // A film's size asked meanwhile is answered all the same.
+        assertEquals(DownloadOffer.Available(2_000_000L * 7_200 / 8), planner.offer("film", 720, null))
+        // The page is left: the counts still waiting are never asked.
+        page.cancelAndJoin()
+        countsAnswer.complete(Unit)
+        assertEquals(2, asked.withLock { requests.count { it.contains("/v1/items/count-") } })
+        // Asked again by the next visit: answered, and it alone asked for.
+        assertEquals(DownloadOffer.Available(null), planner.canCome("count-6"))
+        assertEquals(
+            listOf("count-6"),
+            asked.withLock { requests.filter { it.contains("/v1/items/count-") } }.drop(2).map { it.substringAfter("/v1/items/").substringBefore('/') },
+        )
     }
 
     @Test

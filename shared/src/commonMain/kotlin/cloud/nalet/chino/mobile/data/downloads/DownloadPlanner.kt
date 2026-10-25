@@ -72,6 +72,14 @@ class DownloadPlanner(
      *  theirs at once. */
     private val gate = Semaphore(3)
 
+    /** Which titles can come along, as a count read them ([canCome]), and
+     *  when: kept for [CACHE_MS], as a probe is. */
+    private val counted = HashMap<String, Pair<Downloadability, Long>>()
+
+    /** Two titles' play info at a time for a count: a gate of its own, so a
+     *  series' count never holds up a size or a download asked for. */
+    private val countGate = Semaphore(2)
+
     /** What [itemId]'s control offers at [quality] for the viewer's
      *  [audioPref]: the size of exactly what the download would keep - the
      *  variant and the audio renditions it picks, as [plan] picks them - or
@@ -95,6 +103,50 @@ class DownloadPlanner(
         throw e
     } catch (e: Exception) {
         DownloadOffer.Unknown(failureOf(e))
+    }
+
+    /**
+     * Whether [itemId] can come along, for a count ("3 of 8 downloaded") and
+     * nothing more: [DownloadOffer.Available] with no size, StreamOnly, or
+     * Unknown where the server couldn't be asked. From its play info alone -
+     * not its master, which only a size and a download need - read in the
+     * caller's own coroutine, behind a gate of its own: a page left stops
+     * its counts, and they never hold up a size or a download asked for.
+     * What a read of the title answers already - kept, or under way - it
+     * takes from there.
+     */
+    suspend fun canCome(itemId: String): DownloadOffer = try {
+        when (countable(itemId)) {
+            is Downloadability.Yes -> DownloadOffer.Available(null)
+            Downloadability.StreamOnly -> DownloadOffer.StreamOnly
+            Downloadability.Unknown -> DownloadOffer.Unknown(DownloadFailure.NoAnswer)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        DownloadOffer.Unknown(failureOf(e))
+    }
+
+    private suspend fun countable(itemId: String): Downloadability {
+        known(itemId)?.let { return it }
+        // A read of it under way - its size, its download - answers it too.
+        lock.withLock { inFlight[itemId]?.takeIf { it.isActive } }?.let { return downloadability(it.await().info) }
+        return countGate.withPermit {
+            // Answered while this one waited its turn: by another count, or
+            // by a read.
+            known(itemId) ?: run {
+                val caps = caps()
+                val info = api.playInfo(itemId, caps = caps.ifEmpty { null }, timeoutMs = PLAY_INFO_WAIT_MS)
+                downloadability(info).also { d -> lock.withLock { counted[itemId] = d to now() } }
+            }
+        }
+    }
+
+    /** Whether [itemId] can come along, as a probe or a count kept it; null
+     *  where neither has, or long enough ago to ask again. */
+    private suspend fun known(itemId: String): Downloadability? = lock.withLock {
+        probes[itemId]?.takeIf { now() - it.at < CACHE_MS }?.let { return@withLock downloadability(it.info) }
+        counted[itemId]?.takeIf { now() - it.second < CACHE_MS }?.first
     }
 
     /** Everything a download of [itemId] at [quality] keeps, for the
@@ -171,7 +223,10 @@ class DownloadPlanner(
 
     /** Forgets what was read of [itemId]: it is asked for again. */
     suspend fun forget(itemId: String) {
-        lock.withLock { probes.remove(itemId) }
+        lock.withLock {
+            probes.remove(itemId)
+            counted.remove(itemId)
+        }
     }
 
     /** The title's play info and - for one that can come along - its master,

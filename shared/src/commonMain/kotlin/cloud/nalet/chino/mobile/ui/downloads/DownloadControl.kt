@@ -413,7 +413,7 @@ internal val SEASON_CONTROL_HEIGHT: Dp = TITLE_ACTION_HEIGHT
  * 9.6 GB" while none of the season is on the phone or on its way, else
  * "download 2 more episodes · 724 MB" for the rest; how far the season is
  * once some are ("3 of 8 downloaded"). The offer is the open season's only:
- * a closed one asks the server nothing, and shows how far it is on the
+ * a closed one asks the server no size, and shows how far it is on the
  * phone. None where none of its episodes can be downloaded, or where the
  * server offers no downloads and none is on the phone. [entries] are the
  * season's files, one per thing that plays; [expanded]: its episodes show
@@ -444,19 +444,29 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
     // the questions - unless part of the season is on the phone already.
     val offering = features?.downloads != false
     if (!offering && downloaded + onTheWay == 0) return
-    // The open season's episodes' offers at once: the planner asks the
-    // server three at a time and keeps the answers, which the rows below
-    // share. A closed season asks nothing - unless part of it is on the
-    // phone: how far it is counts only the episodes that can come along.
-    val partly = downloaded > 0
-    val offers by produceState<Map<String, DownloadOffer>?>(null, ids, prefs.quality, audioPref, offering, expanded, partly) {
+    // The open season's episodes' offers at once, with their sizes: the
+    // planner asks the server three at a time and keeps the answers, which
+    // the rows below share. A closed season asks none of them.
+    val offers by produceState<Map<String, DownloadOffer>?>(null, ids, prefs.quality, audioPref, offering, expanded) {
         val pref = audioPref ?: return@produceState
-        if (!offering || !(expanded || partly)) return@produceState
+        if (!offering || !expanded) return@produceState
         value = coroutineScope {
             ids.map { id -> async { id to container.downloadPlanner.offer(id, prefs.quality, durations[id], pref) } }.awaitAll().toMap()
         }
     }
+    // How far a closed season partly on the phone is counts only the
+    // episodes that can come along: which can, from their play info alone,
+    // asked while the page shows it and apart from the sizes and downloads
+    // asked for (DownloadPlanner.canCome).
+    val partly = downloaded > 0
+    val counts by produceState<Map<String, DownloadOffer>?>(null, ids, offering, expanded, partly) {
+        if (!offering || expanded || !partly) return@produceState
+        value = coroutineScope {
+            ids.map { id -> async { id to container.downloadPlanner.canCome(id) } }.awaitAll().toMap()
+        }
+    }
     val known = offers
+    val counted = offers ?: counts
     val canCome = known?.filterValues { it is DownloadOffer.Available }?.keys
     val remaining = ids.filter { byId[it] == null && it !in working && (canCome == null || it in canCome) }
     if (known != null && canCome.isNullOrEmpty() && downloaded + onTheWay == 0) return
@@ -467,7 +477,7 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
     val device = LocalDeviceKind.current
     val there = remember(onPhone) { onPhone.filter { it.status.isOnThePhone() }.mapTo(HashSet()) { it.itemId } }
     val files = remember(entries) { entries.map { it.episode.id to it.held.size } }
-    val howFar = howFarLabel(files, there, known, offering, device)
+    val howFar = howFarLabel(files, there, counted, offering, device)
     FlowRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -479,7 +489,7 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
         if (howFar != null) {
             DownloadStatusLine(
                 label = howFar,
-                complete = downloaded == episodes || allThatCanComeIsThere(files, there, known, offering),
+                complete = downloaded == episodes || allThatCanComeIsThere(files, there, counted, offering),
                 modifier = Modifier.align(Alignment.CenterVertically).heightIn(min = SEASON_CONTROL_HEIGHT),
             )
         }
@@ -520,27 +530,25 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
  * which has no download of its own (docs/chino title actions, "On a
  * series"): episodes download from their rows and their season. [entries]
  * are all its files, every season's; the server is asked which can come
- * only where part of the series is on the phone.
+ * only where part of the series is on the phone - from each one's play info
+ * alone, while the page shows it, never ahead of a size or a download asked
+ * for (DownloadPlanner.canCome).
  */
 @Composable
 fun SeriesDownloadSummary(entries: List<FileEntry<Episode>>, modifier: Modifier = Modifier) {
     val container = LocalAppContainer.current
     val downloads = container.downloads ?: return
     val onPhone by downloads.entries.collectAsState()
-    val prefs by downloads.preferences.collectAsState()
-    val audioPref = rememberAudioPref()
     val features by container.serverReach.features.collectAsState()
     val device = LocalDeviceKind.current
     val there = remember(onPhone) { onPhone.filter { it.status.isOnThePhone() }.mapTo(HashSet()) { it.itemId } }
     val files = remember(entries) { entries.map { it.episode.id to it.held.size } }
     val partly = files.any { it.first in there }
     val offering = features?.downloads != false
-    val offers by produceState<Map<String, DownloadOffer>?>(null, files, prefs.quality, audioPref, offering, partly) {
-        val pref = audioPref ?: return@produceState
+    val offers by produceState<Map<String, DownloadOffer>?>(null, files, offering, partly) {
         if (!offering || !partly) return@produceState
         value = coroutineScope {
-            entries.map { e -> async { e.episode.id to container.downloadPlanner.offer(e.episode.id, prefs.quality, fileDurationMs(e), pref) } }
-                .awaitAll().toMap()
+            files.map { (id, _) -> async { id to container.downloadPlanner.canCome(id) } }.awaitAll().toMap()
         }
     }
     val label = howFarLabel(files, there, offers, offering, device) ?: return
