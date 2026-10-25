@@ -49,6 +49,16 @@ import cloud.nalet.chino.mobile.ui.downloads.signInAgain
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
+import cloud.nalet.chino.mobile.ui.downloads.InformationBanner
+import cloud.nalet.chino.mobile.data.downloads.DownloadStatus
+import cloud.nalet.chino.mobile.data.downloads.Reach
+import cloud.nalet.chino.mobile.data.downloads.UNREACHABLE_BANNER
+import cloud.nalet.chino.mobile.data.downloads.UNREACHABLE_BANNER_NOTHING
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -79,6 +89,24 @@ fun HomeSection(
     val model = remember { HomeSectionModel(container) }
     val state by model.state.collectAsState()
     val uriHandler = LocalUriHandler.current
+    // Home from what the phone knows, and the server answers again: Home
+    // from the server. While it doesn't, a look at it now and then.
+    val reach by container.serverReach.state.collectAsState()
+    val offline = (state as? HomeUiState.Ready)?.offline == true
+    LaunchedEffect(reach, offline) {
+        if (!offline) return@LaunchedEffect
+        if (reach == Reach.Reachable) {
+            model.refresh()
+            return@LaunchedEffect
+        }
+        while (true) {
+            delay(OFFLINE_RECHECK_MS)
+            if (container.serverReach.check() == Reach.Reachable) break
+        }
+    }
+    // "Your downloads still play" only where one does, as on the downloads.
+    val downloads by remember(container) { container.downloads?.entries ?: MutableStateFlow(emptyList()) }.collectAsState()
+    val banner = if (!offline) null else if (downloads.any { it.status is DownloadStatus.Downloaded }) UNREACHABLE_BANNER else UNREACHABLE_BANNER_NOTHING
 
     when (val s = state) {
         HomeUiState.Loading -> Center { CircularProgressIndicator() }
@@ -138,6 +166,8 @@ fun HomeSection(
         is HomeUiState.Ready -> ReadyContent(
             s,
             onItemSelected,
+            banner = banner,
+            onRetry = { model.retry() },
             // The hero's first button as the title's page has it: a movie
             // resumed or played, a series' episode by its code; "start over"
             // plays it from its start. A series whose episode isn't known
@@ -177,9 +207,14 @@ fun HomeSection(
 }
 
 @Composable
-private fun ReadyContent(
+internal fun ReadyContent(
     s: HomeUiState.Ready,
     onItemSelected: (String) -> Unit,
+    /** The server can't be reached: the information banner on top, as on
+     *  the other screens; null while it answers. */
+    banner: String? = null,
+    /** "try again" where Continue watching couldn't load. */
+    onRetry: () -> Unit = {},
     onPlayCard: (itemId: String, series: Boolean) -> Unit,
     onPlayHero: (itemId: String, startOver: Boolean) -> Unit,
     onTrailerHero: (String, TrailerChoice) -> Unit,
@@ -198,6 +233,7 @@ private fun ReadyContent(
             .padding(top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(32.dp),
     ) {
+        banner?.let { InformationBanner(it, modifier = Modifier.padding(horizontal = 16.dp)) }
         if (s.heroPool.isNotEmpty()) {
             HeroBanner(
                 pool = s.heroPool,
@@ -225,6 +261,10 @@ private fun ReadyContent(
                 onToggleWatched = onToggleWatched,
                 onPlay = { id -> onPlayCard(id, false) },
             )
+        } else {
+            // Never gone without a word: where it couldn't load and the
+            // phone knows none of it, it says so in its place.
+            s.continueWatchingFailed?.let { failure -> ContinueWatchingCouldntLoad(failure, onRetry) }
         }
         if (s.nextUp.isNotEmpty()) {
             ContinueWatchingShelf(
@@ -303,7 +343,7 @@ private fun ContinueWatchingShelf(
     baseUrl: String,
     streamToken: String,
     showProgress: Boolean,
-    title: String = "Continue watching",
+    title: String = CONTINUE_WATCHING,
     onItemClick: (String) -> Unit,
     onRemoveFromContinueWatching: ((String) -> Unit)? = null,
     onToggleWatched: ((String) -> Unit)? = null,
@@ -313,15 +353,7 @@ private fun ContinueWatchingShelf(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // MediaRow's shelf title: the web's h2, in the heading face.
-        Text(
-            text = title,
-            color = androidx.compose.ui.graphics.Color.White,
-            fontSize = 24.sp,
-            lineHeight = 32.sp,
-            fontWeight = FontWeight.SemiBold,
-            style = ChinoHeading,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
+        ShelfHeading(title)
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             // Web mobile poster is 128dp (3-across w/ peek); tablet/wide 208dp.
             val cardWidth = if (maxWidth < 600.dp) 128.dp else 208.dp
@@ -372,6 +404,50 @@ private fun ContinueWatchingShelf(
         }
     }
 }
+
+/**
+ * Continue watching where it couldn't load and the phone knows none of it:
+ * its heading, and the design system's couldn't-load in its place - what
+ * couldn't load, why where the banner above doesn't say it already, and
+ * "try again".
+ */
+@Composable
+private fun ContinueWatchingCouldntLoad(failure: ShelfFailure, onRetry: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        ShelfHeading(CONTINUE_WATCHING)
+        CouldntLoad(
+            title = CONTINUE_WATCHING_COULDNT_LOAD,
+            sentence = failure.sentence,
+            action = "try again",
+            onAction = onRetry,
+            details = failure.details,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        )
+    }
+}
+
+/** A shelf's title: the web's h2, in the heading face. */
+@Composable
+private fun ShelfHeading(title: String) {
+    Text(
+        text = title,
+        color = androidx.compose.ui.graphics.Color.White,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
+        fontWeight = FontWeight.SemiBold,
+        style = ChinoHeading,
+        modifier = Modifier.padding(horizontal = 16.dp).semantics { heading() },
+    )
+}
+
+/** The Continue watching shelf's title. */
+internal const val CONTINUE_WATCHING = "Continue watching"
+
+/** What couldn't load, in the screen's own words. */
+internal const val CONTINUE_WATCHING_COULDNT_LOAD = "couldn't load continue watching"
+
+/** How often Home from what the phone knows asks the server again. */
+private const val OFFLINE_RECHECK_MS = 15_000L
 
 @Composable
 private fun Center(content: @Composable () -> Unit) {

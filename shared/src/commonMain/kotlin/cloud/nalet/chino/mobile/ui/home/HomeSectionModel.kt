@@ -4,6 +4,7 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.ContinueWatchingItem
+import cloud.nalet.chino.mobile.data.api.LoadFailure
 import cloud.nalet.chino.mobile.data.api.ProgressBody
 import cloud.nalet.chino.mobile.data.api.Season
 import cloud.nalet.chino.mobile.data.api.NO_ANSWER_SENTENCE
@@ -42,6 +43,12 @@ sealed interface HomeUiState {
          *  0:58" and "start over", "play S01E01"; none where it is not known
          *  yet - "play", which finds the episode when pressed. */
         val heroPlays: Map<String, HeroPlay> = emptyMap(),
+        /** The server didn't answer: the rows are what the phone knows from
+         *  before ([KnownHome]), under the banner. */
+        val offline: Boolean = false,
+        /** Continue watching couldn't load, and the phone knows none of it:
+         *  its couldn't-load line in its place, never nothing. */
+        val continueWatchingFailed: ShelfFailure? = null,
     ) : HomeUiState
     /** [signInRefused]: the server refuses the sign-in (a 401 or 403), so
      *  the page offers the ways out - another server, signing in again. */
@@ -102,6 +109,9 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
             // optimistic drop is reconciled with server truth.
             val refreshed = runCatching { container.chinoApi.continueWatching().items }
                 .getOrNull() ?: return@launch
+            // What the phone knows of it from now on, too.
+            val key = knownKey()
+            KnownHome.put(key, (KnownHome.get(key) ?: KnownRows()).copy(feed = refreshed))
             val latest = _state.value
             if (latest is HomeUiState.Ready) {
                 _state.value = latest.copy(
@@ -196,12 +206,21 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
         load()
     }
 
+    /** Loads Home again where it stands - the server answers again after
+     *  it couldn't be reached: the rows it shows stay until the new ones
+     *  are in. */
+    fun refresh() = load()
+
+    /** Home's rows are kept per server and account ([KnownHome]). */
+    private suspend fun knownKey(): String =
+        container.config.apiBaseUrl + "|" + (container.accountStore.activeAccountId.first() ?: "")
+
     private fun load() {
         screenModelScope.launch {
             _state.value = try {
                 coroutineScope {
                     val recentMoviesDef = async {
-                        runCatching {
+                        ask {
                             container.chinoApi.listItems(
                                 // #150: cap each Home rail at 20 (chino-web
                                 // contract — useItems(undefined, 20, ...)). The
@@ -212,20 +231,20 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                                 sort = "newest",
                                 unwatched = true,
                             ).items
-                        }.getOrDefault(emptyList())
+                        }
                     }
                     val recentSeriesDef = async {
-                        runCatching {
+                        ask {
                             container.chinoApi.listItems(
                                 limit = 20,
                                 type = "series",
                                 sort = "newest",
                                 unwatched = true,
                             ).items
-                        }.getOrDefault(emptyList())
+                        }
                     }
                     val topRatedDef = async {
-                        runCatching {
+                        ask {
                             container.chinoApi.listItems(
                                 limit = 20,
                                 type = "movie",
@@ -233,20 +252,18 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                                 ratingMin = 8.0,
                                 unwatched = true,
                             ).items
-                        }.getOrDefault(emptyList())
+                        }
                     }
                     val heroDef = async { heroPool() }
-                    val cwDef = async {
-                        runCatching {
-                            container.chinoApi.continueWatching().items
-                        }.getOrDefault(emptyList())
-                    }
+                    val cwDef = async { ask { container.chinoApi.continueWatching().items } }
                     val tokenDef = async { container.streamTokenManager.valid() }
+                    val key = knownKey()
+                    val known = KnownHome.get(key)
                     // The hero names a series' episode as its page does
                     // ("play S01E01"): its seasons, where the feed doesn't
                     // say the episode's numbers - asked beside the rails.
                     val heroSeasonsDef = async {
-                        val feed = cwDef.await()
+                        val feed = cwDef.await().value ?: known?.feed.orEmpty()
                         heroDef.await()
                             .filter { it.kind == "series" && heroNeedsSeasons(it.id, feed) }
                             .map { s -> s.id to async { runCatching { container.chinoApi.seriesEpisodes(s.id).seasons }.getOrNull() } }
@@ -254,22 +271,43 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                             .toMap()
                     }
 
-                    val cw = cwDef.await()
+                    val feed = cwDef.await()
+                    // What this phone played since, of the rows it knows:
+                    // where they resume now.
+                    val playedHere = if (feed.value != null) {
+                        emptyMap()
+                    } else {
+                        known?.feed.orEmpty().mapNotNull { row -> container.progressSync.lastPlayedSec(row.id)?.let { row.id to it } }.toMap()
+                    }
+                    val view = homeView(feed, recentMoviesDef.await(), recentSeriesDef.await(), topRatedDef.await(), known, playedHere)
+                    KnownHome.put(key, view.toKeep)
+                    // No answer: the whole app hears the server can't be
+                    // reached - the banner, the bell gone - as on its other
+                    // screens.
+                    if (view.offline) container.serverReach.report(answered = false)
                     val pool = heroDef.await()
-                    heroSeasons = heroSeasonsDef.await()
+                    // Asked again each load; where an ask fails, the seasons
+                    // the model had.
+                    heroSeasons = heroSeasons + heroSeasonsDef.await()
+                    val cw = view.continueWatching + view.nextUp
                     HomeUiState.Ready(
                         heroPool = pool,
-                        continueWatching = cw.filter { !it.upNext },
-                        nextUp = cw.filter { it.upNext },
-                        recentMovies = recentMoviesDef.await(),
-                        recentSeries = recentSeriesDef.await(),
-                        topRated = topRatedDef.await(),
+                        continueWatching = view.continueWatching,
+                        nextUp = view.nextUp,
+                        recentMovies = view.recentMovies,
+                        recentSeries = view.recentSeries,
+                        topRated = view.topRated,
                         baseUrl = container.config.apiBaseUrl.trimEnd('/'),
                         streamToken = tokenDef.await(),
+                        // A partly watched title resumes from what the phone
+                        // knows of it, never a bare "play".
                         heroPlays = heroPlaysOf(pool, cw),
+                        offline = view.offline,
+                        continueWatchingFailed = view.continueWatchingFailed,
                     )
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 // The design system's case for it, by its status - a list:
                 // a 404 there is the app and the server not matching - in
                 // words a person can act on; a refused sign-in keeps its own
@@ -277,6 +315,7 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                 if (e.signInRefused) {
                     HomeUiState.Error(e.catalogueMessage(), signInRefused = true)
                 } else {
+                    if (e.loadFailure(singleThing = false) == LoadFailure.NoAnswer) container.serverReach.report(answered = false)
                     HomeUiState.Error(
                         e.loadFailure(singleThing = false).sentence() ?: NO_ANSWER_SENTENCE,
                         details = e.loadDetails(),
