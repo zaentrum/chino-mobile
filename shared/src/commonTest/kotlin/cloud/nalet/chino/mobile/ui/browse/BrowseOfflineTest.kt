@@ -112,6 +112,30 @@ class BrowseOfflineTest {
     }
 
     @Test
+    fun aWatchedMarkTheServerTookIsInTheListsKeptSoTheGridWithoutTheServerShowsIt() = runTest {
+        val animation = BrowseQuery(genre = "Animation")
+        val other = "https://media.example.com/api/|ben"
+        KnownBrowse.putList(owner, "movie", BrowseQuery(), films)
+        KnownBrowse.putList(owner, "movie", animation, films.copy(items = films.items.take(1)))
+        // Marked watched from its card; the server took it (toggleWatched).
+        KnownBrowse.markWatched(owner, "m1", "optimistic")
+        // The server gone, the same filter again: the list with the mark.
+        val all = browseFirstLoad(Result.failure(noAnswer), known = KnownBrowse.list(owner, "movie", BrowseQuery()), reachable = gone)
+        assertTrue(all.offline)
+        assertEquals("optimistic", all.paged.items.single { it.id == "m1" }.watchedAt)
+        assertNull(all.paged.items.single { it.id == "m2" }.watchedAt)
+        // Every list kept with the title, the other filter's too.
+        assertEquals("optimistic", KnownBrowse.list(owner, "movie", animation)?.items?.single()?.watchedAt)
+        // Unmarked again: none.
+        KnownBrowse.markWatched(owner, "m1", null)
+        assertNull(KnownBrowse.list(owner, "movie", BrowseQuery())?.items?.first()?.watchedAt)
+        assertNull(KnownBrowse.list(owner, "movie", animation)?.items?.single()?.watchedAt)
+        // Another account's mark never reaches these lists.
+        KnownBrowse.markWatched(other, "m1", "optimistic")
+        assertNull(KnownBrowse.list(owner, "movie", BrowseQuery())?.items?.first()?.watchedAt)
+    }
+
+    @Test
     fun onlyTheLastListsAskedForAreKept() {
         val filters = (0..KnownBrowse.MAX_LISTS).map { BrowseQuery(yearMin = 1950 + it) }
         filters.forEach { KnownBrowse.putList(owner, "movie", it, films) }

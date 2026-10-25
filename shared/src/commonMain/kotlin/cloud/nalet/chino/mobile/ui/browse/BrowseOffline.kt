@@ -35,6 +35,18 @@ internal object KnownBrowse {
         while (lists.size > MAX_LISTS) lists.remove(lists.keys.first())
     }
 
+    /** The title [id] marked watched ([watchedAt]) or not (null) in every
+     *  list kept for [owner] - the server has it so now: a grid shown from
+     *  these never brings the old mark back. */
+    fun markWatched(owner: String, id: String, watchedAt: String?) {
+        if (this.owner != owner) return
+        for (entry in lists.entries) {
+            if (entry.value.items.any { it.id == id }) {
+                entry.setValue(entry.value.map { if (it.id == id) it.copy(watchedAt = watchedAt) else it })
+            }
+        }
+    }
+
     fun genres(owner: String): List<String>? = genres.takeIf { this.owner == owner }
 
     fun putGenres(owner: String, genres: List<String>) {

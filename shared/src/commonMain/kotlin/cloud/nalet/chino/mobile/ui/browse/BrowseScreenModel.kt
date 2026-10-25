@@ -157,7 +157,9 @@ class BrowseScreenModel(
      * unwatched=true (watched titles stay findable for a rewatch), so the
      * card stays in the grid — we just flip the green watched ✓ badge
      * optimistically by stamping/clearing watchedAt on the local item, and
-     * roll back if the write fails.
+     * roll back if the write fails. The lists the phone keeps ([KnownBrowse])
+     * take the mark the server has once it answers, so the grid it shows
+     * without the server is never older than the one on screen.
      */
     fun toggleWatched(id: String) {
         val target = _state.value.items.firstOrNull { it.id == id } ?: return
@@ -167,7 +169,10 @@ class BrowseScreenModel(
             s.copy(paged = s.paged.map { if (it.id == id) it.copy(watchedAt = optimistic) else it })
         }
         screenModelScope.launch {
-            val result = runCatching {
+            val owner = owner()
+            // Cancelled with the grid, it ends quietly: what the server made
+            // of it isn't known, and nothing kept changes.
+            val result = attempt {
                 if (wasWatched) container.chinoApi.deleteWatched(id)
                 else container.chinoApi.postWatched(id)
             }
@@ -177,6 +182,9 @@ class BrowseScreenModel(
                     s.copy(paged = s.paged.map { if (it.id == id) it.copy(watchedAt = target.watchedAt) else it })
                 }
             }
+            // Every list kept with this title, whichever filter is on screen
+            // now - as the server has it, a page kept meanwhile too.
+            KnownBrowse.markWatched(owner, id, if (result.isSuccess) optimistic else target.watchedAt)
         }
     }
 
