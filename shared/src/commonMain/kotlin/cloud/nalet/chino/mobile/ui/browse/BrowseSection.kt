@@ -420,12 +420,12 @@ private fun BrowseCard(
     }
 }
 
-/** What a browse page that couldn't load is headed: what couldn't load, in
- *  the screen's own word - its heading's ("Movies": "couldn't load the
- *  movies"). */
 /** A grid screen's heading: its tab's word ([pageTitle]: "Movies",
  *  "Shows") in the mono face's lowercase - "movies", "shows" - as every
  *  heading in that face is (the design system's voice). */
 internal fun pageHeading(pageTitle: String): String = pageTitle.trim().lowercase()
 
+/** What a browse page that couldn't load is headed: what couldn't load, in
+ *  the screen's own word - its heading's ("Movies": "couldn't load the
+ *  movies"). */
 internal fun couldntLoadTitle(pageTitle: String): String = "couldn't load the ${pageTitle.trim().lowercase()}"
