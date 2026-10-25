@@ -263,6 +263,36 @@ class ExtraPlaybackTest {
             Triple(1400, 770, "Medium (788p)"),
         )
         for ((w, h, name) in spec) assertEquals(name, frameQualityName(w, h), "${w}x$h")
+        // A step up to 3 % below a standard height is that height whatever
+        // the frame's shape (chino-stream 7f546e1): a few lines short at 16:9
+        // or narrower; more than 3 % short is its own.
+        val shapes = listOf(
+            Triple(1904, 1072, "High (1080p)"),
+            Triple(1272, 716, "Medium (720p)"),
+            Triple(1440, 1050, "High (1080p)"),
+            Triple(0, 1072, "High (1080p)"),
+            Triple(1848, 1040, "Medium (1040p)"),
+            Triple(1276, 716, "Medium (720p)"),
+            Triple(1278, 534, "Medium (720p)"),
+            Triple(1912, 1036, "High (1080p)"),
+            Triple(3836, 1600, "Ultra (2160p)"),
+            Triple(1856, 1036, "Medium (1044p)"),
+            Triple(1600, 900, "Medium (900p)"),
+        )
+        for ((w, h, name) in shapes) assertEquals(name, frameQualityName(w, h), "${w}x$h")
+        // The table at every boundary, by a height alone or a 16:9 frame of it.
+        val table = listOf(
+            240 to "Lowest (240p)", 340 to "Lowest (340p)", 359 to "Lowest (360p)", 360 to "Lowest (360p)",
+            460 to "Lowest (460p)", 479 to "Low (480p)", 480 to "Low (480p)", 576 to "Low (576p)",
+            690 to "Low (690p)", 719 to "Medium (720p)", 720 to "Medium (720p)", 900 to "Medium (900p)",
+            1040 to "Medium (1040p)", 1079 to "High (1080p)", 1080 to "High (1080p)", 1440 to "High (1440p)",
+            2080 to "High (2080p)", 2159 to "Ultra (2160p)", 2160 to "Ultra (2160p)", 4320 to "Ultra (4320p)",
+        )
+        for ((h, name) in table) {
+            assertEquals(name, frameQualityName(0, h), "height $h")
+            assertEquals(name, frameQualityName((h * 16 + 8) / 9, h), "16:9 of $h")
+            assertEquals(name, namedQuality("${h}p"), "label ${h}p")
+        }
         // The edges, as chino-web's: 10 % above 1080 and no more, 3 % below and no more.
         assertEquals("High (1080p)", frameQualityName(2112, 880))
         assertEquals("High (1197p)", frameQualityName(2128, 880))

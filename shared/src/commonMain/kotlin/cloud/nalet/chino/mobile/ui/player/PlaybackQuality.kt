@@ -92,7 +92,8 @@ fun labelForQuality(q: String): String = when (q.lowercase()) {
  */
 fun namedQuality(label: String): String {
     val height = Regex("""^(\d{3,4})p$""").matchEntire(label.trim())?.groupValues?.get(1)?.toInt() ?: return label
-    return qualityTitle(height)
+    // By its step, as the server names a height alone: "1079p" is 1080p.
+    return qualityTitle(namedHeight(0, height))
 }
 
 /** The name of a picture height's quality, with the height, by the one
@@ -116,18 +117,20 @@ private val SIZE_CLASSES = listOf(240, 360, 480, 540, 576, 720, 1080, 1440, 2160
 
 /**
  * The height a [width] x [height] frame is named by, its step (docs/chino
- * playback, "Quality names"), as chino-stream's namedHeight and chino-web's:
- * its own height, or the height its width stands for at 16:9, whichever is
- * larger - a 2.39:1 film's 1920x800 is 1080p. A step up to 10 % above a
- * standard height, in a frame no taller than it, counts as that height
- * (2048x858 is 1080p, DCI 4096x2160 2160p), and so does one up to 3 % below
- * it (1916x800 is 1080p); any other step is its own height (1666x900 is
- * 937p, 1728x720 972p). A width not known leaves the height; 0 without one.
+ * playback, "Quality names"), as chino-stream's namedHeight (7f546e1) and
+ * chino-web's: its own height, or the height its width stands for at 16:9,
+ * whichever is larger - a 2.39:1 film's 1920x800 is 1080p. A step up to
+ * 10 % above a standard height, in a frame no taller than it, counts as that
+ * height (2048x858 is 1080p, DCI 4096x2160 2160p), and so does a step up to
+ * 3 % below one, whatever the frame's shape - a standard frame cropped at the
+ * sides or a few lines short (1916x800, 1904x1072 are 1080p, 1272x716
+ * 720p); any other step is its own height (1666x900 is 937p, 1728x720
+ * 972p, 1848x1040 1040p). A width not known leaves the height as the step;
+ * 0 without a height.
  */
 fun namedHeight(width: Int, height: Int): Int {
     if (height <= 0) return 0
     val step = if (width > 0) maxOf(height, (width * 9 + 8) / 16) else height
-    if (step == height) return height
     for (c in SIZE_CLASSES.asReversed()) if (c >= height && c <= step && step * 10 <= c * 11) return c
     for (c in SIZE_CLASSES) if (c > step && step * 100 >= c * 97) return c
     return step
