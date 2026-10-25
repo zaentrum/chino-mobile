@@ -290,7 +290,8 @@ internal fun StatusPill(
     dim: Boolean = false,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    /** One title action tall beside the others; a season's pills smaller. */
+    /** One title action tall beside the others - a season's pills too
+     *  ([SEASON_CONTROL_HEIGHT]); a compact one elsewhere smaller. */
     height: Dp = if (compact) 32.dp else TITLE_ACTION_HEIGHT,
 ) {
     val textSize: TextUnit = if (compact) 12.sp else 15.sp
@@ -401,6 +402,11 @@ internal fun IconAction(
     }
 }
 
+/** A season's control - its offer and how far it is - one title action
+ *  tall, as the episodes' controls under it are (docs/chino title actions:
+ *  every control 48 dp). */
+internal val SEASON_CONTROL_HEIGHT: Dp = TITLE_ACTION_HEIGHT
+
 /**
  * A season's control, under its heading: "download season 1 · 8 episodes ·
  * 9.6 GB" while none of the season is on the phone or on its way, else
@@ -470,6 +476,7 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
                 compact = true,
                 onClick = null,
                 modifier = Modifier.align(Alignment.CenterVertically),
+                height = SEASON_CONTROL_HEIGHT,
             )
         }
         // Once the server has said which of them can come: "download season
@@ -495,6 +502,7 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
                     starts.startAll(remaining)
                 },
                 modifier = Modifier.align(Alignment.CenterVertically),
+                height = SEASON_CONTROL_HEIGHT,
             )
         }
     }
