@@ -114,6 +114,28 @@ class TitleActionsLayoutTest {
     }
 
     @Test
+    @Config(qualifiers = "w800dp-h1280dp")
+    fun onANarrowTabletTheButtonsWrapUnderTheOverviewNeverOverIt() {
+        // A tablet held upright: the hero 688 dp wide beside the rail, its
+        // buttons' column too narrow for two of them in a row - three rows -
+        // and a long title and overview above them.
+        val long = film.copy(
+            title = "The Lighthouse Keepers of the Northern Coast",
+            overview = "Two keepers share a long winter on a rock far out at sea, where the supply boat comes once a " +
+                "month and the lamp must never go out. As the storms close in, the logbook fills with entries that " +
+                "neither of them remembers writing, and the radio picks up a voice from the mainland every night.",
+        )
+        compose.setContent {
+            Box(modifier = Modifier.width(720.dp)) {
+                HeroBanner(pool = listOf(long), baseUrl = "http://localhost", streamToken = "t")
+            }
+        }
+        val overview = compose.onNodeWithText(long.overview!!, substring = true).getBoundsInRoot()
+        val buttons = listOf("play", "see details", "trailer").map { compose.onNodeWithText(it).getBoundsInRoot() }
+        for (b in buttons) assertTrue(b.top >= overview.bottom + HERO_TEXT_BUTTONS_GAP - 0.5.dp, "$b under $overview")
+    }
+
+    @Test
     @Config(qualifiers = "w1024dp-h768dp")
     fun onATabletTheHerosButtonsAreLeftOfItsPicture() {
         heroAt(900.dp)

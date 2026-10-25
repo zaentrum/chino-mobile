@@ -43,7 +43,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -73,6 +72,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -347,58 +348,101 @@ private fun HeroContentWide(
                     ),
                 ),
         )
-        // Title + year-rating chip + overview anchored at TopStart with
-        // 48dp top padding (matches web's text column at y=146 in a
-        // 500-tall hero, ~16% from top). max-width 476dp matches web's
-        // 475.5px text column width.
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 48.dp, end = 16.dp, top = 48.dp)
-                .widthIn(max = 476.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // h1.text-5xl = 48px/48 line-height/700, clamped to two lines.
-            // The web's face, JetBrains Mono Bold, is bundled: no heavier
-            // weight to make up for another font.
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 48.sp,
-                lineHeight = 48.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                style = ChinoHeading,
-            )
-            YearRatingChipRow(item)
-            // text-lg = 18px/28 line-height on tablet (lg+). #C9D1D9
-            // matches text-[#c9d1d9]. Hidden when API returns null
-            // (e.g. catalog hasn't curated a description for the
-            // current hero rotation item).
-            item.overview?.let { overview ->
+        HeroTextAndButtons(
+            item = item,
+            buttonsWidth = (maxWidth * HERO_PICTURE_START - HERO_WIDE_START - 16.dp).coerceAtLeast(TITLE_ACTION_HEIGHT),
+            onMoreInfo = onMoreInfo,
+            onPlay = onPlay,
+            onTrailer = onTrailer,
+        )
+    }
+}
+
+/** The wide hero's text column's start and top, and its buttons' room
+ *  under them (web: the text at y=146, the buttons ending at y=460 of a
+ *  500-tall hero). */
+private val HERO_WIDE_START = 48.dp
+private val HERO_WIDE_TOP = 48.dp
+private val HERO_WIDE_BOTTOM = 72.dp
+
+/** At least this between the text column's last line and the buttons. */
+internal val HERO_TEXT_BUTTONS_GAP = 24.dp
+
+/** The wide hero's overview: at most this many lines, 28 sp each. */
+private const val HERO_OVERVIEW_LINES = 3
+private val HERO_OVERVIEW_LINE = 28.sp
+
+/**
+ * The wide hero's text column - title, year and rating, overview - from the
+ * top (max 476 dp, web's 475.5 px), and its buttons pinned to the column's
+ * foot, left of the picture: their column ends before it starts, and they
+ * wrap inside it, never onto the still. Where they wrap into more rows than
+ * the column has room for under the text - a narrow tablet, a large font -
+ * the overview gives up whole lines, so nothing is ever drawn over it.
+ */
+@Composable
+private fun HeroTextAndButtons(
+    item: Item,
+    buttonsWidth: Dp,
+    onMoreInfo: ((String) -> Unit)?,
+    onPlay: ((String) -> Unit)?,
+    onTrailer: ((String, TrailerChoice) -> Unit)?,
+) {
+    SubcomposeLayout(modifier = Modifier.fillMaxSize()) { constraints ->
+        val start = HERO_WIDE_START.roundToPx()
+        val top = HERO_WIDE_TOP.roundToPx()
+        val textWidth = (constraints.maxWidth - start - 16.dp.roundToPx()).coerceIn(0, 476.dp.roundToPx())
+        val buttons = subcompose("buttons") {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+                verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+            ) {
+                HeroButtons(item, narrow = false, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
+            }
+        }.map { it.measure(Constraints(maxWidth = buttonsWidth.roundToPx())) }
+        val head = subcompose("head") {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // h1.text-5xl = 48px/48 line-height/700, clamped to two
+                // lines. The web's face, JetBrains Mono Bold, is bundled: no
+                // heavier weight to make up for another font.
                 Text(
-                    text = overview,
+                    text = item.title,
+                    color = Color.White,
+                    fontSize = 48.sp,
+                    lineHeight = 48.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = ChinoHeading,
+                )
+                YearRatingChipRow(item)
+            }
+        }.map { it.measure(Constraints(maxWidth = textWidth)) }
+        val buttonsHeight = buttons.maxOfOrNull { it.height } ?: 0
+        val buttonsTop = constraints.maxHeight - HERO_WIDE_BOTTOM.roundToPx() - buttonsHeight
+        val overviewTop = top + (head.maxOfOrNull { it.height } ?: 0) + 12.dp.roundToPx()
+        val room = buttonsTop - HERO_TEXT_BUTTONS_GAP.roundToPx() - overviewTop
+        // As many of its three lines as fit above the buttons.
+        val lines = (room / HERO_OVERVIEW_LINE.toPx()).toInt().coerceIn(0, HERO_OVERVIEW_LINES)
+        // text-lg = 18px/28 line-height on tablet (lg+). #C9D1D9 matches
+        // text-[#c9d1d9]. Hidden when the API returns none (the catalog
+        // has no description for the title).
+        val overview = item.overview?.takeIf { lines > 0 }?.let { text ->
+            subcompose("overview") {
+                Text(
+                    text = text,
                     color = ChinoFg2,
                     fontSize = 18.sp,
-                    lineHeight = 28.sp,
-                    maxLines = 3,
+                    lineHeight = HERO_OVERVIEW_LINE,
+                    maxLines = lines,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
-            }
-        }
-        // The buttons pinned to the bottom of the text column (web: y=460
-        // in a 500-tall hero), whether or not there is an overview - left
-        // of the picture: their column ends before it starts, and they
-        // wrap inside it, never onto the still.
-        FlowRow(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 48.dp, bottom = 72.dp)
-                .width((maxWidth * HERO_PICTURE_START - 48.dp - 16.dp).coerceAtLeast(TITLE_ACTION_HEIGHT)),
-            horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
-            verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
-        ) {
-            HeroButtons(item, narrow = false, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
+            }.map { it.measure(Constraints(maxWidth = textWidth)) }
+        }.orEmpty()
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            head.forEach { it.place(start, top) }
+            overview.forEach { it.place(start, overviewTop) }
+            buttons.forEach { it.place(start, buttonsTop) }
         }
     }
 }
