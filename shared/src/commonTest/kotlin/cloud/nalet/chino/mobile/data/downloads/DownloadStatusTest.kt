@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.data.downloads
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -504,5 +505,27 @@ class DownloadGroupsTest {
         // The server offers no downloads now: only what is on the phone.
         assertEquals("1 episode on this phone", howFarLabel(files, setOf("e3"), null, offering = false, device = DeviceKind.Phone))
         assertEquals("2 episodes on this tablet", howFarLabel(files, setOf("e3", "e4"), offers, offering = false, device = DeviceKind.Tablet))
+    }
+
+    @Test
+    fun theCheckBesideHowFarIsByTheSameCountNeverBeside1Of4() {
+        // Season 1 of four, S01E01 on the phone, the server not answering for
+        // the others (a play info that timed out, a 5xx): "1 of 4", no check.
+        val files = (1..4).map { "e$it" to 1 }
+        val noAnswer = (2..4).associate { "e$it" to DownloadOffer.Unknown(DownloadFailure.NoAnswer) }
+        assertEquals("1 of 4 downloaded", howFarLabel(files, setOf("e1"), noAnswer, offering = true, device = DeviceKind.Phone))
+        assertFalse(allThatCanComeIsThere(files, setOf("e1"), noAnswer, offering = true))
+        // The others only stream: "1 of 1", all of it there.
+        val streamOnly = (2..4).associate { "e$it" to DownloadOffer.StreamOnly }
+        assertEquals("1 of 1 downloaded", howFarLabel(files, setOf("e1"), streamOnly, offering = true, device = DeviceKind.Phone))
+        assertTrue(allThatCanComeIsThere(files, setOf("e1"), streamOnly, offering = true))
+        // Every one there: "4 of 4".
+        assertTrue(allThatCanComeIsThere(files, files.map { it.first }.toSet(), emptyMap(), offering = true))
+        // One still to come: no check.
+        assertFalse(allThatCanComeIsThere(files, setOf("e1"), mapOf("e2" to DownloadOffer.Available(null)) + streamOnly.minus("e2"), offering = true))
+        // Not while the server hasn't said, nothing is there, or it offers none.
+        assertFalse(allThatCanComeIsThere(files, setOf("e1"), null, offering = true))
+        assertFalse(allThatCanComeIsThere(files, emptySet(), streamOnly, offering = true))
+        assertFalse(allThatCanComeIsThere(files, setOf("e1"), streamOnly, offering = false))
     }
 }

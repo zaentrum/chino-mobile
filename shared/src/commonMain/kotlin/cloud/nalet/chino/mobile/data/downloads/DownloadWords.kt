@@ -130,9 +130,33 @@ fun howFarLabel(
     if (downloaded == 0) return null
     if (!offering) return episodesOnThePhoneLabel(downloaded, device)
     val known = offers ?: return null
-    val canCome = files.filter { (id, _) -> id in onThePhone || known[id] !is DownloadOffer.StreamOnly }.sumOf { it.second }
-    return partLabel(downloaded, canCome)
+    return partLabel(downloaded, canComeCount(files, onThePhone, known))
 }
+
+/**
+ * Whether all of a season or a series that can come along is on the phone:
+ * the check beside [howFarLabel]'s words, by the same count - "4 of 4
+ * downloaded", never "1 of 4". An episode the server couldn't be asked about
+ * counts as one that can come, as there. False where nothing of it is on the
+ * phone, while the server hasn't said which can come ([offers] null), and
+ * where it offers no downloads now ([offering] false).
+ */
+fun allThatCanComeIsThere(
+    files: List<Pair<String, Int>>,
+    onThePhone: Set<String>,
+    offers: Map<String, DownloadOffer>?,
+    offering: Boolean,
+): Boolean {
+    val downloaded = files.filter { it.first in onThePhone }.sumOf { it.second }
+    if (downloaded == 0 || !offering) return false
+    val known = offers ?: return false
+    return downloaded == canComeCount(files, onThePhone, known)
+}
+
+/** The episodes of [files] that can come along: the ones on the phone, and
+ *  every one the server hasn't said only streams. */
+private fun canComeCount(files: List<Pair<String, Int>>, onThePhone: Set<String>, offers: Map<String, DownloadOffer>): Int =
+    files.filter { (id, _) -> id in onThePhone || offers[id] !is DownloadOffer.StreamOnly }.sumOf { it.second }
 
 /** The downloads screen's top line: "12.4 GB used by downloads · 18 GB free
  *  on this phone"; with nothing on the phone ([anythingOnThePhone]), what

@@ -44,6 +44,7 @@ import cloud.nalet.chino.mobile.data.downloads.DownloadEntry
 import cloud.nalet.chino.mobile.data.downloads.DownloadFailure
 import cloud.nalet.chino.mobile.data.downloads.DownloadOffer
 import cloud.nalet.chino.mobile.data.downloads.DownloadStatus
+import cloud.nalet.chino.mobile.data.downloads.allThatCanComeIsThere
 import cloud.nalet.chino.mobile.data.downloads.canTryAgain
 import cloud.nalet.chino.mobile.data.downloads.episodesOnThePhoneLabel
 import cloud.nalet.chino.mobile.data.downloads.howFarLabel
@@ -465,18 +466,20 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
     }
     val device = LocalDeviceKind.current
     val there = remember(onPhone) { onPhone.filter { it.status.isOnThePhone() }.mapTo(HashSet()) { it.itemId } }
-    val howFar = howFarLabel(entries.map { it.episode.id to it.held.size }, there, known, offering, device)
+    val files = remember(entries) { entries.map { it.episode.id to it.held.size } }
+    val howFar = howFarLabel(files, there, known, offering, device)
     FlowRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         // How far, once part of it is on the phone: a status, not a button -
-        // of the episodes that can come along.
+        // of the episodes that can come along; the check by the same count,
+        // so never beside "1 of 4 downloaded".
         if (howFar != null) {
             DownloadStatusLine(
                 label = howFar,
-                complete = downloaded == episodes || remaining.isEmpty() && onTheWay == 0,
+                complete = downloaded == episodes || allThatCanComeIsThere(files, there, known, offering),
                 modifier = Modifier.align(Alignment.CenterVertically).heightIn(min = SEASON_CONTROL_HEIGHT),
             )
         }
@@ -541,9 +544,7 @@ fun SeriesDownloadSummary(entries: List<FileEntry<Episode>>, modifier: Modifier 
         }
     }
     val label = howFarLabel(files, there, offers, offering, device) ?: return
-    val downloaded = files.filter { it.first in there }.sumOf { it.second }
-    val canCome = files.filter { (id, _) -> id in there || offers?.get(id) !is DownloadOffer.StreamOnly }.sumOf { it.second }
-    DownloadStatusLine(label = label, complete = offering && downloaded == canCome, modifier = modifier)
+    DownloadStatusLine(label = label, complete = allThatCanComeIsThere(files, there, offers, offering), modifier = modifier)
 }
 
 /**
