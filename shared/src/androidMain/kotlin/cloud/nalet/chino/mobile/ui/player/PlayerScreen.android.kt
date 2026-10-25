@@ -883,11 +883,11 @@ private const val DOWNLOAD_LANGUAGES_WAIT_MS = 1_500L
 /** The server's subtitle languages for a title played from the phone: asked
  *  as a streamed title asks them (once a session), for a moment at most,
  *  where the server can be reached - so the menu has its languages and
- *  "more languages" as online; without the server, what the session knows
- *  of them. */
+ *  "more languages" as online; without the server - out of reach, an ask
+ *  that fails or takes too long - what the session knows of them. */
 private suspend fun subtitleLanguagesForDownload(container: cloud.nalet.chino.mobile.data.AppContainer): List<String> {
     if (container.serverReach.state.value == cloud.nalet.chino.mobile.data.downloads.Reach.Unreachable) return container.subtitleLanguages.current
-    return kotlinx.coroutines.withTimeoutOrNull(DOWNLOAD_LANGUAGES_WAIT_MS) { container.subtitleLanguages.get() } ?: container.subtitleLanguages.current
+    return container.subtitleLanguages.answeredOrKnown(DOWNLOAD_LANGUAGES_WAIT_MS)
 }
 
 /** Why playback stopped for good, in the design system's cases: the answer's

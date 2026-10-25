@@ -4,6 +4,7 @@ import cloud.nalet.chino.mobile.data.api.ApiStatusException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
 
 /**
@@ -60,4 +61,11 @@ class ServerSubtitleLanguages(
      *  the one kept on the phone from an earlier one - a title playing from
      *  the phone, with no server to ask. */
     val current: List<String> get() = known ?: kept.orEmpty()
+
+    /** The languages for a title playing from the phone: what the server
+     *  answers within [waitMs] - none for one that names none - else what
+     *  the session knows of them ([current]). An ask that fails, or takes
+     *  longer, says nothing of them: never "none", so the menu reads as
+     *  online. */
+    suspend fun answeredOrKnown(waitMs: Long): List<String> = withTimeoutOrNull(waitMs) { answered() } ?: current
 }

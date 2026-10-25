@@ -792,6 +792,28 @@ class ServerSubtitleLanguagesTest {
     }
 
     @Test
+    fun aDownloadsMenuKeepsTheKeptLanguagesWhereTheAskFailsOrTakesTooLong() = runTest {
+        val kept = listOf("en", "de", "zh-Hans")
+        // The server's answers as the client hands them on, at once (the
+        // wait is the test's virtual time).
+        fun languages(fetch: suspend () -> List<String>) = ServerSubtitleLanguages(fetch = fetch, kept = kept)
+        val path = "/api/v1/subtitles/languages"
+        // The server gone while the phone is online: a refused connection,
+        // or a 503 at once - what the phone kept, never none.
+        assertEquals(kept, languages { throw IOException("connection refused") }.answeredOrKnown(1_500))
+        assertEquals(kept, languages { throw cloud.nalet.chino.mobile.data.api.ApiStatusException(503, path) }.answeredOrKnown(1_500))
+        // An answer too slow to wait for: the same.
+        assertEquals(kept, languages { kotlinx.coroutines.delay(10_000); listOf("fr") }.answeredOrKnown(1_500))
+        // An answer in time: what it says now, a server that names none too.
+        assertEquals(listOf("fr"), languages { kotlinx.coroutines.delay(1_000); listOf("fr") }.answeredOrKnown(1_500))
+        assertEquals(emptyList(), languages { emptyList() }.answeredOrKnown(1_500))
+        assertEquals(emptyList(), languages { throw cloud.nalet.chino.mobile.data.api.ApiStatusException(404, path) }.answeredOrKnown(1_500))
+        // A streamed title's ask (get) has none for now there: the kept
+        // ones are a download's.
+        assertEquals(emptyList(), languages { throw IOException("connection refused") }.get())
+    }
+
+    @Test
     fun theServerConfigStoreKeepsOneServersLanguagesAndForgetsThemWithTheServer() = runTest {
         val store = object : cloud.nalet.chino.mobile.data.BaseServerConfigStore() {
             val state = kotlinx.coroutines.flow.MutableStateFlow(cloud.nalet.chino.mobile.data.ServerConfigBlob())
