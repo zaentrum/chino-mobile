@@ -59,7 +59,8 @@ import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.Person
 import cloud.nalet.chino.mobile.data.api.artworkUrl
-import cloud.nalet.chino.mobile.data.api.catalogueMessage
+import cloud.nalet.chino.mobile.data.api.listFailureSentence
+import cloud.nalet.chino.mobile.data.api.loadDetails
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.slots.SLOT_SEARCH_EMPTY
 import cloud.nalet.chino.mobile.ui.person.PersonAvatar
@@ -106,7 +107,9 @@ fun SearchResultsSection(
     val people by peopleState.asStateFlow().collectAsState()
     val streamToken by container.streamTokenManager.current.collectAsState()
 
-    LaunchedEffect(query) {
+    // "try again" asks once more for the same words.
+    var attempt by remember { mutableStateOf(0) }
+    LaunchedEffect(query, attempt) {
         if (query.isBlank()) {
             state.value = SearchState.Idle
             peopleState.value = emptyList()
@@ -121,7 +124,7 @@ fun SearchResultsSection(
         peopleState.value = found.people
         state.value = found.titles.fold(
             onSuccess = { SearchState.Ready(it) },
-            onFailure = { SearchState.Error(it.catalogueMessage()) },
+            onFailure = { SearchState.Error(it.listFailureSentence(), it.loadDetails()) },
         )
     }
 
@@ -161,7 +164,7 @@ fun SearchResultsSection(
                         1 -> "1 result for \"$query\""
                         else -> "$count results for \"$query\""
                     }
-                    is SearchState.Error -> "Search failed"
+                    is SearchState.Error -> "Results for \"$query\""
                 },
                 color = Color.White,
                 fontSize = 22.sp,
@@ -179,11 +182,16 @@ fun SearchResultsSection(
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator(color = ChinoCloudBlue) }
             }
+            // The design system's "couldn't load": what, why - the reason
+            // only - and "try again"; the status under details.
             is SearchState.Error -> item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(
-                    text = s.message,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 14.sp,
+                cloud.nalet.chino.mobile.ui.components.CouldntLoad(
+                    title = "couldn't load the results",
+                    sentence = s.message,
+                    action = "try again",
+                    onAction = { attempt += 1 },
+                    modifier = Modifier.padding(vertical = 32.dp),
+                    details = s.details,
                 )
             }
             is SearchState.Ready -> {
@@ -214,7 +222,7 @@ private sealed interface SearchState {
     data object Idle : SearchState
     data object Loading : SearchState
     data class Ready(val items: List<Item>) : SearchState
-    data class Error(val message: String) : SearchState
+    data class Error(val message: String, val details: String? = null) : SearchState
 }
 
 /** "Cast & crew" — matching people, rendered above the title grid. Each row

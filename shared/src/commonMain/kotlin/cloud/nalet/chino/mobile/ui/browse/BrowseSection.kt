@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -200,14 +201,16 @@ fun BrowseSection(
 
         when {
             // The design system's "couldn't load", as Home says it: what,
-            // why, and "try again" - one line of each.
+            // in the screen's own word ("couldn't load the movies"), why -
+            // the reason only - and "try again"; the status under details.
             state.error != null -> item(span = { GridItemSpan(maxLineSpan) }) {
                 cloud.nalet.chino.mobile.ui.components.CouldntLoad(
-                    title = "couldn't load the titles",
+                    title = couldntLoadTitle(pageTitle),
                     sentence = state.error,
                     action = "try again",
                     onAction = model::retry,
                     modifier = Modifier.padding(vertical = 32.dp),
+                    details = state.errorDetails,
                 )
             }
             state.items.isEmpty() && state.loading -> item(span = { GridItemSpan(maxLineSpan) }) {
@@ -245,16 +248,26 @@ fun BrowseSection(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (state.loadMoreFailed) {
-                            // A later page failed: say so and let the user ask
-                            // again, rather than re-requesting on every scroll.
-                            Text(
-                                text = "Couldn't load more titles. Tap to retry.",
-                                color = ChinoCloudBlue,
-                                fontSize = 13.sp,
-                                modifier = Modifier
-                                    .clickable(onClick = model::retryLoadMore)
-                                    .padding(8.dp),
-                            )
+                            // A later page failed, the ones above still there:
+                            // say so, with "try again", rather than asking
+                            // again on every scroll.
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "Couldn't load more ${pageTitle.lowercase()}.",
+                                    color = ChinoMuted,
+                                    fontSize = 13.sp,
+                                )
+                                Text(
+                                    text = "try again",
+                                    color = ChinoCloudBlue,
+                                    fontSize = 13.sp,
+                                    style = cloud.nalet.chino.mobile.ui.theme.ChinoMono,
+                                    modifier = Modifier
+                                        .heightIn(min = 48.dp)
+                                        .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = model::retryLoadMore)
+                                        .padding(horizontal = 8.dp, vertical = 14.dp),
+                                )
+                            }
                         } else if (state.hasMore) {
                             CircularProgressIndicator(color = ChinoCloudBlue)
                         } else {
@@ -381,3 +394,8 @@ private fun BrowseCard(
         }
     }
 }
+
+/** What a browse page that couldn't load is headed: what couldn't load, in
+ *  the screen's own word - its heading's ("Movies": "couldn't load the
+ *  movies"). */
+internal fun couldntLoadTitle(pageTitle: String): String = "couldn't load the ${pageTitle.trim().lowercase()}"

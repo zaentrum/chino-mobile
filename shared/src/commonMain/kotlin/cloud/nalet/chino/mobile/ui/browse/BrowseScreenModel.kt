@@ -3,7 +3,8 @@ package cloud.nalet.chino.mobile.ui.browse
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
-import cloud.nalet.chino.mobile.data.api.catalogueMessage
+import cloud.nalet.chino.mobile.data.api.listFailureSentence
+import cloud.nalet.chino.mobile.data.api.loadDetails
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.paging.Paged
 import cloud.nalet.chino.mobile.data.paging.loadFirstPages
@@ -28,7 +29,11 @@ data class BrowseUiState(
     val loadMoreFailed: Boolean = false,
     val baseUrl: String = "",
     val streamToken: String = "",
+    /** It couldn't load: why, in the design system's words, the reason
+     *  only ([listFailureSentence]). */
     val error: String? = null,
+    /** What separates the cases, under "details": the answer's status. */
+    val errorDetails: String? = null,
 ) {
     val items: List<Item> get() = paged.items
 
@@ -165,7 +170,7 @@ class BrowseScreenModel(
                             error = null,
                         )
                     },
-                    onFailure = { e -> current.copy(loading = false, error = e.catalogueMessage()) },
+                    onFailure = { e -> current.copy(loading = false, error = e.listFailureSentence(), errorDetails = e.loadDetails()) },
                 )
             }
         }

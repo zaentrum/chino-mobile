@@ -95,8 +95,9 @@ fun Throwable.catalogueMessage(): String {
 }
 
 /** What a screen that needs the server says when no answer came: the
- *  design system's "couldn't load" sentence for it. */
-const val NO_ANSWER_SENTENCE = "Check the connection to the server, then try again."
+ *  design system's "couldn't load" sentence for it - the reason only; "try
+ *  again" is the button beside it. */
+const val NO_ANSWER_SENTENCE = "Can't reach the server."
 
 /**
  * Why a screen couldn't load, as the design system's table tells the cases
@@ -143,14 +144,22 @@ fun Throwable.loadFailure(singleThing: Boolean): LoadFailure {
     }
 }
 
-/** The sentence under a couldn't-load title, where the case has one. */
+/** The sentence under a couldn't-load title, where the case has one: the
+ *  design system's (73d357a), the reason and nothing the "try again" beside
+ *  it already says - only what no button offers, an app update, in words. */
 fun LoadFailure.sentence(): String? = when (this) {
     LoadFailure.NoAnswer -> NO_ANSWER_SENTENCE
-    LoadFailure.ServerProblem -> "The server ran into a problem. Try again in a moment."
-    LoadFailure.Busy -> "The server is busy. Try again in a moment."
-    LoadFailure.NotAccepted -> "The server didn't accept the request. Check for an app update, then try again."
+    LoadFailure.ServerProblem -> "The server ran into a problem."
+    LoadFailure.Busy -> "The server is busy."
+    LoadFailure.NotAccepted -> "The server didn't accept the request. Check for an app update."
     LoadFailure.Removed, LoadFailure.NoAccess, LoadFailure.SignedOut -> null
 }
+
+/** What a list that couldn't load says under its title: a sign-in the
+ *  server refuses in its own words, which say the way on
+ *  ([catalogueMessage]); else the case's sentence, by the answer's status. */
+fun Throwable.listFailureSentence(): String =
+    if (signInRefused) catalogueMessage() else loadFailure(singleThing = false).sentence() ?: NO_ANSWER_SENTENCE
 
 /** What separates the cases, for a couldn't-load screen's details: the
  *  answer's status, or that none came. Never a message, an id or a path. */

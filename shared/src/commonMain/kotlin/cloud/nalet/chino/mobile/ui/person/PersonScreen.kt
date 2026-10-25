@@ -58,7 +58,12 @@ import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.api.PersonDetail
 import cloud.nalet.chino.mobile.data.api.artworkUrl
-import cloud.nalet.chino.mobile.data.api.catalogueMessage
+import cloud.nalet.chino.mobile.data.api.LoadFailure
+import cloud.nalet.chino.mobile.data.api.NO_ANSWER_SENTENCE
+import cloud.nalet.chino.mobile.data.api.loadDetails
+import cloud.nalet.chino.mobile.data.api.loadFailure
+import cloud.nalet.chino.mobile.data.api.sentence
+import cloud.nalet.chino.mobile.ui.components.CouldntLoad
 import cloud.nalet.chino.mobile.data.model.PersonFact
 import cloud.nalet.chino.mobile.data.model.acceptLanguage
 import cloud.nalet.chino.mobile.data.model.formatRoles
@@ -112,7 +117,9 @@ class PersonScreen(private val personId: String, private val initialName: String
         var state by remember(personId) { mutableStateOf<PersonUiState>(PersonUiState.Loading) }
         var streamToken by remember { mutableStateOf(container.streamTokenManager.current.value.orEmpty()) }
 
-        LaunchedEffect(personId) {
+        // "try again" asks the server once more.
+        var attempt by remember(personId) { mutableStateOf(0) }
+        LaunchedEffect(personId, attempt) {
             state = PersonUiState.Loading
             coroutineScope {
                 // The portrait and posters carry the stream token; reached from
@@ -128,7 +135,7 @@ class PersonScreen(private val personId: String, private val initialName: String
                 token.await()?.let { streamToken = it }
                 state = person.fold(
                     onSuccess = { p -> if (p == null) PersonUiState.NotFound else PersonUiState.Ready(p) },
-                    onFailure = { PersonUiState.Error(it.catalogueMessage()) },
+                    onFailure = { PersonUiState.Error(it.loadFailure(singleThing = true), it.loadDetails()) },
                 )
             }
         }
@@ -139,16 +146,29 @@ class PersonScreen(private val personId: String, private val initialName: String
             Box(modifier = Modifier.fillMaxSize()) {
                 when (val s = state) {
                     PersonUiState.Loading -> Center { CircularProgressIndicator(color = ChinoCloudBlue) }
-                    PersonUiState.NotFound -> Center {
-                        Text("Person not found.", color = ChinoMuted, fontSize = 16.sp)
-                    }
-                    is PersonUiState.Error -> Center {
-                        Text(
-                            text = s.message,
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(24.dp),
+                    // The design system's "couldn't load" screen, by its case
+                    // (docs/chino playback): a person no longer in the library
+                    // offers the way back - trying again can't bring them
+                    // back; otherwise what, why - the reason only - and "try
+                    // again", the status under details.
+                    PersonUiState.NotFound -> PersonGone(onBack = { nav.pop() })
+                    is PersonUiState.Error -> when (s.failure) {
+                        LoadFailure.Removed -> PersonGone(onBack = { nav.pop() })
+                        // A sign-in that no longer holds is no empty state: the sign-in.
+                        LoadFailure.SignedOut -> LaunchedEffect(Unit) { nav.replaceAll(cloud.nalet.chino.mobile.ui.auth.AuthScreen()) }
+                        LoadFailure.NoAccess -> CouldntLoad(
+                            title = "you don't have access to this",
+                            sentence = null,
+                            action = "back",
+                            onAction = { nav.pop() },
+                            details = s.details,
+                        )
+                        else -> CouldntLoad(
+                            title = "couldn't load this person",
+                            sentence = s.failure.sentence() ?: NO_ANSWER_SENTENCE,
+                            action = "try again",
+                            onAction = { attempt += 1 },
+                            details = s.details,
                         )
                     }
                     is PersonUiState.Ready -> PersonContent(
@@ -397,7 +417,13 @@ private sealed interface PersonUiState {
     data object Loading : PersonUiState
     data object NotFound : PersonUiState
     data class Ready(val person: PersonDetail) : PersonUiState
-    data class Error(val message: String) : PersonUiState
+    data class Error(val failure: LoadFailure, val details: String) : PersonUiState
+}
+
+/** A person no longer in the library: said so, with the way back. */
+@Composable
+private fun PersonGone(onBack: () -> Unit) {
+    CouldntLoad(title = "this person isn't in the library anymore", sentence = null, action = "back", onAction = onBack)
 }
 
 @Composable
