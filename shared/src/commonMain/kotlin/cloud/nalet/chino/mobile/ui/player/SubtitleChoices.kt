@@ -3,6 +3,8 @@ package cloud.nalet.chino.mobile.ui.player
 import cloud.nalet.chino.mobile.data.api.SidecarSubtitle
 import cloud.nalet.chino.mobile.data.api.TrackInfo
 import cloud.nalet.chino.mobile.data.api.artworkUrl
+import cloud.nalet.chino.mobile.ui.settings.AUDIO_ORIGINAL
+import cloud.nalet.chino.mobile.ui.settings.SUBTITLES_OFF
 
 /** How a subtitle format can be shown by a player that draws text cues. */
 enum class SubtitleKind {
@@ -203,26 +205,51 @@ fun <T> distinctSubtitles(
     return firstOf.values.toList()
 }
 
+/** A language setting's value as a language: "" for none ([none]: "off",
+ *  "orig"; empty). */
+private fun settingLanguage(value: String?, none: String): String {
+    val v = value?.trim().orEmpty()
+    return if (v.isNotEmpty() && !v.equals(none, ignoreCase = true)) v else ""
+}
+
+/**
+ * The languages that matter to the person where the server names no
+ * subtitle languages (docs/chino subtitles, "The menu"), in this order: the
+ * subtitle setting's ([preferred], none for "off"), the audio setting's
+ * unless it is Original ([audio], "orig"), and the device's ([device]) -
+ * each language once, where the first of them puts it. chino-web's
+ * ownLanguages.
+ */
+fun ownLanguages(preferred: String?, audio: String?, device: String?): List<String> {
+    val own = ArrayList<String>()
+    for (w in listOf(settingLanguage(preferred, SUBTITLES_OFF), settingLanguage(audio, AUDIO_ORIGINAL), device?.trim().orEmpty())) {
+        if (languageTag(w).isNotEmpty() && own.none { normalizeLang(it) == normalizeLang(w) }) own += w
+    }
+    return own
+}
+
 /**
  * The subtitles menu of a title's [tracks], given in the order the file
- * brings them (docs/chino subtitles, "The menu"):
+ * brings them (docs/chino subtitles, "The menu"). It never lists every track
+ * a file brings - a title can carry a hundred:
  *
- * - [SubtitleMenu.top]: the viewer's subtitle language ([preferred],
- *   Settings - "off" names none), then each other subtitle language the
- *   server is set up for ([serverLanguages], its order). A wanted language
- *   takes a track by its language, and by its script and region where both
- *   name one ([tag]: its tag with what its own title says,
- *   [subtitleLanguage]): "zh-Hans" takes an unmarked "Chinese", never
- *   "zh-Hant"; "en" takes "en-GB" too.
+ * - [SubtitleMenu.top], the languages that matter to the person: the
+ *   subtitle setting's ([preferred] - "off" names none), then each other
+ *   subtitle language the server is set up for ([serverLanguages], its
+ *   order). A wanted language takes a track by its language, and by its
+ *   script and region where both name one ([tag]: its tag with what its own
+ *   title says, [subtitleLanguage]): "zh-Hans" takes an unmarked "Chinese",
+ *   never "zh-Hant"; "en" takes "en-GB" too.
+ * - On a server set up for no subtitle languages (none, or a server from
+ *   before the route), the person's own instead ([ownLanguages]): the
+ *   subtitle setting's, the audio setting's unless it is Original ([audio]),
+ *   the device's ([device]). Each of them the whole language, the AI ones
+ *   included, a language with its region or script counting as that
+ *   language: a device in "zh-TW" puts Chinese on top, all of it, its runs
+ *   in the order below - never its own run first and the rest after it.
  * - [SubtitleMenu.more], what "more languages" opens: the rest, the
  *   languages in alphabetical order of their names, a track in no language
  *   by its own - a packaged title's as any title's.
- * - A server set up for no subtitle languages (none, or a server from
- *   before the route) has no "more languages" - "off" and "more languages"
- *   alone would hide every track behind a press: every track is on top, the
- *   viewer's language first, then the others in the file's order, a track in
- *   no language in its place, and the rest of a language right after it
- *   ("Chinese (Traditional)" after a zh-Hans viewer's Chinese).
  *
  * Within a language each region or script has a run of its own, the bare
  * name first and the others in alphabetical order ("Chinese", "Chinese
@@ -239,6 +266,12 @@ fun <T> subtitleMenu(
     label: (T) -> String,
     preferred: String?,
     serverLanguages: List<String>,
+    /** The audio setting ("orig" for Original): one of the person's own
+     *  languages where the server names none. */
+    audio: String? = null,
+    /** The device's language: one of the person's own languages where the
+     *  server names none. */
+    device: String? = null,
     on: (T) -> Boolean = { false },
     own: (T) -> Boolean = { false },
     ai: (T) -> Boolean = { false },
@@ -256,20 +289,24 @@ fun <T> subtitleMenu(
         val named = (tags - bare.toSet()).sortedWith { a, b -> compareNames(languageName(a), languageName(b)) }
         return (bare + named).flatMap { v -> group.filter { variant(it) == v }.sortedBy(rank) }
     }
-    val wanted = buildList {
-        preferred?.trim()?.takeUnless { it.isEmpty() || it.equals("off", ignoreCase = true) }?.let { add(it) }
-        addAll(serverLanguages)
+    // The server's languages after the subtitle setting's; where it names
+    // none, the person's own, each the whole language.
+    val named = serverLanguages.any { languageTag(it).isNotEmpty() }
+    val wanted = if (named) {
+        listOf(settingLanguage(preferred, SUBTITLES_OFF)) + serverLanguages
+    } else {
+        ownLanguages(preferred, audio, device)
     }.filter { languageTag(it).isNotEmpty() }.distinctBy { languageTag(it) }
+    val takes = { w: String, t: T -> if (named) sameLanguage(w, tag(t)) else normalizeLang(tag(t)) == normalizeLang(w) }
     val placed = HashSet<Int>()
     // On top, one block per language asked for, by its language.
-    val blocks = ArrayList<Pair<String, List<T>>>()
+    val top = ArrayList<T>()
     for (w in wanted) {
-        val group = unique.indices.filter { it !in placed && sameLanguage(w, tag(unique[it])) }
+        val group = unique.indices.filter { it !in placed && takes(w, unique[it]) }
         placed += group
-        if (group.isNotEmpty()) blocks += normalizeLang(w) to runs(group.map { unique[it] })
+        top += runs(group.map { unique[it] })
     }
-    // The rest by language, each in the place it first comes in the file; a
-    // track in no language on its own.
+    // The rest by language; a track in no language on its own.
     val rest = LinkedHashMap<String, MutableList<T>>()
     unique.forEachIndexed { i, t ->
         if (i in placed) return@forEachIndexed
@@ -277,21 +314,11 @@ fun <T> subtitleMenu(
         rest.getOrPut(base.ifEmpty { "\u0000$i" }) { ArrayList() } += t
     }
     val groups = rest.values.map { group -> normalizeLang(tag(group.first())) to runs(group) }
-    val noMore = serverLanguages.none { languageTag(it).isNotEmpty() }
-    if (!noMore) {
-        // A language by its name, a track in no language by its label.
-        val more = groups.sortedWith { (a, x), (b, y) ->
-            compareNames(if (a.isEmpty()) label(x.first()) else languageName(a), if (b.isEmpty()) label(y.first()) else languageName(b))
-        }
-        return SubtitleMenu(blocks.flatMap { it.second }, more.flatMap { it.second })
+    // A language by its name, a track in no language by its label.
+    val more = groups.sortedWith { (a, x), (b, y) ->
+        compareNames(if (a.isEmpty()) label(x.first()) else languageName(a), if (b.isEmpty()) label(y.first()) else languageName(b))
     }
-    // All on top: the rest of a language right after its last block there,
-    // the other languages after them in the file's order.
-    for (group in groups) {
-        val at = if (group.first.isEmpty()) -1 else blocks.indexOfLast { it.first == group.first }
-        if (at >= 0) blocks.add(at + 1, group) else blocks += group
-    }
-    return SubtitleMenu(blocks.flatMap { it.second }, emptyList())
+    return SubtitleMenu(top, more.flatMap { it.second })
 }
 
 /** Whether a track tagged [code] is in the language [want] names: the same

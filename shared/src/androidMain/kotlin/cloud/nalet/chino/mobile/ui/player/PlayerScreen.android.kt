@@ -849,8 +849,11 @@ private fun withMenuLabels(tracks: List<SubtitleTrack>): List<SubtitleTrack> =
     }
 
 /** The subtitles menu of [tracks] ([subtitleMenu]): what the menu lists and
- *  what the subtitle rule picks among, in its order. */
-private fun subtitleMenuOf(tracks: List<SubtitleTrack>, subtitlePref: String, serverLanguages: List<String>): SubtitleMenu<SubtitleTrack> =
+ *  what the subtitle rule picks among, in its order. Where the server names
+ *  no subtitle languages, the person's own are on top: the subtitle
+ *  setting's, the audio setting's ([audioPref]) unless Original, the
+ *  device's. */
+private fun subtitleMenuOf(tracks: List<SubtitleTrack>, subtitlePref: String, audioPref: String, serverLanguages: List<String>): SubtitleMenu<SubtitleTrack> =
     subtitleMenu(
         tracks = tracks,
         tag = { it.tag },
@@ -859,6 +862,8 @@ private fun subtitleMenuOf(tracks: List<SubtitleTrack>, subtitlePref: String, se
         label = { it.label },
         preferred = subtitlePref,
         serverLanguages = serverLanguages,
+        audio = audioPref,
+        device = cloud.nalet.chino.mobile.preferredLanguageTags().firstOrNull(),
         on = { it.selected },
         // An original's own track, side-loaded as "emb-<index>".
         own = { it.key.contains(SIDECAR_ID_PREFIX + EMBEDDED_SUBTITLE_PREFIX) },
@@ -1439,7 +1444,7 @@ private fun PlaybackSurface(
                 if (subtitleSession.playerDecides(audioLang)) {
                     // Among the menu's tracks, in its order: a language's
                     // plain track first, the file's own before a sidecar.
-                    val listed = subtitleMenuOf(subtitleTracks, state.subtitlePref, state.serverSubtitleLanguages).let { it.top + it.more }
+                    val listed = subtitleMenuOf(subtitleTracks, state.subtitlePref, state.audioPref, state.serverSubtitleLanguages).let { it.top + it.more }
                     subtitleKey = autoSubtitleTrack(
                         tracks = listed,
                         lang = { it.language },
@@ -2357,6 +2362,7 @@ private fun Chrome(
                                 OpenPopover.CAPTIONS -> CaptionsMenuCard(
                                     tracks = subtitleTracks,
                                     subtitlePref = state.subtitlePref,
+                                    audioPref = state.audioPref,
                                     serverLanguages = state.serverSubtitleLanguages,
                                     onSelect = onSelectSubtitle,
                                 )
@@ -3195,9 +3201,9 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
 /**
  * The subtitles menu (the design system's subtitles pattern): "off" first,
  * then the languages that matter here - the viewer's subtitle language, then
- * the other subtitle languages the server is set up for - and "more
- * languages" with the rest of a title's tracks, which opens below it; a
- * server set up for no subtitle languages has none of those ([subtitleMenu]).
+ * the other subtitle languages the server is set up for, or where it names
+ * none the person's own ([subtitleMenu]) - and "more languages" with the
+ * rest of a title's tracks, which opens below it: never every track.
  * Each language's tracks together, plain, for deaf and hard of hearing,
  * foreign-language parts only, AI; two that read the same show once. One subtitle at a time: picking one replaces the
  * one on. "more languages" starts open where the one on is among them. A
@@ -3207,11 +3213,12 @@ private fun AudioMenuCard(tracks: List<AudioTrack>, onSelect: (AudioTrack) -> Un
 private fun CaptionsMenuCard(
     tracks: List<SubtitleTrack>,
     subtitlePref: String,
+    audioPref: String,
     serverLanguages: List<String>,
     onSelect: (SubtitleTrack?) -> Unit,
 ) {
     val anySelected = tracks.any { it.selected }
-    val menu = remember(tracks, subtitlePref, serverLanguages) { subtitleMenuOf(tracks, subtitlePref, serverLanguages) }
+    val menu = remember(tracks, subtitlePref, audioPref, serverLanguages) { subtitleMenuOf(tracks, subtitlePref, audioPref, serverLanguages) }
     var moreOpen by remember(menu) { mutableStateOf(menu.more.any { it.selected }) }
     Box(
         modifier = Modifier

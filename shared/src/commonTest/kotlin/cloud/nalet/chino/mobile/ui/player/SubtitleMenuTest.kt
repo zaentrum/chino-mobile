@@ -17,13 +17,13 @@ import kotlin.test.assertTrue
 
 /**
  * The subtitles menu (docs/chino subtitles): the languages that matter here on
- * top, the rest behind "more languages", a language's tracks together in one
- * order, a track that reads like another once. chino-web's
- * src/lib/subtitles.test.ts (subtitles-spec, 893f594) case for case - nothing
- * numbered, the file's own before a sidecar, an untagged one in its twin's
- * language, a packaged title as any other - ordered by docs/chino's runs
- * where the spec is newer than the web (5da8ef6): within a language each
- * region or script a run of its own, the bare name first, the others
+ * top, the rest behind "more languages" - never every track, a server that
+ * names no languages too, where the person's own are on top - a language's
+ * tracks together in one order, a track that reads like another once.
+ * chino-web's src/lib/subtitles.test.ts (subtitles-spec, 748908f) case for
+ * case - nothing numbered, the file's own before a sidecar, an untagged one
+ * in its twin's language, a packaged title as any other; within a language
+ * each region or script a run of its own, the bare name first, the others
  * alphabetically; "more languages" alphabetically by the languages' names.
  */
 class SubtitleMenuTest {
@@ -58,7 +58,14 @@ class SubtitleMenuTest {
         S("side-de-ai", "de", "AI"),
     )
 
-    private fun menu(tracks: List<S>, preferred: String? = "eng", serverLanguages: List<String> = server, on: String? = null) = subtitleMenu(
+    private fun menu(
+        tracks: List<S>,
+        preferred: String? = "eng",
+        serverLanguages: List<String> = server,
+        on: String? = null,
+        audio: String? = null,
+        device: String? = null,
+    ) = subtitleMenu(
         tracks = tracks,
         tag = { subtitleLanguage(it.lang, it.title) },
         forced = { it.isForced },
@@ -66,6 +73,8 @@ class SubtitleMenuTest {
         label = { it.label },
         preferred = preferred,
         serverLanguages = serverLanguages,
+        audio = audio,
+        device = device,
         on = { it.id == on },
         own = { it.embedded },
         ai = { isAiSubtitle(it.title) },
@@ -74,6 +83,9 @@ class SubtitleMenuTest {
     )
 
     private fun labels(list: List<S>) = list.map { it.label }
+
+    /** Every entry of the menu, in its order. */
+    private fun entries(m: SubtitleMenu<S>) = m.top + m.more
 
     /** What comes on by itself among the menu's tracks, in its order. */
     private fun auto(m: SubtitleMenu<S>, audioLang: String?, subtitlePref: String?) =
@@ -123,33 +135,114 @@ class SubtitleMenuTest {
     }
 
     @Test
-    fun aServerWithNoSubtitleLanguagesListsEveryTrackTheViewersFirstThenTheFilesOrder() {
-        val m = menu(original, serverLanguages = emptyList())
-        assertEquals(emptyList(), m.more)
-        // A language's tracks together, each script a run of its own,
-        // alphabetically: "Chinese (Simplified) · AI" before "Chinese
-        // (Traditional)", both where Chinese first comes in the file.
+    fun aServerWithNoSubtitleLanguagesThePersonsOwnLanguagesOnTopTheRestUnderMoreLanguages() {
+        // The subtitle setting's language, the audio setting's, the device's -
+        // in that order, each the whole language.
+        val m = menu(original, preferred = "eng", audio = "jpn", device = "de-CH", serverLanguages = emptyList())
         assertEquals(
             listOf(
                 "English",
                 "English · for deaf and hard of hearing",
+                "Japanese",
+                "German",
+                "German · foreign-language parts only",
+                "German · AI",
+            ),
+            labels(m.top),
+        )
+        // The rest in alphabetical order of their names, a language's scripts
+        // together: Chinese (Simplified) · AI with the file's Chinese.
+        assertEquals(listOf("Chinese (Simplified) · AI", "Chinese (Traditional)", "French", "Signs"), labels(m.more))
+        // Never every track on top: with the subtitle setting's language
+        // alone, the other languages wait under "more languages".
+        val alone = menu(original, serverLanguages = emptyList())
+        assertEquals(listOf("English", "English · for deaf and hard of hearing"), labels(alone.top))
+        assertEquals(
+            listOf(
+                "Chinese (Simplified) · AI",
+                "Chinese (Traditional)",
+                "French",
                 "German",
                 "German · foreign-language parts only",
                 "German · AI",
                 "Japanese",
-                "Chinese (Simplified) · AI",
-                "Chinese (Traditional)",
-                "French",
                 "Signs",
             ),
-            labels(m.top),
+            labels(alone.more),
         )
         // Tags that name no language count as none.
-        assertEquals(emptyList(), menu(original, serverLanguages = listOf("und", "")).more)
+        assertEquals(alone, menu(original, serverLanguages = listOf("und", "")))
     }
 
     @Test
-    fun noServerLanguagesThePreferredLanguageFirstThenTheFilesOrderALanguagesTracksTogether() {
+    fun aHundredTracksAndNoServerLanguagesGermanEnglishAndChineseOnTopTheOtherNinetyOddUnderMoreLanguages() {
+        val codes = listOf(
+            "ara", "bul", "cat", "ces", "dan", "ell", "est", "fin", "fra", "heb", "hin", "hrv", "hun", "ind", "isl", "ita", "jpn", "kor",
+            "lav", "lit", "msa", "nld", "nor", "pol", "por", "ron", "rus", "slk", "slv", "spa", "srp", "swe", "tha", "tur", "ukr", "vie",
+        )
+        val tracks = ArrayList<S>()
+        var n = 2
+        for (lang in codes) {
+            tracks += S("emb-${n++}", lang, embedded = true)
+            tracks += S("emb-${n++}", lang, "SDH", embedded = true)
+        }
+        tracks += S("emb-${n++}", "ger", embedded = true)
+        tracks += S("emb-${n++}", "eng", embedded = true)
+        tracks += S("emb-${n++}", "chi", "简体中文", embedded = true)
+        for (lang in codes) tracks += S("side-$lang", lang, "AI")
+        tracks += S("side-zh-hant", "zh-Hant", "AI")
+        assertTrue(tracks.size > 100)
+        // German subtitles in Settings, English audio, a phone in Chinese.
+        val m = menu(tracks, preferred = "ger", audio = "eng", device = "zh-CN", serverLanguages = emptyList())
+        assertEquals(listOf("German", "English", "Chinese (Simplified)", "Chinese (Traditional) · AI"), labels(m.top))
+        assertEquals(codes.size * 3, m.more.size)
+        assertEquals("Arabic", m.more.first().label)
+        // Every track is still there to pick, each once.
+        assertEquals(tracks.size, entries(m).size)
+    }
+
+    @Test
+    fun thePersonsOwnLanguagesTheAudioSettingsUnlessOriginalTheDevicesEachLanguageOnce() {
+        val tracks = listOf(
+            S("emb-2", "fre", embedded = true),
+            S("emb-3", "ita", embedded = true),
+            S("emb-4", "eng", embedded = true),
+            S("emb-5", "en-GB", embedded = true),
+        )
+        // Audio set to Original names no language: the device's alone.
+        val original = menu(tracks, preferred = "off", audio = "orig", device = "it-IT", serverLanguages = emptyList())
+        assertEquals(listOf("Italian"), labels(original.top))
+        assertEquals(listOf("English", "English (United Kingdom)", "French"), labels(original.more))
+        // The device's language with a region takes the whole language, the
+        // bare name first.
+        assertEquals(
+            listOf("English", "English (United Kingdom)"),
+            labels(menu(tracks, preferred = "off", device = "en-US", serverLanguages = emptyList()).top),
+        )
+        // The same language twice (the setting's "eng", the device's "en-GB")
+        // is one block, where the first of them puts it.
+        assertEquals(
+            listOf("English", "English (United Kingdom)", "French"),
+            labels(menu(tracks, preferred = "eng", audio = "fre", device = "en-GB", serverLanguages = emptyList()).top),
+        )
+        // None of them: "off" and "more languages" alone.
+        val none = menu(tracks, preferred = "off", audio = "orig", device = "ja-JP", serverLanguages = emptyList())
+        assertEquals(emptyList(), none.top)
+        assertEquals(4, none.more.size)
+        // On a server that names its languages, the audio setting's and the
+        // device's count for nothing: the subtitle setting's, then the server's.
+        assertEquals(
+            listOf("English", "English (United Kingdom)"),
+            labels(menu(tracks, preferred = "off", audio = "fre", device = "it-IT", serverLanguages = listOf("en")).top),
+        )
+        assertEquals(listOf("eng", "fre", "de-CH"), ownLanguages("eng", "fre", "de-CH"))
+        assertEquals(listOf("de-CH"), ownLanguages("off", "orig", "de-CH"))
+        assertEquals(listOf("deu"), ownLanguages("deu", "orig", "de-AT"))
+        assertEquals(emptyList(), ownLanguages(null, null, "und"))
+    }
+
+    @Test
+    fun noServerLanguagesThePreferredLanguageFirstTheWholeOfItItsRunsInOrderTheRestUnderMoreLanguages() {
         val tracks = listOf(
             S("emb-2", "chi", "中文", embedded = true),
             S("emb-3", "fre", embedded = true),
@@ -162,45 +255,77 @@ class SubtitleMenuTest {
             S("side-de", "de", "AI"),
             S("side-en", "en", "AI"),
         )
+        val eng = menu(tracks, preferred = "eng", serverLanguages = emptyList())
+        assertEquals(listOf("English", "English · AI"), labels(eng.top))
+        // The rest under "more languages", alphabetical, a language's tracks
+        // together: the AI Chinese with the file's Chinese, not after French.
         assertEquals(
             listOf(
-                "English",
-                "English · AI",
-                // The bare name, then each script alphabetically, with its AI one.
                 "Chinese",
                 "Chinese (Simplified) · AI",
                 "Chinese (Traditional)",
                 "French",
                 "French · for deaf and hard of hearing",
-                // A track in no language: in its place in the file.
-                "Signs",
                 "German",
                 "German · AI",
+                "Signs",
             ),
-            labels(menu(tracks, preferred = "eng", serverLanguages = emptyList()).top),
+            labels(eng.more),
         )
-        // Subtitles off in Settings: the file's order alone.
-        assertEquals(
-            listOf("Chinese", "Chinese (Simplified) · AI", "Chinese (Traditional)"),
-            labels(menu(tracks, preferred = "off", serverLanguages = emptyList()).top).take(3),
-        )
-        // A preferred language with a script: its own first, then the rest of
-        // the language right after it, before the others.
-        assertEquals(
-            listOf("Chinese", "Chinese (Simplified) · AI", "Chinese (Traditional)", "French"),
-            labels(menu(tracks, preferred = "zh-Hans", serverLanguages = emptyList()).top).take(4),
-        )
-        // And with a region: Brazil's, then Portugal's, then the others.
+        // Subtitles off in Settings: nothing on top, a language's runs under
+        // "more languages" the bare one first, then alphabetical.
+        val off = menu(tracks, preferred = "off", serverLanguages = emptyList())
+        assertEquals(emptyList(), off.top)
+        assertEquals(listOf("Chinese", "Chinese (Simplified) · AI", "Chinese (Traditional)"), labels(off.more).take(3))
+        // A preferred language with a script: the language on top, the whole
+        // of it, its runs the bare one first, then alphabetical - the others
+        // under "more languages".
+        val hans = menu(tracks, preferred = "zh-Hans", serverLanguages = emptyList())
+        assertEquals(listOf("Chinese", "Chinese (Simplified) · AI", "Chinese (Traditional)"), labels(hans.top))
+        assertEquals("English", hans.more.first().label)
+        // And with a region: the language's runs, the others under "more
+        // languages".
         val portuguese = listOf(
             S("emb-2", "eng", embedded = true),
             S("emb-3", "pt-PT", embedded = true),
             S("emb-4", "por", "Português (Brasil)", embedded = true),
             S("side-pt", "pt-BR", "AI"),
         )
-        assertEquals(
-            listOf("Portuguese (Brazil)", "Portuguese (Brazil) · AI", "Portuguese (Portugal)", "English"),
-            labels(menu(portuguese, preferred = "pt-BR", serverLanguages = emptyList()).top),
+        val brazil = menu(portuguese, preferred = "pt-BR", serverLanguages = emptyList())
+        assertEquals(listOf("Portuguese (Brazil)", "Portuguese (Brazil) · AI", "Portuguese (Portugal)"), labels(brazil.top))
+        assertEquals(listOf("English"), labels(brazil.more))
+        // A preferred run that doesn't sort first keeps the language's order:
+        // the bare name, then the runs alphabetically - not its own run first,
+        // nor the rest of the language spliced in after it.
+        val chinese = listOf(
+            S("emb-2", "zh-Hans", embedded = true),
+            S("emb-3", "zh-Hant", embedded = true),
+            S("emb-4", "chi", embedded = true),
+            S("emb-5", "zh-CN", embedded = true),
+            S("side-zh", "zh-Hant", "AI"),
+            S("emb-6", "eng", embedded = true),
         )
+        val hant = menu(chinese, preferred = "zh-Hant", serverLanguages = emptyList())
+        assertEquals(
+            listOf("Chinese", "Chinese (China)", "Chinese (Simplified)", "Chinese (Traditional)", "Chinese (Traditional) · AI"),
+            labels(hant.top),
+        )
+        assertEquals(listOf("English"), labels(hant.more))
+        // The same order for the device's language with a region.
+        assertEquals(labels(hant.top), labels(menu(chinese, preferred = "off", device = "zh-TW", serverLanguages = emptyList()).top))
+        val portugal = listOf(
+            S("emb-2", "pt-BR", embedded = true),
+            S("emb-3", "eng", embedded = true),
+            S("emb-4", "pt-PT", embedded = true),
+            S("emb-5", "por", embedded = true),
+        )
+        val pt = menu(portugal, preferred = "pt-PT", serverLanguages = emptyList())
+        assertEquals(listOf("Portuguese", "Portuguese (Brazil)", "Portuguese (Portugal)"), labels(pt.top))
+        assertEquals(listOf("English"), labels(pt.more))
+        // What comes on by itself is as before: a setting with its script or
+        // region takes a track with that one first (defaultSubtitleTrack).
+        assertEquals("emb-3", auto(menu(chinese, preferred = "zh-Hant", serverLanguages = emptyList()), audioLang = "eng", subtitlePref = "zh-Hant"))
+        assertEquals("emb-4", auto(menu(portugal, preferred = "pt-PT", serverLanguages = emptyList()), audioLang = "eng", subtitlePref = "pt-PT"))
     }
 
     @Test
@@ -213,11 +338,12 @@ class SubtitleMenuTest {
         assertEquals(listOf("French", "Japanese"), labels(m.more))
         // Only the server's languages: nothing more to open.
         assertEquals(emptyList(), menu(packaged.filter { it.lang != "fr" && it.lang != "ja" }).more)
-        // A server with no subtitle languages lists a package's tracks all on
-        // top, as an original's: the viewer's language first, then their order.
-        val none = menu(packaged, serverLanguages = emptyList())
-        assertEquals(emptyList(), none.more)
-        assertEquals(listOf("English", "German", "German · AI", "French", "Japanese", "Chinese (Simplified)"), labels(none.top))
+        // A server with no subtitle languages: a package's tracks as an
+        // original's - the person's own languages on top, the rest under
+        // "more languages".
+        val none = menu(packaged, audio = "deu", serverLanguages = emptyList())
+        assertEquals(listOf("English", "German", "German · AI"), labels(none.top))
+        assertEquals(listOf("Chinese (Simplified)", "French", "Japanese"), labels(none.more))
     }
 
     @Test
@@ -284,7 +410,9 @@ class SubtitleMenuTest {
         assertEquals(listOf("emb-3" to "French"), m.more.map { it.id to it.label })
         assertEquals("emb-2", auto(m, audioLang = "fre", subtitlePref = "eng"))
         // The same without the server's languages, and with no preferred language.
-        assertEquals(listOf("emb-2", "emb-3"), menu(tracks, serverLanguages = emptyList()).top.map { it.id })
+        val ownLanguages = menu(tracks, serverLanguages = emptyList())
+        assertEquals(listOf("emb-2" to "en"), ownLanguages.top.map { it.id to subtitleLanguage(it.lang, it.title) })
+        assertEquals(listOf("emb-3"), ownLanguages.more.map { it.id })
         assertEquals(listOf("emb-2", "emb-3"), menu(tracks, preferred = "off").let { it.top + it.more }.map { it.id })
         // The sidecar on: it stays, whichever it is.
         assertEquals(listOf("s1"), menu(tracks, on = "s1").top.map { it.id })
@@ -308,23 +436,28 @@ class SubtitleMenuTest {
         assertEquals(listOf("English", "Chinese (Simplified)"), labels(m.top))
         assertEquals(listOf("Chinese (Traditional)"), labels(m.more))
         assertEquals(listOf("zh-Hant"), m.more.map { subtitleLanguage(it.lang, it.title) })
-        // A server with no languages: both, each by its script.
-        assertEquals(listOf("English", "Chinese (Simplified)", "Chinese (Traditional)"), labels(menu(tracks, preferred = "en", serverLanguages = emptyList()).top))
+        // A server with no languages: both, each by its script, under "more
+        // languages"; on top for a phone in Chinese.
+        assertEquals(listOf("Chinese (Simplified)", "Chinese (Traditional)"), labels(menu(tracks, preferred = "en", serverLanguages = emptyList()).more))
+        assertEquals(
+            listOf("English", "Chinese (Simplified)", "Chinese (Traditional)"),
+            labels(menu(tracks, preferred = "en", device = "zh-HK", serverLanguages = emptyList()).top),
+        )
         // Mandarin and Cantonese are two as well.
         assertEquals(
             listOf("Chinese · Mandarin", "Chinese · Cantonese"),
-            labels(menu(listOf(S("a", "chi", "國語"), S("b", "chi", "粵語")), serverLanguages = emptyList()).top),
+            labels(entries(menu(listOf(S("a", "chi", "國語"), S("b", "chi", "粵語")), serverLanguages = emptyList()))),
         )
     }
 
     @Test
     fun aLanguagesRegionInATitleListsTheTrackWithThatRegion() {
         val tracks = listOf(S("es", "spa", "Español (España)"), S("la", "spa", "Español (Latinoamérica)"), S("la2", "es-419"))
-        val m = menu(tracks, serverLanguages = emptyList())
+        val m = entries(menu(tracks, serverLanguages = emptyList()))
         // The same region twice is one; Spain and Latin America are two, each
-        // a run of its own, alphabetically (the web keeps the file's order).
-        assertEquals(listOf("Spanish (Latin America)", "Spanish (Spain)"), labels(m.top))
-        assertEquals(listOf("es-419", "es-ES"), m.top.map { subtitleLanguage(it.lang, it.title) })
+        // a run of its own, alphabetically.
+        assertEquals(listOf("Spanish (Latin America)", "Spanish (Spain)"), labels(m))
+        assertEquals(listOf("es-419", "es-ES"), m.map { subtitleLanguage(it.lang, it.title) })
         // A region's adjective reads as the region: the file's Brazilian
         // Portuguese and the server's are one, the file's own.
         val brazil = listOf(S("emb-2", "por", "Portuguese (Brazilian)", embedded = true), S("side-pt", "pt-BR"))
@@ -339,23 +472,66 @@ class SubtitleMenuTest {
     @Test
     fun titlesThatAreCodesWithARegionOrAScriptTwoRegionsTwoScriptsAreTwo() {
         val pairs = listOf(
-            listOf("por", "PT-BR", "PT-PT") to listOf("Portuguese (Brazil)", "Portuguese (Portugal)"),
-            listOf("chi", "zh-Hant", "zh-Hans") to listOf("Chinese (Simplified)", "Chinese (Traditional)"),
-            listOf("spa", "es-419", "es-ES") to listOf("Spanish (Latin America)", "Spanish (Spain)"),
-            listOf("por", "Português (BR)", "Português (PT)") to listOf("Portuguese (Brazil)", "Portuguese (Portugal)"),
+            listOf("por", "PT-BR", "PT-PT") to listOf("Portuguese (Brazil)", "Portuguese (Portugal)", "emb-2", "emb-3"),
+            listOf("chi", "zh-Hant", "zh-Hans") to listOf("Chinese (Simplified)", "Chinese (Traditional)", "emb-3", "emb-2"),
+            listOf("spa", "es-419", "es-ES") to listOf("Spanish (Latin America)", "Spanish (Spain)", "emb-2", "emb-3"),
+            listOf("por", "Português (BR)", "Português (PT)") to listOf("Portuguese (Brazil)", "Portuguese (Portugal)", "emb-2", "emb-3"),
         )
         for ((input, expected) in pairs) {
             val (lang, first, second) = input
             val tracks = listOf(S("emb-2", lang, first, embedded = true), S("emb-3", lang, second, embedded = true))
             // Without the server's languages, a run each, alphabetically...
-            val all = menu(tracks, serverLanguages = emptyList()).let { it.top + it.more }
-            assertEquals(expected, labels(all), "$first, $second")
+            val all = entries(menu(tracks, serverLanguages = emptyList()))
+            assertEquals(expected.take(2), labels(all), "$first, $second")
+            assertEquals(expected.drop(2), all.map { it.id }, "$first, $second")
             // ...and with them, both still there to pick.
             assertEquals(listOf("emb-2", "emb-3"), menu(tracks).let { it.top + it.more }.map { it.id }.sorted())
         }
         // The same region twice, as a code and by its name, is one.
         val twice = menu(listOf(S("emb-2", "por", "PT-BR", embedded = true), S("side-pt", "pt-BR")))
         assertEquals(listOf("emb-2" to "Portuguese (Brazil)"), twice.let { it.top + it.more }.map { it.id to it.label })
+    }
+
+    @Test
+    fun eachRegionOrScriptARunOfItsOwnTheBareNameFirstTheOthersAlphabeticalAiOnesInTheirRun() {
+        // In the file's order: Traditional before the bare one, the AI one last.
+        val tracks = listOf(
+            S("emb-2", "zh-Hant", embedded = true),
+            S("emb-3", "pt-PT", embedded = true),
+            S("emb-4", "chi", embedded = true),
+            S("emb-5", "kor", embedded = true),
+            S("emb-6", "zh-Hans", embedded = true),
+            S("emb-7", "pt-BR", "SDH", embedded = true),
+            S("emb-8", "ara", embedded = true),
+            S("side-zh", "zh-Hans", "AI"),
+            S("side-pt", "pt-BR"),
+        )
+        val chinese = listOf("Chinese", "Chinese (Simplified)", "Chinese (Simplified) · AI", "Chinese (Traditional)")
+        // On top, as a server's language.
+        assertEquals(chinese, labels(menu(tracks, preferred = "off", serverLanguages = listOf("zh")).top))
+        // Under "more languages": the languages by their names, each
+        // language's runs as on top.
+        assertEquals(
+            listOf("Arabic") + chinese + listOf(
+                "Korean",
+                "Portuguese (Brazil)",
+                "Portuguese (Brazil) · for deaf and hard of hearing",
+                "Portuguese (Portugal)",
+            ),
+            labels(menu(tracks, preferred = "off", serverLanguages = listOf("en")).more),
+        )
+        // Without the server's languages, the device's language on top, the
+        // rest under "more languages", each language's runs the same way.
+        val own = menu(tracks, preferred = "off", device = "pt-BR", serverLanguages = emptyList())
+        assertEquals(
+            listOf("Portuguese (Brazil)", "Portuguese (Brazil) · for deaf and hard of hearing", "Portuguese (Portugal)"),
+            labels(own.top),
+        )
+        assertEquals(listOf("Arabic") + chinese + listOf("Korean"), labels(own.more))
+        // A track in no language is sorted by its own name, as a reader sorts
+        // it - not by its letters' codes, which put "Spanish" before "signs".
+        val signs = listOf(S("emb-2", "spa", embedded = true), S("emb-3", "und", "signs", embedded = true), S("emb-4", "fre", embedded = true))
+        assertEquals(listOf("French", "signs", "Spanish"), labels(menu(signs, preferred = "off", serverLanguages = listOf("en")).more))
     }
 
     @Test
