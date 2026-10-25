@@ -55,11 +55,8 @@ import androidx.compose.material3.Icon
 import com.composables.icons.lucide.BookmarkFilled
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronRight
-import com.composables.icons.lucide.Clapperboard
-import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Lucide
 import com.composables.icons.lucide.Play
-import com.composables.icons.lucide.Youtube
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -89,13 +86,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Hero banner — clone of chino-web's HeroSection.tsx for the tablet/desktop
- * layout. Backdrop image right-anchored with a left-edge mask that fades to
- * the canvas; title + year + rating chip + overview paragraph + Play / More
- * Info / Trailer buttons left-anchored on the dark portion. Rotates through
- * the pool every ~12s with a crossfade. No trailer plays on the hero by
- * itself (web's TRAILERS_ON_HERO is off too): the title's Trailer button
- * opens it, as its page's does.
+ * Hero banner — chino-web's HeroSection.tsx. On a tablet the backdrop is
+ * right-anchored with a left-edge mask that fades to the canvas; title +
+ * year + rating chip + overview paragraph + play / see details / trailer
+ * left of it, on the dark portion. On a phone the picture is the hero's
+ * width and ends above the buttons, which sit on the hero's black: no button
+ * is drawn over a still (docs/chino title actions). The buttons are the
+ * title actions, 48 dp and solid. Rotates through the pool every ~12s. No
+ * trailer plays on the hero by itself (web's TRAILERS_ON_HERO is off too):
+ * the title's trailer button opens it, as its page's does.
  */
 @Composable
 fun HeroBanner(
@@ -132,36 +131,41 @@ fun HeroBanner(
             .padding(horizontal = 16.dp),
     ) {
         val isWide = maxWidth >= 600.dp
+        val dots = pool.size > 1
         // CDP-verified: web hero image is 500px tall (chino-web's
         // HeroSection has h-[500px] on md+). Tablet's wide hero was
-        // previously 420 — too short, made the hero feel cramped.
+        // previously 420 — too short, made the hero feel cramped. A phone's
+        // is as tall as its picture and its buttons under it.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(if (isWide) 500.dp else 280.dp)
+                .then(if (isWide) Modifier.height(500.dp) else Modifier)
                 // CDP-verified: web hero is `rounded-xl` = 12px, not 16.
                 .clip(RectangleShape)
                 // CDP-verified: web hero card uses `bg-black` = pure
                 // black (rgb 0,0,0), not the canvas color. The mask on
                 // the backdrop image fades to this black, which is the
-                // intentional darker shade behind the title column.
+                // intentional darker shade behind the title column, and
+                // the buttons sit on it.
                 .background(Color.Black),
         ) {
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = if (isWide) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
             ) { page ->
                 HeroContent(
                     item = pool[page],
                     baseUrl = baseUrl,
                     streamToken = streamToken,
                     isWide = isWide,
+                    dots = dots,
                     onMoreInfo = onMoreInfo,
                     onPlay = onPlay,
                     onTrailer = onTrailer,
                 )
             }
-            if (pool.size > 1) {
+            if (dots) {
                 // CDP-verified pagination dots: ALL dots are 8×8 circles
                 // (`w-2 h-2 rounded-full`). Active = opaque white
                 // (`bg-white`), inactive = 30% white (`bg-white/30`).
@@ -169,11 +173,13 @@ fun HeroBanner(
                 // gap-2). Position: start = 48dp aligns under the Play
                 // button (Play sits at hero left padding 16 + text-
                 // column padding 32 = 48dp). Bottom inset 48dp matches
-                // web `bottom-12`.
+                // web `bottom-12`. On a phone, a row of their own under
+                // the buttons.
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(start = if (isWide) 48.dp else 16.dp, bottom = if (isWide) 48.dp else 16.dp),
+                        .padding(start = if (isWide) 48.dp else 16.dp, bottom = if (isWide) 48.dp else 16.dp)
+                        .height(if (isWide) 8.dp else HERO_DOTS_ROW),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -203,96 +209,97 @@ private fun HeroContent(
     baseUrl: String,
     streamToken: String,
     isWide: Boolean,
+    dots: Boolean,
     onMoreInfo: ((String) -> Unit)?,
     onPlay: ((String) -> Unit)?,
     onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
     if (isWide) HeroContentWide(item, baseUrl, streamToken, onMoreInfo, onPlay, onTrailer)
-    else HeroContentNarrow(item, baseUrl, streamToken, onMoreInfo, onPlay, onTrailer)
+    else HeroContentNarrow(item, baseUrl, streamToken, dots, onMoreInfo, onPlay, onTrailer)
 }
+
+/** Between a phone's hero picture and the buttons under it. */
+internal val HERO_PICTURE_GAP = 16.dp
+
+/** The rotation dots' row under a phone's hero buttons. */
+private val HERO_DOTS_ROW = 24.dp
+
+/** Where a tablet's hero picture starts, as a share of the hero's width:
+ *  the buttons' column ends before it (chino-web's md:w-[55%]). */
+internal const val HERO_PICTURE_START = 0.45f
+
+/** The room at the sides of the hero's labelled buttons on a phone, where
+ *  three share a line. */
+private val HERO_BUTTON_PADDING_NARROW = 12.dp
 
 @Composable
 private fun HeroContentNarrow(
     item: Item,
     baseUrl: String,
     streamToken: String,
+    /** The rotation dots take a row under the buttons. */
+    dots: Boolean,
     onMoreInfo: ((String) -> Unit)?,
     onPlay: ((String) -> Unit)?,
     onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
-    // Phone hero mirrors chino-web's mobile hero (CDP-verified at 411px: a
-    // 379x280 object-cover backdrop with the title OVERLAID top-left and the
-    // Play / More Info buttons OVERLAID bottom-left — NOT a stacked image-then-
-    // text block, which also let the pagination dots collide with the buttons).
-    // Full-bleed crop + a top+bottom dark gradient keeps the overlaid text legible.
-    Box(modifier = Modifier.fillMaxSize()) {
-        AsyncImage(
-            model = "$baseUrl/v1/items/${item.id}/backdrop?stream=$streamToken",
-            contentDescription = item.title,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Box(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    0.0f to Color(0xCC000000),
-                    0.28f to Color.Transparent,
-                    0.55f to Color.Transparent,
-                    1.0f to Color(0xF2000000),
+    // Phone hero after chino-web's mobile hero: the backdrop the hero's
+    // width with the title over its top-left, the buttons UNDER it on the
+    // hero's black - never on the picture (docs/chino title actions) - and
+    // the rotation dots under them.
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+            AsyncImage(
+                model = "$baseUrl/v1/items/${item.id}/backdrop?stream=$streamToken",
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            // Dark at the top for the title, into the hero's black at the
+            // bottom.
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0.0f to Color(0xCC000000),
+                        0.32f to Color.Transparent,
+                        0.7f to Color.Transparent,
+                        1.0f to Color.Black,
+                    ),
                 ),
-            ),
-        )
-        // Title + chip overlaid top-left (web: x=32, y=96, text-2xl=24px,
-        // an h1 clamped to two lines with an ellipsis).
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 24.sp,
-                lineHeight = 30.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                style = ChinoHeading,
             )
-            YearRatingChipRow(item)
+            // Title + chip overlaid top-left (web: x=32, y=96, text-2xl=24px,
+            // an h1 clamped to two lines with an ellipsis).
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = item.title,
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    lineHeight = 30.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = ChinoHeading,
+                )
+                YearRatingChipRow(item)
+            }
         }
-        // Play / More Info / Trailer overlaid bottom-left, sitting above the
-        // pagination dots (which the parent pins at bottom=16). Web: Play at
-        // y=284 (~40dp from the 280-tall image bottom), 8dp button gap, the
-        // buttons in their size below md (compact) — three in the md+ size
-        // are wider than a phone. Where the three don't fit even so (a very
-        // narrow phone, a large font), Trailer takes a line of its own.
+        // play · see details · trailer: the title actions, 48 dp and 8 dp
+        // apart, in one line on a phone - the trailer its icon alone, as the
+        // web's is below sm - wrapping between buttons where even so they
+        // don't fit (a large font).
         FlowRow(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, end = 16.dp, bottom = 40.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = HERO_PICTURE_GAP),
+            horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+            verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
         ) {
-            HeroButton(
-                label = "Play",
-                icon = Lucide.Play,
-                background = ChinoCloudBlue,
-                contentColor = ChinoOnFill,
-                compact = true,
-                onClick = { onPlay?.invoke(item.id) },
-            )
-            HeroButton(
-                label = "More Info",
-                icon = Lucide.Info,
-                background = ChinoSurfaceHi,
-                contentColor = Color.White,
-                compact = true,
-                onClick = { onMoreInfo?.invoke(item.id) },
-            )
-            HeroTrailerButton(item, compact = true, onTrailer = onTrailer)
+            HeroButtons(item, narrow = true, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
         }
+        Box(modifier = Modifier.height(16.dp + if (dots) HERO_DOTS_ROW else 0.dp))
     }
 }
 
@@ -305,50 +312,37 @@ private fun HeroContentWide(
     onPlay: ((String) -> Unit)?,
     onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        // CDP-verified: web backdrop image is `md:w-[60%] md:max-w-[1100px]
-        // h-full object-cover object-center` — 60% wide of the hero
-        // container, anchored right, full-height, *cropped* to fill the
-        // box (no letterboxing). The mask
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        // CDP-verified: web backdrop image is `md:w-[55%] md:max-w-[1100px]
+        // h-full object-cover object-center` — anchored right, full-height,
+        // *cropped* to fill the box (no letterboxing). The mask
         // `linear-gradient(to_left, black 0% 60%, transparent 100%)`
         // fades the image into the canvas on its left edge — Compose
         // can't cheaply apply mask-image so a left-side overlay
         // gradient achieves the same visual.
-        //
-        // Previous chain `.fillMaxWidth(0.6f).fillMaxSize()` was a bug —
-        // fillMaxSize implicitly fillMaxWidth(1f) which overrode the
-        // 0.6 fraction; AsyncImage also defaults to ContentScale.Fit
-        // which left empty bands above + below the backdrop on items
-        // with non-matching aspect ratios.
         AsyncImage(
             model = "$baseUrl/v1/items/${item.id}/backdrop?stream=$streamToken",
             contentDescription = item.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxHeight()
-                .fillMaxWidth(0.6f)
+                .fillMaxWidth(1f - HERO_PICTURE_START)
                 .align(Alignment.CenterEnd),
         )
-        // Left-to-right BLACK-to-transparent overlay over the backdrop,
-        // matching web's `mask-image: linear-gradient(to_left, black 0%,
-        // black 60%, transparent 100%)`. With image anchored right
-        // 60 % of hero, the mask says the image's right 60 % is fully
-        // visible and the left 40 % fades. In hero coordinates that's:
-        //   0 → 40 %   : opaque black (the dark text-column inset)
-        //   40 → 64 %  : fade from black to transparent (image emerges)
-        //   64 → 100 % : transparent (image fully visible)
-        // Using fraction-based colour stops makes this responsive — the
-        // previous `endX = 900f` was a fixed-pixel cap that landed the
-        // fade BEFORE the image started, so no actual fade appeared on
-        // the backdrop's left edge.
+        // Left-to-right BLACK-to-transparent overlay: opaque black where
+        // the text column and the buttons are, then the picture's left
+        // edge fades in.
+        //   0 → 45 %   : opaque black (the dark text-column inset)
+        //   45 → 67 %  : fade from black to transparent (image emerges)
+        //   67 → 100 % : transparent (image fully visible)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.horizontalGradient(
                         0.0f to Color.Black,
-                        0.4f to Color.Black,
-                        0.64f to Color.Transparent,
+                        HERO_PICTURE_START to Color.Black,
+                        0.67f to Color.Transparent,
                         1.0f to Color.Transparent,
                     ),
                 ),
@@ -392,59 +386,73 @@ private fun HeroContentWide(
                 )
             }
         }
-        // CDP-verified: buttons are pinned to the BOTTOM of the hero
-        // text column at y=460 in a 500-tall hero (= 72dp from hero
-        // bottom: 92dp - 48 button height = 44 + 28 = 72). Web's
-        // <main> uses flex-col with the title group at the top and
-        // the button row pinned via mt-auto / bottom positioning, so
-        // when item.overview is null the buttons DON'T move up — they
-        // stay at the same Y. Mobile previously collapsed the column
-        // with the buttons sitting right under the chip row when
-        // overview was null. BottomStart-aligned Row with padding(
-        // bottom=72dp, start=48dp) pins them to web's exact position
-        // regardless of overview presence.
-        Row(
+        // The buttons pinned to the bottom of the text column (web: y=460
+        // in a 500-tall hero), whether or not there is an overview - left
+        // of the picture: their column ends before it starts, and they
+        // wrap inside it, never onto the still.
+        FlowRow(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 48.dp, bottom = 72.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(start = 48.dp, bottom = 72.dp)
+                .width((maxWidth * HERO_PICTURE_START - 48.dp - 16.dp).coerceAtLeast(TITLE_ACTION_HEIGHT)),
+            horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+            verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
         ) {
-            HeroButton(
-                label = "Play",
-                icon = Lucide.Play,
-                background = ChinoCloudBlue,
-                contentColor = ChinoOnFill,
-                onClick = { onPlay?.invoke(item.id) },
-            )
-            HeroButton(
-                label = "More Info",
-                icon = Lucide.Info,
-                background = ChinoSurfaceHi,
-                contentColor = Color.White,
-                onClick = { onMoreInfo?.invoke(item.id) },
-            )
-            HeroTrailerButton(item, compact = false, onTrailer = onTrailer)
+            HeroButtons(item, narrow = false, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
         }
     }
 }
 
 /**
- * The hero title's Trailer, after Play and More Info (web: HeroSection.tsx),
- * by its page's rule (trailerChoice): the clapperboard plays this server's
- * trailer, the YouTube mark opens the title's link; without either, no
- * button. Solid over the artwork, as More Info.
+ * The hero's buttons, the title actions as on a title's page: "play", dark
+ * on the accent; "see details" and "trailer" on the plain surface - 48 dp,
+ * solid, the labels in the mono face. The trailer by its page's rule
+ * (trailerChoice), with the trailer's one icon: this server's trailer plays,
+ * a link opens; without either, no button. On a phone ([narrow]) the
+ * labelled ones have less room at their sides and the trailer is its icon
+ * alone, named "trailer", so the three share one line.
  */
 @Composable
-private fun HeroTrailerButton(item: Item, compact: Boolean, onTrailer: ((String, TrailerChoice) -> Unit)?) {
-    val choice = trailerChoice(item) ?: return
-    HeroButton(
-        label = "Trailer",
-        icon = if (choice is TrailerChoice.Local) Lucide.Clapperboard else Lucide.Youtube,
-        background = ChinoSurfaceHi,
-        contentColor = Color.White,
-        compact = compact,
-        onClick = { onTrailer?.invoke(item.id, choice) },
+private fun HeroButtons(
+    item: Item,
+    narrow: Boolean,
+    onMoreInfo: ((String) -> Unit)?,
+    onPlay: ((String) -> Unit)?,
+    onTrailer: ((String, TrailerChoice) -> Unit)?,
+) {
+    val padding = if (narrow) HERO_BUTTON_PADDING_NARROW else TITLE_ACTION_PADDING
+    TitleActionButton(
+        label = "play",
+        icon = Lucide.Play,
+        primary = true,
+        onClick = { onPlay?.invoke(item.id) },
+        horizontalPadding = padding,
     )
+    TitleActionButton(
+        label = "see details",
+        icon = null,
+        primary = false,
+        onClick = { onMoreInfo?.invoke(item.id) },
+        horizontalPadding = padding,
+    )
+    val choice = trailerChoice(item) ?: return
+    if (narrow) {
+        TitleIconButton(
+            icon = TRAILER_ICON,
+            name = "trailer",
+            on = false,
+            onFill = ChinoSurfaceHi,
+            onClick = { onTrailer?.invoke(item.id, choice) },
+        )
+    } else {
+        TitleActionButton(
+            label = "trailer",
+            icon = TRAILER_ICON,
+            primary = false,
+            onClick = { onTrailer?.invoke(item.id, choice) },
+            horizontalPadding = padding,
+        )
+    }
 }
 
 /** Year + bullet + blue rating chip — shared by narrow and wide hero
@@ -483,51 +491,6 @@ private fun YearRatingChipRow(item: Item) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun HeroButton(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    background: Color,
-    contentColor: Color,
-    /** The web's size below md, the phone's: see below. */
-    compact: Boolean = false,
-    onClick: () -> Unit,
-) {
-    // CDP-verified: web hero buttons use
-    //   `flex items-center gap-2 px-4 py-2 md:px-6 md:py-3 bg-[#58a6ff]
-    //    text-white rounded-lg text-sm md:text-base`
-    // On md+ viewports that's padding 12 24, gap 8, rounded-lg = 8px,
-    // text-base = 16px, icon SVG 20×20. At tablet's 1280dp we're md+.
-    // Below md ([compact], a phone): padding 8 16, text-sm = 14px / 20,
-    // icon `w-4 h-4` = 16×16.
-    Row(
-        modifier = Modifier
-            .clip(RectangleShape)
-            .background(background)
-            .clickable(onClick = onClick)
-            .padding(horizontal = if (compact) 16.dp else 24.dp, vertical = if (compact) 8.dp else 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = contentColor,
-            modifier = Modifier.size(if (compact) 16.dp else 20.dp),
-        )
-        // CDP-verified: web button label is font-weight 400 (Normal),
-        // 16px text-base, line-height 24. Previous SemiBold was a tick
-        // too heavy.
-        Text(
-            text = label,
-            color = contentColor,
-            fontSize = if (compact) 14.sp else 16.sp,
-            lineHeight = if (compact) 20.sp else 24.sp,
-            fontWeight = FontWeight.Normal,
-        )
     }
 }
 

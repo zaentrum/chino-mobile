@@ -13,6 +13,7 @@ import cloud.nalet.chino.mobile.ui.components.AddToListControl
 import cloud.nalet.chino.mobile.ui.components.LikedButton
 import cloud.nalet.chino.mobile.ui.components.TITLE_ACTION_GAP
 import cloud.nalet.chino.mobile.ui.components.TitleActionButton
+import cloud.nalet.chino.mobile.ui.components.TRAILER_ICON
 import cloud.nalet.chino.mobile.ui.components.WatchedButton
 import cloud.nalet.chino.mobile.ui.downloads.OfflineSeriesSummary
 import cloud.nalet.chino.mobile.ui.downloads.SeriesDownloadSummary
@@ -123,8 +124,6 @@ import coil3.compose.AsyncImage
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.ChevronDown
 import com.composables.icons.lucide.ChevronRight
-import com.composables.icons.lucide.Clapperboard
-import com.composables.icons.lucide.Youtube
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.Eye
 import com.composables.icons.lucide.Heart
@@ -803,10 +802,11 @@ private fun ActionRow(
     onToggleWatched: () -> Unit,
     onToggleLike: () -> Unit,
 ) {
-    // The design system's title actions, in its order - Play (or Resume) ·
-    // Start over · Trailer, then add to list · watched · liked · download -
-    // each one action tall, 8 dp apart; where a phone is too narrow for
-    // them, the row wraps between controls, never inside one.
+    // The design system's title actions, in its order - play (or resume) ·
+    // start over · trailer, then add to list · watched · liked · download -
+    // each one action tall, 8 dp apart, the labels as docs/chino writes
+    // them; where a phone is too narrow for them, the row wraps between
+    // controls, never inside one.
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
         verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
@@ -814,30 +814,30 @@ private fun ActionRow(
         when {
             // Series: no series-level Play — its episodes play.
             isSeries -> Unit
-            // "Resume" only where the player resumes (playAction, the
+            // "resume" only where the player resumes (playAction, the
             // players' own rule): a finished title starts over, as the
             // player would start it.
             playAction is PlayAction.Resume -> {
                 TitleActionButton(
-                    label = "Resume ${fmtDur(playAction.sec)}",
+                    label = "resume ${fmtDur(playAction.sec)}",
                     icon = Lucide.Play,
                     primary = true,
                     onClick = onResume,
                     enabled = playEnabled,
                 )
-                TitleActionButton(label = "Start over", icon = null, primary = false, onClick = onStartOver, enabled = playEnabled)
+                TitleActionButton(label = "start over", icon = null, primary = false, onClick = onStartOver, enabled = playEnabled)
             }
             else -> {
-                TitleActionButton(label = "Play", icon = Lucide.Play, primary = true, onClick = onPlay, enabled = playEnabled)
+                TitleActionButton(label = "play", icon = Lucide.Play, primary = true, onClick = onPlay, enabled = playEnabled)
             }
         }
-        // Trailer, for movies and series alike (web: DetailPage.tsx): the
-        // clapperboard plays this server's trailer in the app, the YouTube
-        // mark opens the link.
+        // Trailer, for movies and series alike (web: DetailPage.tsx), with
+        // the trailer's one icon: this server's trailer plays in the app, a
+        // link opens outside it.
         trailer?.let { choice ->
             TitleActionButton(
-                label = "Trailer",
-                icon = if (choice is TrailerChoice.Local) Lucide.Clapperboard else Lucide.Youtube,
+                label = "trailer",
+                icon = TRAILER_ICON,
                 primary = false,
                 onClick = { onTrailer(choice) },
             )
@@ -1032,13 +1032,13 @@ private fun SeasonRow(
         }
         // All of the season's episodes at once, or how far it is on the
         // phone (ui/downloads) - not from the phone, which knows only the
-        // episodes it has.
+        // episodes it has. Its left edge on the episodes' stills.
         if (offline == null) {
             SeasonDownloadControl(
                 season = season.season,
                 entries = fileEntries(season.episodes),
                 expanded = expanded,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+                modifier = Modifier.padding(start = EPISODE_ROW_PADDING, end = EPISODE_ROW_PADDING, bottom = 12.dp),
             )
         }
         if (expanded) {

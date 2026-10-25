@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -36,6 +37,7 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoBorder
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg2
 import cloud.nalet.chino.mobile.ui.theme.ChinoGreen
+import cloud.nalet.chino.mobile.ui.theme.ChinoMono
 import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoRed
 import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
@@ -43,6 +45,7 @@ import com.composables.icons.lucide.Bookmark
 import com.composables.icons.lucide.BookmarkFilled
 import com.composables.icons.lucide.Check
 import com.composables.icons.lucide.ChevronDown
+import com.composables.icons.lucide.Clapperboard
 import com.composables.icons.lucide.Heart
 import com.composables.icons.lucide.HeartFilled
 import com.composables.icons.lucide.Lucide
@@ -70,6 +73,14 @@ private val CARET_WIDTH = 40.dp
 
 private val ICON_SIZE = 20.dp
 
+/** The room at a labelled action's sides. */
+val TITLE_ACTION_PADDING: Dp = 20.dp
+
+/** The trailer's one icon, wherever a trailer is offered - the title page,
+ *  Home's hero, a trailer's link: one meaning, one icon, whether this
+ *  server plays the trailer or a link opens it. */
+val TRAILER_ICON: ImageVector get() = Lucide.Clapperboard
+
 /** An action that is off: the surface-2 fill. */
 private val OffFill = ChinoSurfaceHi
 
@@ -77,9 +88,13 @@ private val OffFill = ChinoSurfaceHi
 private val OffContent = ChinoFg2
 
 /**
- * A labelled title action - Play, Resume, Start over, Trailer: one action
- * tall, the [primary] one cloud-blue with its label dark on it, the others
- * the surface-2 fill. Dimmed and not pressable where not [enabled].
+ * A labelled title action - "play", "resume 1:43", "start over", "trailer":
+ * one action tall, the [primary] one cloud-blue with its label dark on it,
+ * the others the surface-2 fill. The label is given as docs/chino writes it,
+ * lowercase but for an episode's code ("play S01E01"), and drawn in the mono
+ * face, as the design system's buttons are - the download control beside it
+ * too. Dimmed and not pressable where not [enabled]. [horizontalPadding]:
+ * the room at its sides, less where a phone's row has three in a line.
  */
 @Composable
 fun TitleActionButton(
@@ -89,6 +104,7 @@ fun TitleActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    horizontalPadding: Dp = TITLE_ACTION_PADDING,
 ) {
     val content = if (primary) ChinoOnFill else Color.White
     Row(
@@ -98,12 +114,12 @@ fun TitleActionButton(
             .clip(RectangleShape)
             .background(if (primary) ChinoCloudBlue else OffFill)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = horizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (icon != null) Icon(imageVector = icon, contentDescription = null, tint = content, modifier = Modifier.size(ICON_SIZE))
-        Text(text = label, color = content, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+        Text(text = label, color = content, fontSize = 16.sp, fontWeight = FontWeight.Medium, style = ChinoMono, maxLines = 1, softWrap = false)
     }
 }
 
@@ -141,11 +157,12 @@ fun addToListName(inWatchlist: Boolean): String = if (inWatchlist) "in your Watc
  * apart: the main part, square, shows and toggles the Watchlist (the
  * default list) - [onToggle] - cloud-blue with a dark, filled bookmark while
  * the title is in it, an outlined bookmark when not; it never takes the
- * title off another list. "⌄",
- * drawn [CARET_WIDTH] wide at the full height with the full square to press,
- * opens the list picker ([onChoose]), a check against each list that holds
- * the title - where it goes on or off any of them. A 1 dp divider between
- * the two.
+ * title off another list. "⌄", drawn [CARET_WIDTH] wide at the full height,
+ * pressed over a full [TITLE_ACTION_HEIGHT] square - the 8 dp past the
+ * frame's edge are in the gap to the next control - opens the list picker
+ * ([onChoose]), a check against each list that holds the title - where it
+ * goes on or off any of them. A 1 dp divider between the two. The frame is
+ * not clipped, so that square takes the presses past its edge.
  */
 @Composable
 fun AddToListControl(
@@ -157,7 +174,7 @@ fun AddToListControl(
     val on = inWatchlist
     val fill = if (on) ChinoCloudBlue else OffFill
     val content = if (on) ChinoOnFill else OffContent
-    Row(modifier = modifier.height(TITLE_ACTION_HEIGHT).clip(RectangleShape).background(fill)) {
+    Row(modifier = modifier.height(TITLE_ACTION_HEIGHT).background(fill)) {
         Box(
             modifier = Modifier
                 .size(TITLE_ACTION_HEIGHT)
@@ -168,20 +185,32 @@ fun AddToListControl(
             Icon(imageVector = if (on) Lucide.BookmarkFilled else Lucide.Bookmark, contentDescription = null, tint = content, modifier = Modifier.size(ICON_SIZE))
         }
         Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(if (on) ChinoOnFill.copy(alpha = 0.35f) else ChinoBorder))
-        // Drawn narrower; pressed over the full 48 x 48 square - Compose
-        // extends a touch target smaller than that to it, past the frame's
-        // edge.
+        // Drawn [CARET_WIDTH] wide - the frame's fill ends there - and laid
+        // out as wide, so the next control is 8 dp after what is drawn; what
+        // is pressed is the full square, from the divider on. Compose would
+        // not stretch a 40 dp target to 48 here: the row is wider than that.
         Box(
             modifier = Modifier
-                .width(CARET_WIDTH)
                 .fillMaxHeight()
+                .pressedWiderThanDrawn(drawn = CARET_WIDTH, pressed = TITLE_ACTION_HEIGHT)
                 .clickable(role = Role.Button, onClick = onChoose)
                 .semantics { contentDescription = "choose lists" },
-            contentAlignment = Alignment.Center,
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Icon(imageVector = Lucide.ChevronDown, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
+            Box(modifier = Modifier.width(CARET_WIDTH).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                Icon(imageVector = Lucide.ChevronDown, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
+            }
         }
     }
+}
+
+/** Lays a control out [drawn] wide, as its row places it and as its frame
+ *  draws it, while what it takes presses on is [pressed] wide, from its
+ *  start: the rest lies past the frame's edge, in the gap after it. */
+private fun Modifier.pressedWiderThanDrawn(drawn: Dp, pressed: Dp): Modifier = layout { measurable, constraints ->
+    val width = pressed.roundToPx()
+    val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+    layout(drawn.roundToPx().coerceAtMost(width), placeable.height) { placeable.place(0, 0) }
 }
 
 /** Watched: a dark check on green once watched, else the outlined check -

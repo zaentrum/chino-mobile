@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.model.Trailer
+import cloud.nalet.chino.mobile.ui.components.TRAILER_ICON
 import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
 import cloud.nalet.chino.mobile.ui.theme.ChinoOnFill
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
@@ -39,7 +40,6 @@ import cloud.nalet.chino.mobile.ui.theme.ChinoMuted
 import cloud.nalet.chino.mobile.ui.trailer.trailerLinkLabel
 import com.composables.icons.lucide.ArrowLeft
 import com.composables.icons.lucide.Lucide
-import com.composables.icons.lucide.Youtube
 
 /**
  * The player's extra mode when there is no such extra to play
@@ -78,7 +78,7 @@ fun ExtraNotAvailable(title: String?, link: Trailer?, onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (link != null) {
-                        MessageButton(trailerLinkLabel(link), Lucide.Youtube, primary = true) { uriHandler.openUri(link.url) }
+                        MessageButton(trailerLinkLabel(link), TRAILER_ICON, primary = true) { uriHandler.openUri(link.url) }
                     }
                     MessageButton("Back", icon = null, primary = false, onClick = onBack)
                 }
