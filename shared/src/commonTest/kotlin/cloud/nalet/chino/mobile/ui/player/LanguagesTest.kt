@@ -488,6 +488,65 @@ class LanguagesTest {
         assertNull(pick(tracks, audio = "fre", pref = "ita"))
     }
 
+    /** A track with the tag the menu lists it by, where its title says more
+     *  than its code ("chi" titled "繁體中文" is "zh-Hant"). */
+    private data class Tagged(val id: String, val lang: String, val tag: String? = null, val forced: Boolean = false)
+
+    private fun pickTagged(tracks: List<Tagged>, audio: String, pref: String) =
+        defaultSubtitleTrack(tracks, { it.lang }, { it.forced }, audioLang = audio, subtitlePref = pref, tag = { it.tag ?: it.lang })?.id
+
+    @Test
+    fun theTrackTheSettingsScriptOrRegionFirstThenOneThatNamesNeitherThenTheRestOfTheLanguage() {
+        // chino-web's languages.test.ts, row for row.
+        val chinese = listOf(Tagged("zh", "chi"), Tagged("hans", "zh-Hans"), Tagged("hant", "zh-Hant"))
+        assertEquals("hant", pickTagged(chinese, audio = "eng", pref = "zh-Hant"))
+        assertEquals("hans", pickTagged(chinese, audio = "eng", pref = "zh-hans"))
+        assertEquals("zh", pickTagged(chinese, audio = "eng", pref = "zho"))
+        assertEquals("zh", pickTagged(chinese.take(2), audio = "eng", pref = "zh-Hant"))
+        // The menu's tag, where its title gives the script its code doesn't.
+        val byTitle = listOf(Tagged("zh", "chi"), Tagged("trad", "chi", tag = "zh-Hant"))
+        assertEquals("trad", pickTagged(byTitle, audio = "eng", pref = "zh-Hant"))
+        // A region's likely script: Hong Kong's and Taiwan's Chinese are
+        // Traditional, China's Simplified.
+        val regions = listOf(Tagged("cn", "zh-CN"), Tagged("hk", "zh-HK"))
+        assertEquals("hk", pickTagged(regions, audio = "eng", pref = "zh-Hant"))
+        assertEquals("cn", pickTagged(regions, audio = "eng", pref = "zh-Hans"))
+        // A setting with a region: its script before a track that names
+        // neither - "Chinese (Traditional)" before the bare "Chinese" the menu
+        // lists first.
+        val bareFirst = listOf(Tagged("zh", "chi"), Tagged("hant", "zh-Hant"))
+        for (pref in listOf("zh-TW", "zh-HK", "zh-Hant-TW", "zh-Hant")) {
+            assertEquals("hant", pickTagged(bareFirst, audio = "eng", pref = pref), pref)
+        }
+        // Told by its title alone, as the menu tags it.
+        assertEquals("trad", pickTagged(byTitle, audio = "eng", pref = "zh-TW"))
+        // The region too, where the title has it: "zh-TW" before "zh-Hant"
+        // for a zh-TW setting; the Simplified after the bare one still.
+        val traditional = listOf(Tagged("hans", "zh-Hans"), Tagged("zh", "chi"), Tagged("hant", "zh-Hant"), Tagged("tw", "zh-TW"))
+        assertEquals("tw", pickTagged(traditional, audio = "eng", pref = "zh-TW"))
+        assertEquals("tw", pickTagged(traditional, audio = "eng", pref = "zh-Hant-TW"))
+        assertEquals("hant", pickTagged(traditional.take(3), audio = "eng", pref = "zh-TW"))
+        assertEquals("zh", pickTagged(traditional.take(2), audio = "eng", pref = "zh-TW"))
+        assertEquals("hans", pickTagged(traditional.take(1), audio = "eng", pref = "zh-TW"))
+        // And the other way: a zh-CN setting turns on the Simplified before
+        // the bare one.
+        val simplified = listOf(Tagged("zh", "chi"), Tagged("hant", "zh-Hant"), Tagged("hans", "zh-Hans"))
+        assertEquals("hans", pickTagged(simplified, audio = "eng", pref = "zh-CN"))
+        // A region: English (United Kingdom) for an en-GB setting.
+        val english = listOf(Tagged("us", "en-US"), Tagged("en", "eng"), Tagged("gb", "en-GB"))
+        assertEquals("gb", pickTagged(english, audio = "fre", pref = "en-GB"))
+        assertEquals("en", pickTagged(english.take(2), audio = "fre", pref = "en-GB"))
+        assertEquals("us", pickTagged(english.take(1), audio = "fre", pref = "en-GB"))
+        // A full track before the foreign-language parts only, whatever its
+        // script: the Simplified over English audio, never the Traditional
+        // forced one.
+        val forced = listOf(Tagged("hant", "zh-Hant", forced = true), Tagged("hans", "zh-Hans"))
+        assertEquals("hans", pickTagged(forced, audio = "eng", pref = "zh-Hant"))
+        assertEquals("hant", pickTagged(forced.take(1), audio = "eng", pref = "zh-Hant"))
+        // The script a region writes, as Settings reads a phone's language.
+        assertEquals(listOf("Hant", "Hant", "Hant", "Hans", "Hans", "Hans", "", "Hans", "", ""), listOf("zh-TW", "zh-HK", "zh-MO", "zh-CN", "zh-SG", "zh-MY", "chi", "zh-Hans-TW", "pt-BR", "").map(::scriptFor))
+    }
+
     /** A subtitle track with its format: PGS is drawn as pictures. */
     private data class Sub(val id: String, val lang: String, val forced: Boolean = false, val pgs: Boolean = false)
 

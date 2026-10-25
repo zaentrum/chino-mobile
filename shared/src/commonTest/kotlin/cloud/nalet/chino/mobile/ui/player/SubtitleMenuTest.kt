@@ -760,6 +760,52 @@ class SubtitleMenuTest {
     }
 
     @Test
+    fun whatComesOnByItselfRespectsTheSettingsScriptOrRegionWhereTheTitleHasIt() {
+        // chino-web's subtitles.test.ts, row for row. The menu lists the bare
+        // "Chinese" first; a Traditional setting turns on the Traditional -
+        // told by its tag or by its title alone.
+        val tracks = listOf(
+            S("emb-2", "chi", embedded = true),
+            S("emb-3", "chi", "简体中文", embedded = true),
+            S("emb-4", "chi", "繁體中文", embedded = true),
+            S("side-zh", "zh-Hans", "AI"),
+        )
+        fun on(list: List<S>, pref: String, audioLang: String = "eng") = auto(menu(list, preferred = pref), audioLang = audioLang, subtitlePref = pref)
+        assertEquals("emb-4", on(tracks, "zh-Hant"))
+        assertEquals("emb-3", on(tracks, "zh-Hans"))
+        // A bare setting takes the first the menu lists, as before.
+        assertEquals("emb-2", on(tracks, "zh"))
+        // No Traditional: a track that names no script before the
+        // Simplified...
+        assertEquals("emb-2", on(tracks.filter { it.id != "emb-4" }, "zh-Hant"))
+        // ...and the Simplified where it is all there is: still Chinese.
+        assertEquals("emb-3", on(listOf(tracks[1], tracks[3]), "zh-Hant"))
+        // A region that stands for the script: Taiwan's Chinese is
+        // Traditional, and Hong Kong's - China's is Simplified.
+        assertEquals("emb-5", on(listOf(tracks[0], tracks[1], S("emb-5", "zh-TW", embedded = true)), "zh-Hant"))
+        assertEquals("side-hk", on(listOf(S("side-cn", "zh-CN"), S("side-hk", "zh-HK")), "zh-Hant"))
+        // So a setting with that region turns on the Traditional, before the
+        // bare "Chinese" the menu lists first - on a server that names zh-TW.
+        fun taiwan(list: List<S>, pref: String) =
+            auto(menu(list, preferred = pref, serverLanguages = listOf("en", "de", "zh-TW")), audioLang = "eng", subtitlePref = pref)
+        assertEquals("emb-4", taiwan(listOf(tracks[0], tracks[2]), "zh-TW"))
+        assertEquals("emb-4", taiwan(listOf(tracks[0], tracks[2]), "zh-Hant-TW"))
+        assertEquals("emb-6", taiwan(listOf(tracks[0], S("emb-6", "zh-Hant", embedded = true)), "zh-TW"))
+        // The setting's region: Portugal's Portuguese before the bare one and
+        // Brazil's.
+        val portuguese = listOf(S("emb-2", "pt-BR", embedded = true), S("emb-3", "por", embedded = true), S("emb-4", "pt-PT", embedded = true))
+        assertEquals("emb-4", on(portuguese, "pt-PT"))
+        assertEquals("emb-2", on(portuguese, "pt-BR"))
+        assertEquals("emb-3", on(portuguese.take(2), "pt-PT"))
+        // A full track before the foreign-language parts only, whatever its
+        // script.
+        val forced = listOf(S("emb-2", "zh-Hant", forced = true, embedded = true), S("emb-3", "zh-Hans", embedded = true))
+        assertEquals("emb-3", on(forced, "zh-Hant"))
+        // Never with the audio in the setting's language, whatever its script.
+        assertEquals(null, on(tracks, "zh-Hant", audioLang = "chi"))
+    }
+
+    @Test
     fun whatComesOnByItselfElseTheForeignLanguagePartsOnlyInTheAudiosLanguageNeverAnotherLanguage() {
         val m = menu(original)
         // German audio: the German forced track, whatever Settings say.

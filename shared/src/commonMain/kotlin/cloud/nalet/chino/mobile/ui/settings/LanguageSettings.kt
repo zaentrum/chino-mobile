@@ -4,8 +4,7 @@ import cloud.nalet.chino.mobile.ui.player.everyLanguage
 import cloud.nalet.chino.mobile.ui.player.languageName
 import cloud.nalet.chino.mobile.ui.player.languageTag
 import cloud.nalet.chino.mobile.ui.player.normalizeLang
-import cloud.nalet.chino.mobile.ui.player.regionOfTag
-import cloud.nalet.chino.mobile.ui.player.scriptOfTag
+import cloud.nalet.chino.mobile.ui.player.scriptFor
 
 /*
  * The languages Settings offers, and their names: the names the player's
@@ -66,24 +65,8 @@ fun subtitleSettingChoices(serverLanguages: List<String>?, current: String, devi
  *  ("zh-Hans"), not its region - "de-CH" is German. A phone in Chinese that
  *  names its region alone has the script that region writes: "zh-TW" and
  *  "zh-HK" are Traditional, "zh-CN" and "zh-SG" Simplified. */
-private fun phoneLanguage(device: String?): String {
-    val tag = languageTag(device)
-    val lang = normalizeLang(tag)
-    val script = scriptOfTag(tag).ifEmpty {
-        when {
-            lang != "zh" -> ""
-            regionOfTag(tag) in TRADITIONAL_CHINESE_REGIONS -> "Hant"
-            regionOfTag(tag) in SIMPLIFIED_CHINESE_REGIONS -> "Hans"
-            else -> ""
-        }
-    }
-    return listOf(lang, script).filter { it.isNotEmpty() }.joinToString("-")
-}
-
-/** Where Chinese is written in Traditional characters, and where in
- *  Simplified ones, by default. */
-private val TRADITIONAL_CHINESE_REGIONS = setOf("TW", "HK", "MO")
-private val SIMPLIFIED_CHINESE_REGIONS = setOf("CN", "SG", "MY")
+private fun phoneLanguage(device: String?): String =
+    listOf(normalizeLang(device), scriptFor(device)).filter { it.isNotEmpty() }.joinToString("-")
 
 /** The languages the audio setting offers besides "Original": the server
  *  names no audio languages, so these are the app's, as before. */

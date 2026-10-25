@@ -1055,13 +1055,67 @@ fun defaultSubtitleLang(audioLang: String?, subtitlePref: String?): String? {
     return want
 }
 
-/** The track to switch on by default, or null: one in the language
- *  [defaultSubtitleLang] names, a full one rather than a forced one. A file's
- *  own default flag counts for nothing. A setting with its script or region
- *  takes a track with that one first, by the language the menu lists it by
- *  ([tag]: its code with what its own title says, [subtitleLanguage] - "chi"
- *  titled "繁體中文" is "zh-Hant"); [lang] where a track has no more than its
- *  code. */
+/** Where Chinese is written in Traditional characters, and where in
+ *  Simplified ones, by default. */
+private val TRADITIONAL_CHINESE_REGIONS = setOf("TW", "HK", "MO")
+private val SIMPLIFIED_CHINESE_REGIONS = setOf("CN", "SG", "MY")
+
+/**
+ * The script a code is written in: the one it names ("Hant" of
+ * "zh-Hant-TW"), else, for Chinese with a region, the one that region
+ * writes it in - "Hant" for "zh-TW", "zh-HK" and "zh-MO", "Hans" for
+ * "zh-CN", "zh-SG" and "zh-MY"; "" for a bare language, which says none.
+ * chino-web's scriptFor, which asks Intl's likely subtags: for Chinese, the
+ * language a region's script tells apart, the same answer.
+ */
+internal fun scriptFor(code: String?): String {
+    val tag = namedTag(languageTag(code))
+    val named = scriptOfTag(tag)
+    if (named.isNotEmpty() || normalizeLang(tag) != "zh") return named
+    return when (regionOfTag(tag)) {
+        in TRADITIONAL_CHINESE_REGIONS -> "Hant"
+        in SIMPLIFIED_CHINESE_REGIONS -> "Hans"
+        else -> ""
+    }
+}
+
+/**
+ * How well a track's [tag] answers the script and the region a [setting]
+ * names - its script also where only its region stands for one ([scriptFor]:
+ * "Hant" for "zh-TW"): 0 where it is in all of them ("zh-Hant", "zh-Hant-TW"
+ * and "zh-TW" for a "zh-Hant" setting; "zh-TW" and "zh-Hant-TW" for "zh-TW";
+ * "pt-PT" for "pt-PT"), 1 where it is in some and names no other ("zh-Hant"
+ * for a "zh-TW" or "zh-Hant-TW" setting), 2 where it names neither (a bare
+ * "zh"), 3 where it names another ("zh-Hans", "zh-CN"; "pt-BR"). A setting
+ * with neither, a bare language, takes every track the same (2). chino-web's
+ * formRank.
+ */
+private fun formRank(setting: String, tag: String): Int {
+    val want = listOf(scriptFor(setting), regionOfTag(namedTag(setting)))
+    val has = listOf(scriptFor(tag), regionOfTag(namedTag(tag)))
+    val parts = want.indices.filter { want[it].isNotEmpty() }
+    if (parts.isEmpty()) return 2
+    if (parts.any { has[it].isNotEmpty() && has[it] != want[it] }) return 3
+    val matched = parts.count { has[it] == want[it] }
+    return if (matched == parts.size) 0 else if (matched > 0) 1 else 2
+}
+
+/**
+ * The track to switch on by default, or null: one in the language
+ * [defaultSubtitleLang] names, a full one rather than a forced one - the
+ * forced one where it is the only one in that language. A file's own default
+ * flag counts for nothing. Within the language, the setting's script and
+ * region first ([formRank]): a "zh-Hant" setting turns on "Chinese
+ * (Traditional)" - or "Chinese (Taiwan)", "Chinese (Hong Kong SAR China)",
+ * written so - before a bare "Chinese" or the Simplified; then one in its
+ * script or its region that names no other ("Chinese (Traditional)" for a
+ * "zh-TW" setting, where the title has no "zh-TW"); then a track that names
+ * neither, then the rest of the language - each in the order given (the
+ * menu's). A track is in the language the menu lists it by ([tag]: its code
+ * with what its own title says, [subtitleLanguage] - "chi" titled "繁體中文"
+ * is "zh-Hant"), [lang] where a track has no more than its code. chino-web's
+ * defaultSubtitleTrack.
+ */
 fun <T> defaultSubtitleTrack(
     tracks: List<T>,
     lang: (T) -> String?,
@@ -1071,13 +1125,11 @@ fun <T> defaultSubtitleTrack(
     tag: (T) -> String? = lang,
 ): T? {
     val want = defaultSubtitleLang(audioLang, subtitlePref) ?: return null
-    val inLang = tracks.filter { normalizeLang(lang(it)) == want }
-    // A setting with its script or region ("zh-Hans", from the server's
-    // languages) takes a track with that one first, else any of the
-    // language.
-    val wanted = languageTag(subtitlePref)
-    val pool = inLang.filter { languageTag(tag(it)) == wanted }.takeIf { wanted != want }.orEmpty().ifEmpty { inLang }
-    return pool.firstOrNull { !forced(it) } ?: pool.firstOrNull()
+    val setting = languageTag(subtitlePref)
+    val tagOf = { t: T -> languageTag(tag(t)?.takeIf { it.isNotBlank() } ?: lang(t)) }
+    val inLang = tracks.filter { normalizeLang(tagOf(it)) == want }
+    val ranked = (0..3).flatMap { rank -> inLang.filter { formRank(setting, tagOf(it)) == rank } }
+    return ranked.firstOrNull { !forced(it) } ?: ranked.firstOrNull()
 }
 
 /** The forced track in the language of the audio playing, or null — the one
