@@ -239,7 +239,11 @@ fun ownLanguages(preferred: String?, audio: String?, device: String?): List<Stri
  *   order). A wanted language takes a track by its language, and by its
  *   script and region where both name one ([tag]: its tag with what its own
  *   title says, [subtitleLanguage]): "zh-Hans" takes an unmarked "Chinese",
- *   never "zh-Hant"; "en" takes "en-GB" too.
+ *   never "zh-Hant"; "en" takes "en-GB" too. A language's tracks stay
+ *   together all the same, the AI ones included: where two of these name it
+ *   by another script or region (the setting's "zh-Hant", the server's
+ *   "zh-Hans"), its tracks are one block, where the language first comes -
+ *   never split by the languages between.
  * - On a server set up for no subtitle languages (none, or a server from
  *   before the route), the person's own instead ([ownLanguages]): the
  *   subtitle setting's, the audio setting's unless it is Original ([audio]),
@@ -299,13 +303,22 @@ fun <T> subtitleMenu(
     }.filter { languageTag(it).isNotEmpty() }.distinctBy { languageTag(it) }
     val takes = { w: String, t: T -> if (named) sameLanguage(w, tag(t)) else normalizeLang(tag(t)) == normalizeLang(w) }
     val placed = HashSet<Int>()
-    // On top, one block per language asked for, by its language.
-    val top = ArrayList<T>()
+    // On top, one block per language asked for, by its language. A later one
+    // in a language already on top - the server's "zh-Hans" after the
+    // setting's "zh-Hant" - joins that language's block, so its tracks stay
+    // together, in their runs, where the language first comes: never split
+    // by the languages between.
+    val blocks = ArrayList<Pair<String, MutableList<Int>>>()
     for (w in wanted) {
         val group = unique.indices.filter { it !in placed && takes(w, unique[it]) }
+        if (group.isEmpty()) continue
         placed += group
-        top += runs(group.map { unique[it] })
+        val base = normalizeLang(w)
+        val block = blocks.firstOrNull { base.isNotEmpty() && it.first == base }
+        if (block != null) block.second += group else blocks += base to group.toMutableList()
     }
+    // A block's tracks in the file's order, as one language's: then in runs.
+    val top = blocks.flatMap { (_, block) -> runs(block.sorted().map { unique[it] }) }
     // The rest by language; a track in no language on its own.
     val rest = LinkedHashMap<String, MutableList<T>>()
     unique.forEachIndexed { i, t ->

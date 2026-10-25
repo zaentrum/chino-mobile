@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
  * top, the rest behind "more languages" - never every track, a server that
  * names no languages too, where the person's own are on top - a language's
  * tracks together in one order, a track that reads like another once.
- * chino-web's src/lib/subtitles.test.ts (subtitles-spec, 748908f) case for
+ * chino-web's src/lib/subtitles.test.ts (subtitles-spec, 65288be) case for
  * case - nothing numbered, the file's own before a sidecar, an untagged one
  * in its twin's language, a packaged title as any other; within a language
  * each region or script a run of its own, the bare name first, the others
@@ -135,6 +135,63 @@ class SubtitleMenuTest {
     }
 
     @Test
+    fun aLanguageNamedTwiceOnTopByTwoScriptsIsOneBlockWhereItFirstComesNeverSplitByTheLanguagesBetween() {
+        val tracks = listOf(
+            S("emb-2", "chi", embedded = true),
+            S("emb-3", "chi", "繁體中文", embedded = true),
+            S("emb-4", "eng", embedded = true),
+            S("emb-5", "ger", embedded = true),
+            S("side-zh", "zh-Hans", "AI"),
+            S("side-en", "en", "AI"),
+        )
+        val chineseFirst = listOf("Chinese", "Chinese (Simplified) · AI", "Chinese (Traditional)", "English", "English · AI", "German")
+        // The setting's Traditional Chinese, the server's Simplified after
+        // English and German: Chinese together, first, its runs in their order.
+        val m = menu(tracks, preferred = "zh-Hant")
+        assertEquals(chineseFirst, labels(m.top))
+        assertEquals(emptyList(), m.more)
+        // The same where the setting is one of the server's languages.
+        assertEquals(chineseFirst, labels(menu(tracks, preferred = "zh-Hant", serverLanguages = listOf("en", "de", "zh-Hans", "zh-Hant")).top))
+        // The server's list naming Chinese twice, German between: Chinese
+        // where it first comes.
+        assertEquals(
+            listOf("English", "English · AI", "Chinese", "Chinese (Simplified) · AI", "Chinese (Traditional)", "German"),
+            labels(menu(tracks, preferred = "en", serverLanguages = listOf("en", "zh-Hans", "de", "zh-Hant")).top),
+        )
+        // An original's tracks, the setting's Traditional and the server's
+        // Simplified: Chinese first, never split by English and German.
+        assertEquals(
+            listOf(
+                "Chinese (Simplified) · AI",
+                "Chinese (Traditional)",
+                "English",
+                "English · for deaf and hard of hearing",
+                "German",
+                "German · foreign-language parts only",
+                "German · AI",
+            ),
+            labels(menu(original, preferred = "zh-Hant").top),
+        )
+        // The server's bare Chinese after the setting's Traditional: one
+        // block, the bare name first, then the runs alphabetically.
+        val chinese = listOf(
+            S("emb-2", "zh-Hans", embedded = true),
+            S("emb-3", "zh-Hant", embedded = true),
+            S("emb-4", "chi", embedded = true),
+            S("emb-5", "zh-CN", embedded = true),
+            S("side-zh", "zh-Hant", "AI"),
+            S("emb-6", "eng", embedded = true),
+        )
+        assertEquals(
+            listOf("Chinese", "Chinese (China)", "Chinese (Simplified)", "Chinese (Traditional)", "Chinese (Traditional) · AI"),
+            labels(menu(chinese, preferred = "zh-Hant", serverLanguages = listOf("zh")).top),
+        )
+        // A language the server names that the title doesn't have opens no
+        // block of its own.
+        assertEquals(listOf("English", "English · AI", "German"), labels(menu(tracks, preferred = "off", serverLanguages = listOf("en", "fr", "de")).top))
+    }
+
+    @Test
     fun aServerWithNoSubtitleLanguagesThePersonsOwnLanguagesOnTopTheRestUnderMoreLanguages() {
         // The subtitle setting's language, the audio setting's, the device's -
         // in that order, each the whole language.
@@ -199,6 +256,12 @@ class SubtitleMenuTest {
         assertEquals("Arabic", m.more.first().label)
         // Every track is still there to pick, each once.
         assertEquals(tracks.size, entries(m).size)
+        // A server naming Chinese twice, German between, subtitles off:
+        // Chinese one block, where it first comes.
+        assertEquals(
+            listOf("English", "Chinese (Simplified)", "Chinese (Traditional) · AI", "German"),
+            labels(menu(tracks, preferred = "off", serverLanguages = listOf("en", "zh-Hans", "de", "zh-Hant")).top),
+        )
     }
 
     @Test
