@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.ui.player
 
+import androidx.compose.runtime.Composable
 import cafe.adriel.voyager.core.screen.Screen
 
 /**
@@ -32,4 +33,10 @@ expect class PlayerScreen(
     fromStart: Boolean = false,
     resumeSec: Int = -1,
     extraId: String? = null,
-) : Screen
+) : Screen {
+    /** The player, each platform's ([Screen.Content]): declared here, as a
+     *  class that is not abstract has to - Kotlin's common metadata compile
+     *  refuses an expect Screen without it. */
+    @Composable
+    override fun Content()
+}

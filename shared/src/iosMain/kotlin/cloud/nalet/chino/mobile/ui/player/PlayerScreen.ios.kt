@@ -79,7 +79,7 @@ actual class PlayerScreen actual constructor(
     override val key: ScreenKey = uniqueScreenKey
 
     @Composable
-    override fun Content() {
+    actual override fun Content() {
         val container = LocalAppContainer.current
         val nav = LocalNavigator.currentOrThrow
         val closeGuard = LocalAutoCloseGuard.current
