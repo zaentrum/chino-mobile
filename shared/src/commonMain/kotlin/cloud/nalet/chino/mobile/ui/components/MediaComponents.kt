@@ -78,7 +78,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -178,6 +182,8 @@ fun HeroBanner(
                 HeroContent(
                     item = pool[page],
                     play = plays[pool[page].id],
+                    pool = pool,
+                    plays = plays,
                     baseUrl = baseUrl,
                     streamToken = streamToken,
                     isWide = isWide,
@@ -229,6 +235,10 @@ fun HeroBanner(
 private fun HeroContent(
     item: Item,
     play: HeroPlay?,
+    /** The whole rotation, and each title's first button: a phone's hero is
+     *  as tall for every slide as for the tallest. */
+    pool: List<Item>,
+    plays: Map<String, HeroPlay>,
     baseUrl: String,
     streamToken: String,
     isWide: Boolean,
@@ -238,7 +248,7 @@ private fun HeroContent(
     onTrailer: ((String, TrailerChoice) -> Unit)?,
 ) {
     if (isWide) HeroContentWide(item, play, baseUrl, streamToken, onMoreInfo, onPlay, onTrailer)
-    else HeroContentNarrow(item, play, baseUrl, streamToken, dots, onMoreInfo, onPlay, onTrailer)
+    else HeroContentNarrow(item, play, pool, plays, baseUrl, streamToken, dots, onMoreInfo, onPlay, onTrailer)
 }
 
 /** Between a phone's hero picture and the buttons under it. */
@@ -259,6 +269,8 @@ private val HERO_BUTTON_PADDING_NARROW = 12.dp
 private fun HeroContentNarrow(
     item: Item,
     play: HeroPlay?,
+    pool: List<Item>,
+    plays: Map<String, HeroPlay>,
     baseUrl: String,
     streamToken: String,
     /** The rotation dots take a row under the buttons. */
@@ -315,15 +327,60 @@ private fun HeroContentNarrow(
         // play · see details · trailer: the title actions, 48 dp and 8 dp
         // apart, in one line on a phone - the trailer its icon alone, as the
         // web's is below sm - wrapping between buttons where even so they
-        // don't fit (a large font).
-        FlowRow(
+        // don't fit (a large font). Their room is as tall as the tallest
+        // title's of the rotation - "resume 1:43" and "start over" take two
+        // lines where "play" takes one - so the hero keeps one height
+        // whatever the slide, and nothing below it jumps as it turns.
+        AsTallAsTheTallest(
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = HERO_PICTURE_GAP),
-            horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
-            verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+            others = {
+                pool.forEach { other ->
+                    HeroButtonRow(other, plays[other.id], onMoreInfo = null, onPlay = null, onTrailer = null)
+                }
+            },
         ) {
-            HeroButtons(item, play, narrow = true, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
+            HeroButtonRow(item, play, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
         }
         Box(modifier = Modifier.height(16.dp + if (dots) HERO_DOTS_ROW else 0.dp))
+    }
+}
+
+/** A phone's hero buttons for [item], wrapping between buttons. */
+@Composable
+private fun HeroButtonRow(
+    item: Item,
+    play: HeroPlay?,
+    onMoreInfo: ((String) -> Unit)?,
+    onPlay: ((String, Boolean) -> Unit)?,
+    onTrailer: ((String, TrailerChoice) -> Unit)?,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+        verticalArrangement = Arrangement.spacedBy(TITLE_ACTION_GAP),
+    ) {
+        HeroButtons(item, play, narrow = true, onMoreInfo = onMoreInfo, onPlay = onPlay, onTrailer = onTrailer)
+    }
+}
+
+/**
+ * [content], as tall as the tallest of [others] where that is taller:
+ * [others] are measured at [content]'s width, never placed - not drawn, not
+ * pressed, and nothing a screen reader reads.
+ */
+@Composable
+internal fun AsTallAsTheTallest(modifier: Modifier = Modifier, others: @Composable () -> Unit, content: @Composable () -> Unit) {
+    Layout(
+        contents = listOf(content, { Box(modifier = Modifier.clearAndSetSemantics {}) { others() } }),
+        modifier = modifier,
+    ) { (shown, measured), constraints ->
+        val loose = constraints.copy(minHeight = 0)
+        val placeables = shown.map { it.measure(loose) }
+        val tallest = measured.maxOfOrNull { it.measure(loose).height } ?: 0
+        val width = placeables.maxOfOrNull { it.width } ?: 0
+        val height = maxOf(placeables.maxOfOrNull { it.height } ?: 0, tallest)
+        layout(constraints.constrainWidth(width), constraints.constrainHeight(height)) {
+            placeables.forEach { it.place(0, 0) }
+        }
     }
 }
 

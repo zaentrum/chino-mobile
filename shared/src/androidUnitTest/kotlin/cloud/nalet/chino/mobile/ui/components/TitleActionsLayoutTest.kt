@@ -2,6 +2,7 @@ package cloud.nalet.chino.mobile.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -22,6 +24,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.model.Trailer
 import org.junit.Rule
@@ -51,12 +54,14 @@ class TitleActionsLayoutTest {
         trailers = listOf(Trailer(url = "https://example.org/trailer", site = "example", title = "Official Trailer")),
     )
 
-    /** The font family a text node is laid out in. */
+    /** The font family a text is laid out in: one, wherever it is - the
+     *  hero lays out every title's buttons to keep one height, never shown. */
     private fun fontFamilyOf(text: String): FontFamily? {
         val results = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode()
-            .config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
-        return results.single().layoutInput.style.fontFamily
+        for (node in compose.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes()) {
+            node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+        }
+        return results.map { it.layoutInput.style.fontFamily }.distinct().single()
     }
 
     @Test
@@ -140,6 +145,56 @@ class TitleActionsLayoutTest {
         compose.onNodeWithText("resume 0:58").performClick()
         compose.onNodeWithText("start over").performClick()
         compose.runOnIdle { assertEquals(listOf("f1" to false, "f1" to true), played) }
+    }
+
+    @Test
+    @Config(qualifiers = "w411dp-h891dp")
+    fun theHeroKeepsOneHeightWhateverTheSlideNothingBelowJumpsAsItTurns() {
+        // A partly watched title - "resume 0:58" and "start over" wrap to a
+        // second line on a phone - and one not started, one line. Here a
+        // hero so narrow that each button takes a line of its own: four
+        // lines for the one, three for the other.
+        val notStarted = film.copy(id = "f2", title = "Quiet Water")
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            Box(modifier = Modifier.width(120.dp).testTag("hero")) {
+                HeroBanner(
+                    pool = listOf(film, notStarted),
+                    baseUrl = "http://localhost",
+                    streamToken = "t",
+                    rotateEveryMs = 5_000L,
+                    plays = mapOf("f1" to cloud.nalet.chino.mobile.ui.home.HeroPlay("f1", "resume 0:58", resumes = true, fromStart = false)),
+                )
+            }
+        }
+        compose.mainClock.advanceTimeBy(100)
+        val first = compose.onNodeWithTag("hero").getBoundsInRoot()
+        val firstResumes = compose.onAllNodesWithText("start over").fetchSemanticsNodes().isNotEmpty()
+        // The carousel turns, and settles before it turns again.
+        compose.mainClock.advanceTimeBy(7_000)
+        val second = compose.onNodeWithTag("hero").getBoundsInRoot()
+        val secondResumes = compose.onAllNodesWithText("start over").fetchSemanticsNodes().isNotEmpty()
+        assertTrue(firstResumes != secondResumes, "both slides shown")
+        assertEquals(first.height, second.height)
+    }
+
+    @Test
+    fun asTallAsTheTallestTakesTheHeightOfTheTallestOtherAndShowsOnlyItsOwn() {
+        compose.setContent {
+            Box(modifier = Modifier.width(200.dp)) {
+                AsTallAsTheTallest(
+                    modifier = Modifier.testTag("room"),
+                    others = {
+                        Box(modifier = Modifier.size(100.dp, 104.dp)) { androidx.compose.material3.Text("another") }
+                        Box(modifier = Modifier.size(100.dp, 48.dp))
+                    },
+                ) { Box(modifier = Modifier.size(100.dp, 48.dp)) { androidx.compose.material3.Text("this one") } }
+            }
+        }
+        compose.onNodeWithTag("room").assertHeightIsEqualTo(104.dp).assertWidthIsEqualTo(100.dp)
+        compose.onNodeWithText("this one").assertExists()
+        // The others are measured, never shown or read.
+        compose.onNodeWithText("another").assertDoesNotExist()
     }
 
     @Test
