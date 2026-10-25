@@ -630,6 +630,10 @@ internal object ChinoCast {
                     if (bearer != null) {
                         val sent = writeCastProgress(w, { id, body -> c.chinoApi.postProgress(id, body, bearer) }, c.progressSync)
                         if (sent && w.final) CastEvents.keptPositionOf(w.itemId)
+                    } else {
+                        // No bearer now (a renewal with no answer): the last
+                        // position is kept, and goes once it can.
+                        runCatching { keepForLater(w, c.progressSync) }
                     }
                 }
             } finally {

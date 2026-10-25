@@ -2,6 +2,8 @@ package cloud.nalet.chino.mobile.cast
 
 import cloud.nalet.chino.mobile.data.api.ProgressBody
 import cloud.nalet.chino.mobile.data.downloads.ProgressSync
+import cloud.nalet.chino.mobile.data.downloads.SendOutcome
+import cloud.nalet.chino.mobile.data.downloads.sendOutcomeOf
 import kotlinx.coroutines.CancellationException
 import cloud.nalet.chino.mobile.ui.player.ProgressGuard
 
@@ -60,32 +62,46 @@ fun castProgressBody(w: CastProgressWrite): ProgressBody =
  * Sends [w] through [post] (POST /items/{id}/progress for its account) and,
  * once the server has it, tells [progressSync]: a position the phone kept of
  * the title from playing it without the server is older - it goes unsent -
- * and a download of the title resumes on the phone where the TV is. True
- * when the server has it.
+ * and a download of the title resumes on the phone where the TV is. The
+ * last one ([CastProgressWrite.final], the position the phone keeps as
+ * casting stops) that does not reach the server - no answer, the server
+ * down, a sign-in it did not take - is kept and sent later with its age, as
+ * the phone's own player's positions are; one the server refuses for good
+ * is not. True when the server has it.
  */
 suspend fun writeCastProgress(
     w: CastProgressWrite,
     post: suspend (itemId: String, body: ProgressBody) -> Unit,
     progressSync: ProgressSync?,
 ): Boolean {
-    val sent = try {
+    val failure: Exception? = try {
         post(w.itemId, castProgressBody(w))
-        true
+        null
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        false
+        e
     }
-    if (sent) {
-        try {
-            progressSync?.keptElsewhere(w.accountId, w.itemId, w.positionSec, w.durationSec)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Unit
+    try {
+        when {
+            failure == null -> progressSync?.keptElsewhere(w.accountId, w.itemId, w.positionSec, w.durationSec)
+            w.final && sendOutcomeOf(failure) != SendOutcome.Drop -> keepForLater(w, progressSync)
         }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Unit
     }
-    return sent
+    return failure == null
+}
+
+/** The last position of what the TV played, which could not be sent now
+ *  ([w] final; no bearer to send it with, or no answer): kept for its
+ *  account, and sent with its age once the server can be reached. Nothing
+ *  for any other write: the next one, ten seconds on, says more. */
+suspend fun keepForLater(w: CastProgressWrite, progressSync: ProgressSync?) {
+    if (!w.final) return
+    progressSync?.keepUnsent(w.accountId, w.itemId, w.positionSec, w.durationSec)
 }
 
 /** How often the position is written while the TV plays, as the phone's
