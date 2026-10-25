@@ -1080,7 +1080,8 @@ internal const val PLAYER_WINDOW_BACKGROUND: Int = android.graphics.Color.BLACK
  * ([PLAYER_WINDOW_BACKGROUND]): held sideways, the strip the content keeps
  * clear of beside the display cutout shows the window's background - it was
  * the app's navy beside the picture's black pillarbox. As it was once the
- * player closes. The picture and the chrome keep to the safe area as before.
+ * player closes. The picture keeps to the safe area ([pictureInSafeArea]),
+ * and the chrome too.
  * No-ops if the host LocalContext isn't an Activity.
  */
 @Composable
@@ -1918,7 +1919,9 @@ private fun PlaybackSurface(
         )
         LaunchedEffect(Unit) { snapshotFlow { subtitleLift }.collect { subtitles[0]?.lift(it) } }
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            // Inside the safe area, never through the cutout's band held
+            // sideways; the strip beside it is the player's black.
+            modifier = Modifier.fillMaxSize().pictureInSafeArea(WindowInsets.displayCutout),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     this.player = player
