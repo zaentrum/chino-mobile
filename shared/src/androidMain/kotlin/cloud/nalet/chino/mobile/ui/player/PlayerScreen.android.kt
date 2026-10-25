@@ -86,11 +86,14 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -2599,9 +2602,16 @@ private fun Modifier.fadeAtEnd(scroll: androidx.compose.foundation.ScrollState):
  * Drag commits seek on release so the user can preview; tap commits
  * immediately. Both call `change.consume()` implicitly via the detectors
  * so the parent's tap-to-toggle-chrome doesn't fire mid-drag.
+ *
+ * To a screen reader the row - the times and the bar - is one slider,
+ * named like the buttons under it ([PlayerButtons.seek]): "seek", its
+ * state the position and the title's length ("1:07 of 10:53"), its range
+ * the title in seconds, and a seek it can set - TalkBack's own gesture
+ * moves it [SEEK_STEP_MS] at a time. Without a length yet it shows where it
+ * is and seeks nowhere.
  */
 @Composable
-private fun Scrubber(
+internal fun Scrubber(
     positionMs: Long,
     durationMs: Long,
     bufferedMs: Long,
@@ -2621,7 +2631,24 @@ private fun Scrubber(
     // on touch there's no hover, so press/drag is the analogue). Reset on
     // release/commit.
     var previewMs by remember { mutableStateOf<Long?>(null) }
+    val seek = PlayerButtons.seek(positionMs, durationMs)
     Row(
+        modifier = Modifier.clearAndSetSemantics {
+            contentDescription = seek.name
+            seek.state?.let { stateDescription = it }
+            val lengthSec = durationMs.coerceAtLeast(0L) / 1000f
+            progressBarRangeInfo = ProgressBarRangeInfo(
+                current = (positionMs / 1000f).coerceIn(0f, lengthSec),
+                range = 0f..lengthSec,
+                steps = seekSteps(durationMs),
+            )
+            if (durationMs > 0) {
+                setProgress { targetSec ->
+                    onScrubCommit((targetSec * 1000f).toLong().coerceIn(0L, durationMs))
+                    true
+                }
+            }
+        },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

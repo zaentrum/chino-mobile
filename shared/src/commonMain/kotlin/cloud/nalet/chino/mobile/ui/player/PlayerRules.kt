@@ -149,9 +149,9 @@ fun speedLabel(rate: Float): String = when {
     else -> "${rate}x"
 }
 
-/** What a screen reader says of one of the player's round buttons: what it
- *  does ([name]) and the state it is in ([state]), none where the name says
- *  it ("pause"). */
+/** What a screen reader says of one of the player's controls - its round
+ *  buttons, the audio chip, the seek bar: what it does ([name]) and the
+ *  state it is in ([state]), none where the name says it ("pause"). */
 data class PlayerButtonName(val name: String, val state: String? = null)
 
 /**
@@ -191,7 +191,26 @@ object PlayerButtons {
 
     /** What pressing it does: "exit fullscreen" in fullscreen, else "fullscreen". */
     fun fullscreen(on: Boolean) = PlayerButtonName(if (on) "exit fullscreen" else "fullscreen")
+
+    /** The seek bar, a slider - "Seek" on chino-web, here in the chrome's
+     *  lowercase - with the position and the title's length as the times
+     *  beside it read: "1:07 of 10:53"; the position alone while the length
+     *  isn't known. */
+    fun seek(positionMs: Long, durationMs: Long): PlayerButtonName {
+        val length = durationMs.coerceAtLeast(0L)
+        val at = formatTime(positionMs.coerceIn(0L, if (length > 0) length else Long.MAX_VALUE) / 1000)
+        return PlayerButtonName("seek", if (length > 0) "$at of ${formatTime(length / 1000)}" else at)
+    }
 }
+
+/** How far a screen reader's own gesture on the seek bar moves it: 10 s, as
+ *  a skip does. */
+const val SEEK_STEP_MS = 10_000L
+
+/** The seek bar's steps for a screen reader over a title of [durationMs]:
+ *  one per [SEEK_STEP_MS] - the slider's own count, the stops between its
+ *  ends - none for a title shorter than two of them. */
+fun seekSteps(durationMs: Long): Int = ((durationMs / SEEK_STEP_MS) - 1).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
 /**
  * How long the player's controls stay after the last touch before they hide
