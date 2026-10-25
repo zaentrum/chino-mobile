@@ -1,6 +1,7 @@
 package cloud.nalet.chino.mobile.ui.player
 
 import cloud.nalet.chino.mobile.data.api.ApiStatusException
+import cloud.nalet.chino.mobile.data.api.NO_ACCESS_TITLE
 import cloud.nalet.chino.mobile.data.downloads.DeviceKind
 import io.ktor.client.plugins.ResponseException
 import kotlinx.io.IOException
@@ -79,10 +80,65 @@ fun PlaybackFailure.sentence(device: DeviceKind = DeviceKind.Phone): String = wh
     PlaybackFailure.Stopped -> "The stream stopped before it was done."
 }
 
-/** Whether "try again" can help: not for a title that isn't there, nor
- *  for what this device can't play. */
+/** Whether "try again" can help: not for a title that isn't there, nor for
+ *  what this device can't play, nor for an account the server doesn't let
+ *  play it - "back" there - nor for a sign-in the server refuses, which is
+ *  no empty state but the sign-in ([goesToSignIn]). */
 val PlaybackFailure.canTryAgain: Boolean
-    get() = this != PlaybackFailure.NotYetAvailable && this != PlaybackFailure.NotOnThisDevice
+    get() = this != PlaybackFailure.NotYetAvailable && this != PlaybackFailure.NotOnThisDevice &&
+        this != PlaybackFailure.NoAccess && this != PlaybackFailure.SignInRefused
+
+/** Whether the player takes the viewer to the sign-in rather than to its
+ *  couldn't-play screen: the server refused the account's sign-in on the
+ *  player's own requests, after the app's renewal (the design system's
+ *  signed-out case: no empty state). A stream token the server no longer
+ *  takes is not that: it is signed anew ([mediaRefusalOf]). */
+val PlaybackFailure.goesToSignIn: Boolean
+    get() = this == PlaybackFailure.SignInRefused
+
+/** What the couldn't-play screen is headed for [this]: no access by the
+ *  design system's heading ([NO_ACCESS_TITLE]), with nothing under it but
+ *  "back". */
+val PlaybackFailure.heading: String
+    get() = if (this == PlaybackFailure.NoAccess) NO_ACCESS_TITLE else COULDNT_PLAY_TITLE
+
+/** The sentence under [heading]; none where the heading says it all. */
+fun PlaybackFailure.screenSentence(device: DeviceKind = DeviceKind.Phone): String? =
+    if (this == PlaybackFailure.NoAccess) null else sentence(device)
+
+/**
+ * What the player does with a refusal of the media itself - of its link,
+ * not of a quality: never a step down, never the same link again.
+ */
+sealed interface MediaRefusal {
+    /** 401: the server no longer takes the session's stream token - a pause
+     *  past its life. A token is minted anew and the player rebuilt where it
+     *  was, at its quality, with no notice. */
+    data object SignAnew : MediaRefusal
+
+    /** It stops, for [failure]: a 401 on a token just signed anew (the
+     *  server doesn't take what the app sends), a 403 (no access). */
+    data class Stop(val failure: PlaybackFailure) : MediaRefusal
+}
+
+/** How long after signing the links anew a 401 says the new token isn't
+ *  taken either, rather than that another pause outlived it. */
+const val SIGN_ANEW_WINDOW_MS = 10L * 60 * 1000
+
+/** The refusal the media's answer [status] is; null for any other answer,
+ *  which the player recovers from as before. [signedAnewAgoMs]: how long
+ *  ago this session's links were signed anew; null where they never were. */
+fun mediaRefusalOf(status: Int?, signedAnewAgoMs: Long?): MediaRefusal? = when {
+    status == 401 && (signedAnewAgoMs == null || signedAnewAgoMs !in 0 until SIGN_ANEW_WINDOW_MS) -> MediaRefusal.SignAnew
+    status == 401 -> MediaRefusal.Stop(PlaybackFailure.NotAccepted)
+    status == 403 -> MediaRefusal.Stop(PlaybackFailure.NoAccess)
+    else -> null
+}
+
+/** [url] signed with [fresh] in place of [old]: a session's links carry
+ *  their token as "stream=" and the token as it is. */
+fun resignedUrl(url: String, old: String, fresh: String): String =
+    if (old.isEmpty() || old == fresh) url else url.replace("stream=$old", "stream=$fresh")
 
 /**
  * A playback that stopped for good: its [failure], and what separates the

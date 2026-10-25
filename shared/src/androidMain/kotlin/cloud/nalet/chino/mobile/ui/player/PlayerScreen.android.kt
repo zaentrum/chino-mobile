@@ -116,6 +116,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cloud.nalet.chino.mobile.LocalAppContainer
+import cloud.nalet.chino.mobile.currentTimeMillis
 import cloud.nalet.chino.mobile.cast.CastButton
 import cloud.nalet.chino.mobile.cast.CastFailureStrip
 import cloud.nalet.chino.mobile.cast.CastHandoff
@@ -550,6 +551,11 @@ actual class PlayerScreen actual constructor(
         when {
             note != null -> DownloadNotPlaying(message = note, onBack = close)
             missing != null -> ExtraNotAvailable(title = missing.title, link = missing.link, onBack = close)
+            // The server refuses the account's sign-in: no empty state, the
+            // sign-in - as a title's page does.
+            stop?.failure?.goesToSignIn == true -> LaunchedEffect(Unit) {
+                nav.replaceAll(cloud.nalet.chino.mobile.ui.auth.AuthScreen())
+            }
             stop != null -> ErrorState(
                 stop = stop!!,
                 itemId = itemId,
@@ -624,6 +630,9 @@ actual class PlayerScreen actual constructor(
                     nav.replace(PlayerScreen(itemId = newId, fromStart = true))
                 },
                 onPlaybackError = { stop = it },
+                // The stream token signed anew: the session's links with it,
+                // for every rebuild from here on.
+                onSignedAnew = { fresh -> ready = ready?.signedWith(fresh) },
                 onExtraMissing = {
                     val extra = ready?.extra
                     notAvailable = ExtraPlayback.NotAvailable(title = extra?.item?.title, link = extra?.link)
@@ -704,6 +713,14 @@ private data class PlayState(
     fun masterUrl(quality: String): String =
         // A download's: the one on the phone, whatever the quality.
         local?.masterUri ?: extra?.let { withQuality(it.masterUrl, quality) } ?: buildMasterUrl(base, itemId, streamToken, quality, caps)
+
+    /** The session's links signed with [fresh] in place of its token: the
+     *  master, an extra's master, the sidecars, the scrub previews. */
+    fun signedWith(fresh: String): PlayState = copy(
+        streamToken = fresh,
+        sidecarSubtitles = sidecarSubtitles.map { it.copy(url = resignedUrl(it.url, streamToken, fresh)) },
+        extra = extra?.let { e -> e.copy(masterUrl = resignedUrl(e.masterUrl, e.streamToken, fresh), streamToken = fresh) },
+    )
 }
 
 /** The play state of a title played from its download
@@ -969,7 +986,7 @@ private fun DownloadNotPlaying(message: String, onBack: () -> Unit) {
 private fun ErrorState(stop: PlaybackStop, itemId: String, extraId: String?, onBack: () -> Unit, onTryAgain: () -> Unit) {
     val scope = rememberCoroutineScope()
     val device = cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind.current
-    val sentence = stop.failure.sentence(device)
+    val sentence = stop.failure.screenSentence(device)
     // Same choreography as Settings: capture the screenshot BEFORE the
     // dialog mounts (a dialog over the screen would only photograph
     // itself); non-null draft = dialog open. Plain holder class, not
@@ -978,7 +995,7 @@ private fun ErrorState(stop: PlaybackStop, itemId: String, extraId: String?, onB
     val retries = stop.failure.canTryAgain
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         cloud.nalet.chino.mobile.ui.components.CouldntLoad(
-            title = COULDNT_PLAY_TITLE,
+            title = stop.failure.heading,
             sentence = sentence,
             action = if (retries) "try again" else "back",
             onAction = if (retries) onTryAgain else onBack,
@@ -1027,7 +1044,7 @@ private fun ErrorState(stop: PlaybackStop, itemId: String, extraId: String?, onB
                 // Same pre-fill template as web's player → BugReportDialog
                 // hand-off (PlayerPage.tsx L3494).
                 initialDescription = "Playback failed while watching this item." +
-                    "\n\n--- technical details ---\n$sentence\n${stop.details}",
+                    "\n\n--- technical details ---\n${sentence ?: stop.failure.heading}\n${stop.details}",
                 onDismiss = { bugDraft = null },
             )
         }
@@ -1079,6 +1096,9 @@ private fun PlaybackSurface(
     onHome: () -> Unit,
     onSwitchItem: (String) -> Unit,
     onPlaybackError: (PlaybackStop) -> Unit,
+    /** The session's stream token was minted anew - the server no longer
+     *  took the one its links carried: the state signed with [fresh]. */
+    onSignedAnew: (fresh: String) -> Unit,
     /** The extra's master answered 404 once playing (extra mode). */
     onExtraMissing: () -> Unit,
     /** Playback reached the end of what closes there ([PlayerMode.closesAtEnd]). */
@@ -1121,6 +1141,10 @@ private fun PlaybackSurface(
     // The screen's playback failures in turn: what each one gets
     // (PlaybackRecovery.kt) and how many in-place retries have gone by.
     val recoveries = remember { PlaybackRecoveries() }
+    // When this session's links were last signed anew (the wall clock), and
+    // the scope the new token is minted in.
+    var signedAnewAtMs by remember { mutableStateOf<Long?>(null) }
+    val signScope = rememberCoroutineScope()
     fun saveProgress(p: ExoPlayer) {
         val pos = guard.position() ?: return
         val durMs = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.info?.durationMs ?: 0L
@@ -1448,7 +1472,39 @@ private fun PlaybackSurface(
                     onExtraMissing()
                     return
                 }
-                if (!manifestMissing) {
+                // A refusal of the link itself is no quality that couldn't be
+                // streamed: never a step down, never the same link again. A
+                // 401 is the session's stream token, which a long pause
+                // outlived: minted anew, and rebuilt where it was, at its
+                // quality, saying nothing. A 401 on a token just minted, and
+                // a 403, stop.
+                val refusal = if (state.local == null) {
+                    mediaRefusalOf(http?.responseCode, signedAnewAtMs?.let { currentTimeMillis() - it })
+                } else {
+                    null
+                }
+                if (refusal == MediaRefusal.SignAnew) {
+                    val atMs = player.currentPosition.coerceAtLeast(0L)
+                    signedAnewAtMs = currentTimeMillis()
+                    playbackEvent("retry", mapOf("signed_anew" to "true", "at" to (atMs / 1000).toString(), "error" to e.errorCodeName))
+                    signScope.launch {
+                        val fresh = try {
+                            container.streamTokenManager.invalidate()
+                            container.streamTokenManager.forSession(state.info?.durationMs ?: state.item?.durationMs, atMs)
+                        } catch (ce: kotlinx.coroutines.CancellationException) {
+                            throw ce
+                        } catch (ex: Exception) {
+                            // No new token: why, as before the player was built.
+                            onPlaybackError(PlaybackStop(ex.playbackFailure(), ex.playbackDetails(), atMs))
+                            return@launch
+                        }
+                        onSignedAnew(fresh)
+                        pendingResumeMs = atMs
+                        reloadKey += 1
+                    }
+                    return
+                }
+                if (!manifestMissing && refusal == null) {
                     val atMs = player.currentPosition.coerceAtLeast(0L)
                     // An extra is packaged (its info says so): retried in place.
                     when (val recovery = recoveries.next(state.info?.mode, currentQuality, atMs, state.qualities)) {
@@ -1527,7 +1583,11 @@ private fun PlaybackSurface(
                 // and the answer's status under details.
                 onPlaybackError(
                     PlaybackStop(
-                        failure = if (manifestMissing) PlaybackFailure.NotYetAvailable else playbackFailureOf(e),
+                        failure = when {
+                            manifestMissing -> PlaybackFailure.NotYetAvailable
+                            refusal is MediaRefusal.Stop -> refusal.failure
+                            else -> playbackFailureOf(e)
+                        },
                         details = listOfNotNull(e.errorCodeName, http?.let { "HTTP ${it.responseCode}" }).joinToString(" · "),
                         atMs = player.currentPosition.coerceAtLeast(0L),
                     ),

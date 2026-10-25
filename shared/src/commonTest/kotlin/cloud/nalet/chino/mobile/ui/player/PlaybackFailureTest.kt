@@ -6,6 +6,7 @@ import kotlinx.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** A playback that stopped for good says what happened in words, by the
@@ -48,7 +49,50 @@ class PlaybackFailureTest {
     fun tryAgainOnlyWhereItCanHelp() {
         assertTrue(PlaybackFailure.NoAnswer.canTryAgain)
         assertTrue(PlaybackFailure.Busy.canTryAgain)
+        assertTrue(PlaybackFailure.NotAccepted.canTryAgain)
         assertFalse(PlaybackFailure.NotYetAvailable.canTryAgain)
         assertFalse(PlaybackFailure.NotOnThisDevice.canTryAgain)
+        // No access: "back"; a refused sign-in: the sign-in, no empty state.
+        assertFalse(PlaybackFailure.NoAccess.canTryAgain)
+        assertFalse(PlaybackFailure.SignInRefused.canTryAgain)
+        assertTrue(PlaybackFailure.SignInRefused.goesToSignIn)
+        assertEquals(listOf(PlaybackFailure.SignInRefused), PlaybackFailure.entries.filter { it.goesToSignIn })
+    }
+
+    @Test
+    fun noAccessIsTheDesignSystemsHeadingWithNothingUnderIt() {
+        assertEquals("you don't have access to this", PlaybackFailure.NoAccess.heading)
+        assertNull(PlaybackFailure.NoAccess.screenSentence())
+        assertEquals(COULDNT_PLAY_TITLE, PlaybackFailure.Busy.heading)
+        assertEquals("The server is busy.", PlaybackFailure.Busy.screenSentence())
+    }
+
+    @Test
+    fun aStreamTokenAPauseOutlivedIsSignedAnewNeverAQualityThatCouldNotBeStreamed() {
+        // The first 401: signed anew, rebuilt where it was.
+        assertEquals(MediaRefusal.SignAnew, mediaRefusalOf(401, signedAnewAgoMs = null))
+        // A 401 on the token just minted: it stops - and says nothing of a sign-in.
+        val again = mediaRefusalOf(401, signedAnewAgoMs = 5_000)
+        assertEquals(MediaRefusal.Stop(PlaybackFailure.NotAccepted), again)
+        // Another pause hours later outlives the new one too: signed anew again.
+        assertEquals(MediaRefusal.SignAnew, mediaRefusalOf(401, signedAnewAgoMs = SIGN_ANEW_WINDOW_MS))
+        // No access stops at once.
+        assertEquals(MediaRefusal.Stop(PlaybackFailure.NoAccess), mediaRefusalOf(403, signedAnewAgoMs = null))
+        // Anything else is recovered from as before: a step down, a retry.
+        for (status in listOf(null, 404, 500, 502, 503)) assertNull(mediaRefusalOf(status, signedAnewAgoMs = null), "$status")
+    }
+
+    @Test
+    fun theSessionsLinksAreSignedWithTheNewTokenAndNothingElseChanges() {
+        val master = "https://media.example/api/v1/items/f1/play/master.m3u8?stream=old.sig&caps=hevc&q=high"
+        assertEquals(
+            "https://media.example/api/v1/items/f1/play/master.m3u8?stream=new.sig&caps=hevc&q=high",
+            resignedUrl(master, old = "old.sig", fresh = "new.sig"),
+        )
+        val sidecar = "https://media.example/api/v1/play/subs/42.vtt?stream=old.sig"
+        assertEquals("https://media.example/api/v1/play/subs/42.vtt?stream=new.sig", resignedUrl(sidecar, "old.sig", "new.sig"))
+        // A link without the token, or no token to replace, stays as it is.
+        assertEquals("file:///data/master.m3u8", resignedUrl("file:///data/master.m3u8", "old.sig", "new.sig"))
+        assertEquals(master, resignedUrl(master, "", "new.sig"))
     }
 }
