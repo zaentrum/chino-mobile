@@ -18,7 +18,8 @@ import kotlinx.coroutines.CancellationException
  * extra's master and its renditions and nothing else, so what a title's
  * /play/info tells the player — the rungs to pick from, the codecs, the audio
  * — is read off the master itself, as chino-stream reads a packaged title's
- * (internal/play/ladder.go: parseMaster, packagedQualities, rungLabel).
+ * (internal/play/ladder.go: parseMaster, packagedQualities), each rung by
+ * the NAME the server writes on it.
  */
 
 /** What the player plays in extra mode. */
@@ -174,32 +175,27 @@ fun extraPlayInfo(master: String?, durationMs: Long?): PlayInfo {
 }
 
 /** The quality menu of a master, as chino-stream's packagedQualities lists
- *  a packaged title's: Auto, then one rung per picture size ([rungLabel]),
- *  the tallest first; nothing for fewer than two. */
+ *  a packaged title's: Auto, then one rung per name ([rungName]), the
+ *  tallest first; nothing for fewer than two. */
 private fun masterQualities(master: HlsMaster): List<QualityRung> {
-    val picks = master.rungs().distinctBy { rungLabel(it.rung, it.width, it.height) }
+    val picks = master.rungs().map { it to rungName(it) }.distinctBy { it.second.lowercase() }
     if (picks.size < 2) return emptyList()
     return listOf(QualityRung(AUTO_QUALITY, "Auto")) +
-        picks.sortedByDescending { it.height }.map { QualityRung(it.rung, namedQuality(rungLabel(it.rung, it.width, it.height))) }
+        picks.sortedByDescending { it.first.height }.map { (v, name) -> QualityRung(v.rung, name) }
 }
-
-/** The picture heights quality labels name (chino-stream's sizeClasses). */
-private val SIZE_CLASSES = listOf(240, 360, 480, 540, 576, 720, 1080, 1440, 2160, 4320)
 
 /**
- * A rung's name, as chino-stream's rungLabel names it ("720p" = the 1280x720
- * box): the smallest class whose 16:9 box holds the frame, 10 % of width to
- * spare for DCI frames — a 2.39:1 film's 1280x536 rung is 720p. [id] when the
- * height is not known.
+ * A rung's name as the server gives it (docs/chino playback: the apps show
+ * the name as the server gives it): the NAME the master writes on its
+ * variant - an older server's height alone named by the table - else, a
+ * master without names, the frame's by the server's step rule
+ * ([frameQualityName]: 1666x900 "Medium (937p)"); the rung's id where its
+ * frame isn't known either.
  */
-fun rungLabel(id: String, width: Int, height: Int): String {
-    if (height <= 0) return id
-    for (c in SIZE_CLASSES) {
-        val boxWidth = (c * 16 / 9 + 1) and 1.inv()
-        if (height <= c && width * 10 <= boxWidth * 11) return "${c}p"
-    }
-    return "${height}p"
-}
+internal fun rungName(v: MasterVariant): String =
+    v.name?.trim()?.takeIf { it.isNotEmpty() }?.let(::namedQuality)
+        ?: frameQualityName(v.width, v.height)
+        ?: v.rung
 
 /** One EXT-X-STREAM-INF of a master and its URI. */
 internal data class MasterVariant(
@@ -213,6 +209,9 @@ internal data class MasterVariant(
     val audioCodecs: List<String>,
     /** Its AUDIO group id. */
     val audioGroup: String?,
+    /** The quality's name the server writes on it ("Medium (720p)"), null
+     *  for a master without names. */
+    val name: String? = null,
 )
 
 /** One EXT-X-MEDIA TYPE=AUDIO line of a master. */
@@ -276,6 +275,7 @@ internal fun parseHlsMaster(body: String): HlsMaster {
                     videoCodec = video,
                     audioCodecs = codecs.filter { it != video },
                     audioGroup = a["AUDIO"],
+                    name = a["NAME"],
                 )
             }
             line.startsWith("#EXT-X-MEDIA:") -> {

@@ -279,9 +279,13 @@ actual class PlayerScreen actual constructor(
                 // A title on this phone plays from its download, with the
                 // server or without it (downloads/DownloadedPlayback.kt).
                 if (extraId == null) {
+                    // The server's subtitle languages, asked beside it as a
+                    // stream asks them: a download's menu has the shape it
+                    // has online.
+                    val languagesAsk = async { subtitleLanguagesForDownload(container) }
                     when (val local = cloud.nalet.chino.mobile.downloads.downloadedSession(appContext, container, itemId, fromStart, resumeSec)) {
                         is cloud.nalet.chino.mobile.downloads.LocalPlay.Ready -> {
-                            ready = downloadedPlayState(local.session, itemId, base, caps, container.settings.flow.first(), container.subtitleLanguages.current)
+                            ready = downloadedPlayState(local.session, itemId, base, caps, container.settings.flow.first(), languagesAsk.await())
                             // A device is connected, and the server can't be
                             // reached: here, from the phone, and it says so.
                             if (local.session.castAside) container.toasts.tryEmit(Toast(playingHereToast(device), ToastKind.Information))
@@ -847,6 +851,20 @@ private fun subtitleMenuOf(tracks: List<SubtitleTrack>, subtitlePref: String, se
         // the twin's language.
         retag = { kept, twin -> kept.copy(tag = twin.tag, language = twin.language) },
     )
+
+/** How long a title played from the phone waits for the server's subtitle
+ *  languages before its menu goes without them. */
+private const val DOWNLOAD_LANGUAGES_WAIT_MS = 1_500L
+
+/** The server's subtitle languages for a title played from the phone: asked
+ *  as a streamed title asks them (once a session), for a moment at most,
+ *  where the server can be reached - so the menu has its languages and
+ *  "more languages" as online; without the server, what the session knows
+ *  of them. */
+private suspend fun subtitleLanguagesForDownload(container: cloud.nalet.chino.mobile.data.AppContainer): List<String> {
+    if (container.serverReach.state.value == cloud.nalet.chino.mobile.data.downloads.Reach.Unreachable) return container.subtitleLanguages.current
+    return kotlinx.coroutines.withTimeoutOrNull(DOWNLOAD_LANGUAGES_WAIT_MS) { container.subtitleLanguages.get() } ?: container.subtitleLanguages.current
+}
 
 /** Why playback stopped for good, in the design system's cases: the answer's
  *  status where the server gave one; no answer for a connection that dropped
@@ -2316,7 +2334,9 @@ private fun Chrome(
                     openPopover = openPopover,
                     canPrev = onPrevEpisode != null,
                     canNext = onNextEpisode != null,
-                    hasQualities = state.qualities.size > 1,
+                    // A row per name: three `q` the server names alike are
+                    // one picture, nothing to switch to.
+                    hasQualities = qualityMenuRows(state.qualities).size > 1,
                     info = state.info,
                     audioTracks = audioTracks,
                     onPlayPause = onPlayPause,
@@ -2841,8 +2861,8 @@ private fun BottomControls(
                 onClick = { onTogglePopover(OpenPopover.SPEED) },
                 variant = if (openPopover == OpenPopover.SPEED) ChromeBtnVariant.Accent else ChromeBtnVariant.Neutral,
             )
-            // Quality gear — only when the ladder has >1 rung (a single rung
-            // has nothing to switch to). Opens QualityMenuCard via the shared
+            // Quality gear — only when the menu has more than one row
+            // (qualityMenuRows: one name is nothing to switch to). Opens QualityMenuCard via the shared
             // popover state. Mirrors TV's onQuality gate + Settings2 icon.
             if (hasQualities) {
                 ChromeButton(
@@ -3332,10 +3352,9 @@ internal fun QualityMenuCard(
             // The server's names as it gives them; the `q` it names alike
             // are one picture and one row - the first, the higher - on
             // while any of them plays.
-            val named = qualities.map { rung -> rung to (rung.label.takeIf { it.isNotBlank() }?.let(::namedQuality) ?: labelForQuality(rung.name)) }
-            named.groupBy { it.second.lowercase() }.values.forEach { same ->
-                val (rung, label) = same.first()
-                val active = same.any { it.first.name.equals(currentQuality, ignoreCase = true) }
+            qualityMenuRows(qualities).forEach { (label, same) ->
+                val rung = same.first()
+                val active = same.any { it.name.equals(currentQuality, ignoreCase = true) }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

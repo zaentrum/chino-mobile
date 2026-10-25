@@ -242,14 +242,58 @@ class ExtraPlaybackTest {
     }
 
     @Test
-    fun aRungIsNamedByTheBoxItsFrameFits() {
-        assertEquals("720p", rungLabel("v0", 1280, 720))
-        assertEquals("480p", rungLabel("v1", 854, 480))
-        assertEquals("720p", rungLabel("v1", 1280, 536))
-        assertEquals("2160p", rungLabel("v0", 3840, 1606))
-        // DCI: 10 % of width to spare.
-        assertEquals("2160p", rungLabel("v0", 4096, 2160))
-        assertEquals("v3", rungLabel("v3", 0, 0))
+    fun aFrameIsNamedByItsStepAsTheServerNamesOne() {
+        // docs/chino playback, "Quality names": its examples, word for word.
+        val spec = listOf(
+            Triple(1920, 818, "High (1080p)"),
+            Triple(1916, 800, "High (1080p)"),
+            Triple(2048, 858, "High (1080p)"),
+            Triple(1024, 576, "Low (576p)"),
+            Triple(2560, 1072, "High (1440p)"),
+            Triple(1666, 900, "Medium (937p)"),
+            Triple(1728, 720, "Medium (972p)"),
+            // The rungs as before.
+            Triple(1280, 720, "Medium (720p)"),
+            Triple(854, 480, "Low (480p)"),
+            Triple(1280, 536, "Medium (720p)"),
+            Triple(3840, 1606, "Ultra (2160p)"),
+            // DCI: 10 % above, no taller.
+            Triple(4096, 2160, "Ultra (2160p)"),
+            // A step 10 % above 720 in a taller frame is its own.
+            Triple(1400, 770, "Medium (788p)"),
+        )
+        for ((w, h, name) in spec) assertEquals(name, frameQualityName(w, h), "${w}x$h")
+        // The edges, as chino-web's: 10 % above 1080 and no more, 3 % below and no more.
+        assertEquals("High (1080p)", frameQualityName(2112, 880))
+        assertEquals("High (1197p)", frameQualityName(2128, 880))
+        assertEquals("High (1080p)", frameQualityName(1864, 780))
+        assertEquals("Medium (1044p)", frameQualityName(1856, 780))
+        assertNull(frameQualityName(0, 0))
+    }
+
+    @Test
+    fun anExtrasQualitiesAreTheMastersNamesAsTheServerGivesThem() {
+        // The server names 1666x900 by its step; the phone shows that name,
+        // and an older server's height alone by the table.
+        val master = """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1.640028,mp4a.40.2",RESOLUTION=1666x900,NAME="Medium (937p)"
+            v0/playlist.m3u8?stream=t
+            #EXT-X-STREAM-INF:BANDWIDTH=900000,CODECS="avc1.64001f,mp4a.40.2",RESOLUTION=1110x600,NAME="480p"
+            v1/playlist.m3u8?stream=t
+        """.trimIndent()
+        assertEquals(listOf("Auto", "Medium (937p)", "Low (480p)"), extraPlayInfo(master, durationMs = 1_000).qualities.map { it.label })
+        // Without names: each frame by the same rule, one row per name.
+        val unnamed = """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1.640028,mp4a.40.2",RESOLUTION=1728x720
+            v0/playlist.m3u8?stream=t
+            #EXT-X-STREAM-INF:BANDWIDTH=1900000,CODECS="avc1.640028,ec-3",RESOLUTION=1728x720
+            v1/playlist.m3u8?stream=t
+            #EXT-X-STREAM-INF:BANDWIDTH=900000,CODECS="avc1.64001f,mp4a.40.2",RESOLUTION=1152x480
+            v2/playlist.m3u8?stream=t
+        """.trimIndent()
+        assertEquals(listOf("Auto", "Medium (972p)", "Low (648p)"), extraPlayInfo(unnamed, durationMs = 1_000).qualities.map { it.label })
     }
 
     private companion object {
