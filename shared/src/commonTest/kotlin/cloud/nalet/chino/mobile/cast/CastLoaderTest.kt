@@ -199,6 +199,34 @@ class CastLoaderTest {
     }
 
     @Test
+    fun noAnswerToThePhonesOwnFetchIsTheServerDownAndTheTvIsNotAsked() = runTest {
+        // The token for the TV was fresh enough not to ask the server for
+        // one; the server gives the phone no answer for the master.
+        server = { MasterFetch.NoAnswer }
+        val result = assertIs<CastLoadResult.Failed>(loader.load(tv, input()))
+        assertTrue(tv.loads.isEmpty())
+        assertEquals(false, result.endsCasting)
+        assertEquals("no answer from media.example.com", result.failure.details)
+        // A title on the phone plays there.
+        assertTrue(result.failure.serverUnreachable)
+    }
+
+    @Test
+    fun aProxyThatSaysTheServerIsDownIsTheServerUnreachable() = runTest {
+        // The server behind a proxy is down: the token's request answers 502.
+        mintFails = ApiStatusException(502, "/api/v1/me/stream-token")
+        val minting = assertIs<CastLoadResult.Failed>(loader.load(tv, input()))
+        assertTrue(minting.failure.serverUnreachable)
+        assertEquals(false, minting.endsCasting)
+        // ...or the master's fetch answers 504.
+        mintFails = null
+        server = { MasterFetch.Answered(504, "") }
+        val fetching = assertIs<CastLoadResult.Failed>(loader.load(tv, input()))
+        assertTrue(fetching.failure.serverUnreachable)
+        assertTrue(tv.loads.isEmpty())
+    }
+
+    @Test
     fun noTokenForTheTvsLinksIsAReasonOfItsOwnAndTheTvPlaysOn() = runTest {
         // POST /me/stream-token refused: the phone's own sign-in, not the TV's link.
         mintFails = ApiStatusException(401, "/api/v1/me/stream-token")

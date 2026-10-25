@@ -70,6 +70,18 @@ class CastFailureTest {
         assertTrue(CastErrorReport(mint = CastProbe.NoAnswer).serverUnreachable)
         assertTrue(CastErrorReport(detailedCode = 905, probe = CastProbe.NoAnswer).serverUnreachable)
         assertFalse(CastErrorReport(mint = CastProbe.Answered(403)).serverUnreachable)
+        // A proxy's answer for a server behind it that is down counts as
+        // the server down, the app's one rule (502-504); its own 500 not.
+        for (status in 502..504) assertTrue(CastErrorReport(mint = CastProbe.Answered(status)).serverUnreachable, "$status")
+        assertTrue(CastErrorReport(probe = CastProbe.Answered(503)).serverUnreachable)
+        assertFalse(CastErrorReport(probe = CastProbe.Answered(500)).serverUnreachable)
+    }
+
+    @Test
+    fun aRequestThatFailedSaysTheServerDidNotAnswerOnlyWithoutAnAnswerOrBehindADownProxy() {
+        assertTrue(serverDidNotAnswer(kotlinx.io.IOException("no route")))
+        for (status in 502..504) assertTrue(serverDidNotAnswer(cloud.nalet.chino.mobile.data.api.ApiStatusException(status, "/api/v1/me/stream-token")), "$status")
+        for (status in listOf(401, 403, 404, 500)) assertFalse(serverDidNotAnswer(cloud.nalet.chino.mobile.data.api.ApiStatusException(status, "/api/v1/me/stream-token")), "$status")
     }
 
     @Test

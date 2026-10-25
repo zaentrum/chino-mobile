@@ -1,5 +1,9 @@
 package cloud.nalet.chino.mobile.cast
 
+import cloud.nalet.chino.mobile.data.api.ApiStatusException
+import cloud.nalet.chino.mobile.data.downloads.SERVER_DOWN
+import io.ktor.client.plugins.ResponseException
+
 /*
  * When the TV can't play a title: one line with the device's name, the reason
  * under details, and casting stops (the design system's casting pattern).
@@ -77,8 +81,25 @@ data class CastErrorReport(
     val onThePhone: Boolean = false,
 ) {
     /** The server did not answer the phone - its links for the TV, or its
-     *  own fetch of the TV's master. */
-    val serverUnreachable: Boolean get() = mint == CastProbe.NoAnswer || probe == CastProbe.NoAnswer
+     *  own fetch of the TV's master - or a proxy in front of it answered
+     *  that it is down (502-504, the app's one rule: [SERVER_DOWN]). */
+    val serverUnreachable: Boolean get() = mint.saysServerDown() || probe.saysServerDown()
+}
+
+private fun CastProbe?.saysServerDown(): Boolean =
+    this == CastProbe.NoAnswer || (this is CastProbe.Answered && status in SERVER_DOWN)
+
+/**
+ * Whether a request that failed with [e] says the server can't be reached:
+ * no answer of the server's - no connection, too slow, nothing readable -
+ * or a proxy's answer for a server behind it that is down (502-504,
+ * [SERVER_DOWN]). A title on the phone then plays there, even while a TV is
+ * connected (docs/chino casting, "Downloads without the server").
+ */
+fun serverDidNotAnswer(e: Throwable): Boolean = when (e) {
+    is ApiStatusException -> e.status in SERVER_DOWN
+    is ResponseException -> e.response.status.value in SERVER_DOWN
+    else -> true
 }
 
 /** The receiver's reason when a device without a screen was asked to play

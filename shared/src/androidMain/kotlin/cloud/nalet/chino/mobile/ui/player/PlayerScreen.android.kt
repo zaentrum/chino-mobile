@@ -325,8 +325,17 @@ actual class PlayerScreen actual constructor(
                     if (!playerMode.progress || fromStart || handoff) {
                         null
                     } else {
-                        // A finished title has no resume point (resumeSecOf).
-                        runCatching { resumeSecOf(container.chinoApi.getProgress(itemId)) }.getOrNull()
+                        // A title of the phone's played on it without the
+                        // server - here it streams, a TV connected - sends
+                        // its newer position first, else starts from it
+                        // (savedPositionToStream). A finished title has no
+                        // resume point (resumeSecOf).
+                        savedPositionToStream(
+                            hasUnsent = { container.progressSync.hasUnsent(itemId) },
+                            flush = { container.progressSync.flush() },
+                            lastPlayedSec = { container.progressSync.lastPlayedSec(itemId) },
+                            serverSec = { runCatching { resumeSecOf(container.chinoApi.getProgress(itemId)) }.getOrNull() },
+                        )
                     }
                 }
                 val infoAsk = async {
@@ -500,15 +509,17 @@ actual class PlayerScreen actual constructor(
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 // A title on the phone, a device connected to cast to, and
-                // the server doesn't answer - its token, its details: it
-                // plays here, from its download, and says why.
-                val here = if (extraId == null && ChinoCast.connectedSession() != null && e !is cloud.nalet.chino.mobile.data.api.ApiStatusException) {
+                // the server doesn't answer - its token, its details - or a
+                // proxy in front of it says it is down (502-504): it plays
+                // here, from its download, and says why.
+                val here = if (extraId == null && ChinoCast.connectedSession() != null && cloud.nalet.chino.mobile.cast.serverDidNotAnswer(e)) {
                     cloud.nalet.chino.mobile.downloads.downloadedSession(appContext, container, itemId, fromStart, resumeSec, castFailed = true)
                         as? cloud.nalet.chino.mobile.downloads.LocalPlay.Ready
                 } else {
                     null
                 }
                 if (here != null) {
+                    container.serverReach.report(answered = false)
                     ready = downloadedPlayState(here.session, itemId, container.config.apiBaseUrl.trimEnd('/'), CodecCaps.queryParam(appContext), container.settings.flow.first(), container.subtitleLanguages.current)
                     container.toasts.tryEmit(Toast(playingHereToast(device), ToastKind.Information))
                 } else {
@@ -560,16 +571,22 @@ actual class PlayerScreen actual constructor(
                 // Back here, paused where it was: it never plays by itself.
                 // A title on the phone whose cast failed before the TV was
                 // asked plays from its download - and, where the server
-                // didn't answer, says why.
+                // didn't answer, says why in the toast alone: the TV was
+                // never asked, so no warning of the TV's beside it.
                 onHereAgain = { again, fromThePhone, unreachable ->
                     val streamed = ready
+                    val serverDown = fromThePhone && unreachable
+                    if (serverDown) container.serverReach.report(answered = false)
                     if (fromThePhone && streamed != null && streamed.local == null) {
                         scope.launch {
                             val here = cloud.nalet.chino.mobile.downloads.downloadedSession(
                                 appContext, container, itemId, fromStart = false, resumeSec = (again.startMs / 1000L).toInt(), castFailed = true,
                             ) as? cloud.nalet.chino.mobile.downloads.LocalPlay.Ready
                             ready = if (here != null) {
-                                if (unreachable) container.toasts.tryEmit(Toast(playingHereToast(device), ToastKind.Information))
+                                if (serverDown) {
+                                    ChinoCast.dismissFailure()
+                                    container.toasts.tryEmit(Toast(playingHereToast(device), ToastKind.Information))
+                                }
                                 downloadedPlayState(here.session, itemId, streamed.base, streamed.caps, container.settings.flow.first(), streamed.serverSubtitleLanguages)
                                     .copy(resumeMs = again.startMs, autoPlay = again.autoplay)
                             } else {
@@ -578,6 +595,12 @@ actual class PlayerScreen actual constructor(
                             castStart = null
                         }
                     } else {
+                        // Handed off from its download as it played: it plays
+                        // on here, and says why.
+                        if (serverDown && streamed?.local != null) {
+                            ChinoCast.dismissFailure()
+                            container.toasts.tryEmit(Toast(playingHereToast(device), ToastKind.Information))
+                        }
                         ready = streamed?.copy(resumeMs = again.startMs, autoPlay = again.autoplay)
                         castStart = null
                     }
@@ -1545,9 +1568,18 @@ private fun PlaybackSurface(
     // turns to the TV's start (CastStarting), which saves where it was.
     val cast by ChinoCast.state.collectAsState()
     var castBefore by remember { mutableStateOf(cast.connected) }
+    val deviceKind = cloud.nalet.chino.mobile.ui.downloads.LocalDeviceKind.current
     LaunchedEffect(cast.connected) {
         val connected = cast.connected
-        if (connected && !castBefore) {
+        // A download playing here while the server can't be reached - asked
+        // again now: the TV couldn't get it from the server. It plays on
+        // here, even with the TV connected, and the toast says why.
+        val stayHere = connected && !castBefore && state.local != null &&
+            container.serverReach.state.value == cloud.nalet.chino.mobile.data.downloads.Reach.Unreachable &&
+            container.serverReach.check() == cloud.nalet.chino.mobile.data.downloads.Reach.Unreachable
+        if (stayHere) {
+            container.toasts.tryEmit(Toast(playingHereToast(deviceKind), ToastKind.Information))
+        } else if (connected && !castBefore) {
             val ended = player.playbackState == Player.STATE_ENDED
             val known = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.info?.durationMs ?: 0L
             val audioLang = audioTracks.firstOrNull { it.selected }?.language ?: state.firstAudioLang

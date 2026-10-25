@@ -205,6 +205,13 @@ internal class CastLoader(
             // The server refuses it to the phone already: the TV is not asked.
             return CastLoadResult.Failed(failure(tv, input.itemId, CastErrorReport(probe = CastProbe.Answered(fetched.status))), endsCasting = false)
         }
+        if (fetched is MasterFetch.NoAnswer) {
+            // No answer of the server's to the phone - the token for the TV
+            // was fresh enough not to ask it: the TV, on the same network,
+            // would get none either. It is not asked, and casting goes on as
+            // it was; a title on the phone plays there.
+            return CastLoadResult.Failed(failure(tv, input.itemId, CastErrorReport(probe = CastProbe.NoAnswer)), endsCasting = false)
+        }
         val master = (fetched as? MasterFetch.Answered)?.takeIf { it.status in 200..299 }?.body?.let(::parseHlsMaster)
         // Asked for something else while the master was read.
         if (mine != latest) return CastLoadResult.Ended
