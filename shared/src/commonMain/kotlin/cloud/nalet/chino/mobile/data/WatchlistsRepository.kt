@@ -42,13 +42,19 @@ class WatchlistsRepository(
     private val _memberships = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
     val memberships: StateFlow<Map<String, Set<String>>> = _memberships.asStateFlow()
 
-    /** Loads the list overview once. Idempotent. */
-    suspend fun warmLists(force: Boolean = false) {
+    /** Loads the list overview once. Idempotent. Why it didn't load, where
+     *  it didn't - the lists kept as they were; null where they are in. */
+    suspend fun warmLists(force: Boolean = false): Throwable? {
         mutex.withLock {
-            if (listsLoaded && !force) return
-            runCatching { api.listWatchlists().lists }.onSuccess {
-                _lists.value = it
+            if (listsLoaded && !force) return null
+            return try {
+                _lists.value = api.listWatchlists().lists
                 listsLoaded = true
+                null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                e
             }
         }
     }

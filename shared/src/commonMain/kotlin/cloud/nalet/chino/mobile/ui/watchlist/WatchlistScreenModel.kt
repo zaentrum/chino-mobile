@@ -3,8 +3,12 @@ package cloud.nalet.chino.mobile.ui.watchlist
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cloud.nalet.chino.mobile.data.AppContainer
+import cloud.nalet.chino.mobile.data.api.LoadFailure
 import cloud.nalet.chino.mobile.data.api.Watchlist
+import cloud.nalet.chino.mobile.data.api.loadDetails
+import cloud.nalet.chino.mobile.data.api.loadFailure
 import cloud.nalet.chino.mobile.data.api.watchlistRefusal
+import kotlinx.coroutines.CancellationException
 import cloud.nalet.chino.mobile.data.model.Item
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -16,6 +20,10 @@ import kotlinx.coroutines.launch
 
 /** Max posters a hub shelf renders before deferring to the See-all tile. */
 internal const val HUB_SHELF_CAP = 12
+
+/** Why the watchlists couldn't load: the design system's case, and what
+ *  separates it under details. */
+data class ListFailure(val failure: LoadFailure, val details: String)
 
 /**
  * Backs the watchlist HUB + per-list MORE view ([WatchlistSection]). Loads
@@ -44,6 +52,11 @@ class WatchlistScreenModel(
 
     private val _loadingShelves = MutableStateFlow(true)
     val loadingShelves: StateFlow<Boolean> = _loadingShelves.asStateFlow()
+
+    /** The hub couldn't load, and why: the lists, or a shelf with nothing
+     *  older to show; null while it loaded, or shows what it had. */
+    private val _failure = MutableStateFlow<ListFailure?>(null)
+    val failure: StateFlow<ListFailure?> = _failure.asStateFlow()
 
     /** The list whose MORE view is open (null = the hub is showing). */
     private val _openListId = MutableStateFlow<String?>(null)
@@ -74,20 +87,41 @@ class WatchlistScreenModel(
      */
     private suspend fun loadShelves(showSpinner: Boolean = true) {
         if (showSpinner) _loadingShelves.value = true
-        repo.warmLists(force = true)
-        val overview = repo.lists.value
-        coroutineScope {
-            _shelves.value = overview.map { list ->
-                async {
-                    val ids = runCatching { container.chinoApi.getWatchlist(list.id).items }
-                        .getOrDefault(emptyList())
-                    list.id to ids.take(HUB_SHELF_CAP).map { id ->
-                        async { runCatching { container.chinoApi.getItem(id) }.getOrNull() }
-                    }.awaitAll().filterNotNull()
-                }
-            }.awaitAll().toMap()
+        val before = _shelves.value
+        val listsFailed = repo.warmLists(force = true)
+        var failed: Throwable? = listsFailed
+        if (listsFailed == null) {
+            val overview = repo.lists.value
+            val fetched = coroutineScope {
+                overview.map { list ->
+                    async {
+                        list.id to runCatching {
+                            val ids = container.chinoApi.getWatchlist(list.id).items
+                            ids.take(HUB_SHELF_CAP).map { id ->
+                                async { runCatching { container.chinoApi.getItem(id) }.getOrNull() }
+                            }.awaitAll().filterNotNull()
+                        }
+                    }
+                }.awaitAll()
+            }
+            failed = fetched.firstNotNullOfOrNull { (_, r) -> r.exceptionOrNull()?.takeUnless { it is CancellationException } }
+            // A shelf that didn't load keeps what it showed; none shows empty
+            // for not knowing what is in it.
+            _shelves.value = fetched.mapNotNull { (id, r) -> (r.getOrNull() ?: before[id])?.let { id to it } }.toMap()
         }
+        // Nothing older on screen for what didn't load: the couldn't-load
+        // screen says why, never an empty hub (an empty shelf claims what
+        // nobody knows yet). What showed before stays as it was.
+        val unknown = listsFailed != null && before.isEmpty() ||
+            repo.lists.value.any { it.id !in _shelves.value }
+        _failure.value = failed?.takeIf { unknown }?.let { ListFailure(it.loadFailure(singleThing = false), it.loadDetails()) }
         _loadingShelves.value = false
+    }
+
+    /** "try again" on the hub that couldn't load. */
+    fun retry() {
+        _failure.value = null
+        screenModelScope.launch { loadShelves() }
     }
 
     /** Opens [listId]'s MORE view and loads its full item set. */

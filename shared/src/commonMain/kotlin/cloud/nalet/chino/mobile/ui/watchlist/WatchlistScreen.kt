@@ -105,6 +105,7 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
     val lists by model.lists.collectAsState()
     val shelves by model.shelves.collectAsState()
     val loadingShelves by model.loadingShelves.collectAsState()
+    val failure by model.failure.collectAsState()
     val openListId by model.openListId.collectAsState()
     val openItems by model.openItems.collectAsState()
     val loadingOpenItems by model.loadingOpenItems.collectAsState()
@@ -119,6 +120,7 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
     val baseUrl = container.config.apiBaseUrl.trimEnd('/')
     val token = streamToken ?: ""
     val openList = lists.firstOrNull { it.id == openListId }
+    val couldntLoad = failure.takeIf { !loadingShelves }
 
     Box(
         modifier = modifier
@@ -136,6 +138,16 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
                 onItemClick = { id -> nav.push(DetailScreen(id)) },
                 onRename = { renameTarget = openList },
                 onDelete = { deleteTarget = openList },
+            )
+        } else if (couldntLoad != null) {
+            // The design system's "couldn't load", by its case: what, why -
+            // the reason only - and "try again"; never an empty hub for
+            // lists nobody knows the contents of.
+            cloud.nalet.chino.mobile.ui.components.ListCouldntLoad(
+                title = "couldn't load your watchlists",
+                failure = couldntLoad.failure,
+                details = couldntLoad.details,
+                onTryAgain = { model.retry() },
             )
         } else {
             WatchlistHub(
