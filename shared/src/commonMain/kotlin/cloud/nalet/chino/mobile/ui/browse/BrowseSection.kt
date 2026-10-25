@@ -241,8 +241,8 @@ fun BrowseSection(
                         onToggleWatched = { model.toggleWatched(item.id) },
                     )
                 }
-                // Loading sentinel + count footer matching chino-web's
-                // "You've reached the end of the catalogue — N movies."
+                // Loading sentinel, else the count at the end of the list in
+                // the screen's own word ([endOfListLine]).
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
@@ -273,8 +273,7 @@ fun BrowseSection(
                             CircularProgressIndicator(color = ChinoCloudBlue)
                         } else {
                             Text(
-                                text = "You've reached the end of the catalogue — " +
-                                    "${state.items.size} ${if (type == "movie") "movies" else "shows"}.",
+                                text = endOfListLine(state.items.size, pageTitle),
                                 color = ChinoMuted,
                                 fontSize = 12.sp,
                             )
@@ -285,6 +284,18 @@ fun BrowseSection(
         }
     }
     }
+}
+
+/**
+ * The line at the end of a grid with nothing more to load: how many there
+ * are, in the screen's own word ([pageTitle]: "Movies", "Shows") and its
+ * right number - "12 shows in all.", "1 show in all." Never "catalogue",
+ * never "1 shows".
+ */
+internal fun endOfListLine(count: Int, pageTitle: String): String {
+    val plural = pageTitle.trim().lowercase()
+    val word = if (count == 1) plural.removeSuffix("s") else plural
+    return "$count $word in all."
 }
 
 @Composable
