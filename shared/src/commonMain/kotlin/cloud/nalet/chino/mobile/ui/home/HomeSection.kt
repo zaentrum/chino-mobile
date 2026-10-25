@@ -20,8 +20,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -42,6 +44,8 @@ import cloud.nalet.chino.mobile.ui.components.EpisodeBadge
 import cloud.nalet.chino.mobile.ui.components.HeroBanner
 import cloud.nalet.chino.mobile.ui.components.MediaCard
 import cloud.nalet.chino.mobile.ui.components.MediaRow
+import cloud.nalet.chino.mobile.ui.components.SystemBackHandler
+import cloud.nalet.chino.mobile.ui.downloads.signInAgain
 import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
@@ -97,22 +101,33 @@ fun HomeSection(
                 // without a way on. Sign in again signs the account out and
                 // opens the sign-in screen, which asks the server for its
                 // sign-in anew; Change server is the way to another one.
+                // While the account casts, casting stops first, its last
+                // position written - the TV never plays on under whoever
+                // signs in next - and a toast says so.
                 if (s.signInRefused) {
                     val nav = LocalNavigator.currentOrThrow
                     val scope = rememberCoroutineScope()
+                    var leaving by remember { mutableStateOf(false) }
+                    // Up to a few seconds while the TV's position is
+                    // written: busy, one tap, and Back can't leave it halfway.
+                    SystemBackHandler(enabled = leaving) {}
                     Button(
                         onClick = {
-                            scope.launch {
-                                val accounts = container.accountStore
-                                accounts.snapshotBlocking().activeAccount?.id?.let { accounts.remove(it) }
-                                nav.replaceAll(
-                                    if (accounts.snapshotBlocking().accounts.isEmpty()) AuthScreen() else AccountPickerScreen(),
-                                )
+                            if (!leaving) {
+                                leaving = true
+                                scope.launch {
+                                    val accounts = container.accountStore
+                                    accounts.snapshotBlocking().activeAccount?.id?.let { signInAgain(container, it) }
+                                    nav.replaceAll(
+                                        if (accounts.snapshotBlocking().accounts.isEmpty()) AuthScreen() else AccountPickerScreen(),
+                                    )
+                                }
                             }
                         },
+                        enabled = !leaving,
                         shape = RectangleShape,
                     ) { Text("Sign in again") }
-                    TextButton(onClick = { nav.push(AddServerScreen(changeServer = true)) }) {
+                    TextButton(onClick = { nav.push(AddServerScreen(changeServer = true)) }, enabled = !leaving) {
                         Text("Change server")
                     }
                 }

@@ -13,6 +13,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -114,6 +116,36 @@ class LeavingRunsToItsEndTest {
         // The account before left the TV, and the other is signed in.
         assertEquals(listOf("ben"), tv.left)
         assertEquals("anna", c.accountStore.snapshotBlocking().activeAccount?.id)
+    }
+
+    @Test
+    fun signInAgainStopsCastingBeforeTheAccountGoesAndSaysSo() {
+        val c = container()
+        runBlocking {
+            c.accountStore.addOrUpdate(account("ben"), setActive = false)
+            c.accountStore.addOrUpdate(account("anna"), setActive = true)
+        }
+        val tv = SlowTv()
+        // Whether the account was still there as the TV's last position was
+        // written: as it, never as whoever comes next.
+        var annaThereAsItLeft: Boolean? = null
+        c.leaveCasting = { id, writeLast ->
+            annaThereAsItLeft = c.accountStore.snapshotBlocking().activeAccount?.id == id
+            tv.leave(id, writeLast)
+        }
+        val said = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val listening = CoroutineScope(Dispatchers.Default).launch { c.toasts.collect { said += it.text } }
+        runBlocking { withTimeout(10_000) { c.toasts.subscriptionCount.first { it > 0 } } }
+        startThenLeaveTheScreen(tv) { signInAgain(c, "anna") }
+        runBlocking { withTimeout(10_000) { while (said.isEmpty()) delay(10) } }
+        listening.cancel()
+        assertEquals(listOf("anna"), tv.left)
+        assertEquals(true, annaThereAsItLeft)
+        assertEquals(listOf("Stopped casting on Living Room TV."), said.toList())
+        // Anna is gone; Ben, who comes next, is still on the phone.
+        val left = c.accountStore.snapshotBlocking().accounts.map { it.id }
+        assertFalse("anna" in left)
+        assertTrue("ben" in left)
     }
 
     @Test

@@ -65,6 +65,18 @@ suspend fun signOutOfThisPhone(container: AppContainer, accountId: String, casti
 suspend fun removeFromThisPhone(container: AppContainer, accountId: String, castingSaid: Boolean) =
     signOutOfThisPhone(container, accountId, castingSaid)
 
+/** "Sign in again" on a sign-in the server refuses: [accountId] goes from
+ *  the phone so that the sign-in screen asks the server anew - casting
+ *  stops first, its last position written (or kept, where the refused
+ *  sign-in can't send it, and sent once it signs in again), and a toast says
+ *  so. Its downloads stay: a refused sign-in takes nothing off the phone,
+ *  and they are the account's again once it signs in. Runs to its end once
+ *  started. */
+suspend fun signInAgain(container: AppContainer, accountId: String) = toItsEnd {
+    leaveCastingOf(container, accountId)
+    container.accountStore.remove(accountId)
+}
+
 /** [to] made the account signed in, in [from]'s place where another was:
  *  the one casting stops, its last position written first, and a toast says
  *  so - a switch asks nothing. Runs to its end once started. */
