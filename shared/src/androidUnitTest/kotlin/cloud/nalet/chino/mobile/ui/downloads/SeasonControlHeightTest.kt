@@ -4,7 +4,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import cloud.nalet.chino.mobile.ui.components.TITLE_ACTION_HEIGHT
@@ -19,9 +27,10 @@ import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 
 /**
- * A season's control - "download 4 episodes · 3 GB", "3 of 8 downloaded" -
- * is one title action tall, as the episodes' controls under it are
- * (docs/chino title actions: every control 48 dp).
+ * A season's control - "download 4 episodes · 3 GB" - is one title action
+ * tall, as the episodes' controls under it are (docs/chino title actions:
+ * every control 48 dp); how far it is ("1 of 4 downloaded") is a status
+ * beside it, as tall, drawn as no button.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -50,21 +59,19 @@ class SeasonControlHeightTest {
     }
 
     @Test
-    fun howFarTheSeasonIsIsAsTallAsItsOffer() {
+    fun howFarTheSeasonIsIsAStatusNotAButton() {
         compose.setContent {
             Box {
-                StatusPill(
-                    label = "3 of 8 downloaded",
-                    icon = Lucide.Check,
-                    tint = Color.White,
-                    percent = null,
-                    compact = true,
-                    onClick = null,
-                    modifier = Modifier.testTag("part"),
-                    height = SEASON_CONTROL_HEIGHT,
+                DownloadStatusLine(
+                    label = "1 of 4 downloaded",
+                    complete = false,
+                    modifier = Modifier.testTag("part").heightIn(min = SEASON_CONTROL_HEIGHT),
                 )
             }
         }
-        compose.onNodeWithTag("part").assertHeightIsEqualTo(TITLE_ACTION_HEIGHT)
+        // As tall as the offer beside it, and nothing to press.
+        compose.onNodeWithTag("part").assertHeightIsEqualTo(TITLE_ACTION_HEIGHT).assert(hasClickAction().not())
+        compose.onNodeWithText("1 of 4 downloaded").assert(hasClickAction().not())
+        compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)).assertCountEquals(0)
     }
 }

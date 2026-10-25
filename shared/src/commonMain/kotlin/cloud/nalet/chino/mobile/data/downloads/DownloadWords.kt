@@ -109,6 +109,31 @@ fun episodesOnThePhoneLabel(count: Int, device: DeviceKind): String =
 /** How far a series or a season is on the phone: "3 of 8 downloaded". */
 fun partLabel(downloaded: Int, of: Int): String = "$downloaded of $of downloaded"
 
+/**
+ * How far a season or a series is on the phone, as its status says it (docs/
+ * chino downloads, "Series"): "1 of 4 downloaded", in episodes - of those
+ * that can be downloaded: a file the server says only streams ([offers]) is
+ * not counted, unless it is on the phone. [files] are its files by id, each
+ * with the episodes it holds; [onThePhone] the ids on the phone. Where the
+ * server offers no downloads now ([offering] false), only what is on the
+ * phone: "2 episodes on this phone". Null where nothing of it is on the
+ * phone, or while the server hasn't said which can come ([offers] null).
+ */
+fun howFarLabel(
+    files: List<Pair<String, Int>>,
+    onThePhone: Set<String>,
+    offers: Map<String, DownloadOffer>?,
+    offering: Boolean,
+    device: DeviceKind,
+): String? {
+    val downloaded = files.filter { it.first in onThePhone }.sumOf { it.second }
+    if (downloaded == 0) return null
+    if (!offering) return episodesOnThePhoneLabel(downloaded, device)
+    val known = offers ?: return null
+    val canCome = files.filter { (id, _) -> id in onThePhone || known[id] !is DownloadOffer.StreamOnly }.sumOf { it.second }
+    return partLabel(downloaded, canCome)
+}
+
 /** The downloads screen's top line: "12.4 GB used by downloads · 18 GB free
  *  on this phone"; with nothing on the phone ([anythingOnThePhone]), what
  *  is free alone: "3.9 GB free on this phone". */

@@ -480,4 +480,29 @@ class DownloadGroupsTest {
         assertEquals(listOf("p1e1", "p1e2"), series.seasons[0].entries.map { it.itemId })
         assertEquals(listOf("film-new", "film-old"), groups[1].entries.map { it.itemId })
     }
+
+    @Test
+    fun howFarASeasonIsCountsOnlyTheEpisodesThatCanBeDownloaded() {
+        // Six episodes, two of them only stream, S01E03 on the phone.
+        val files = (1..6).map { "e$it" to 1 }
+        val offers = mapOf(
+            "e1" to DownloadOffer.StreamOnly,
+            "e2" to DownloadOffer.StreamOnly,
+            "e4" to DownloadOffer.Available(800_000_000),
+            "e5" to DownloadOffer.Available(800_000_000),
+            "e6" to DownloadOffer.Available(800_000_000),
+        )
+        assertEquals("1 of 4 downloaded", howFarLabel(files, setOf("e3"), offers, offering = true, device = DeviceKind.Phone))
+        // An answer that didn't come is no "only streams": counted.
+        assertEquals("1 of 5 downloaded", howFarLabel(files, setOf("e3"), offers + ("e1" to DownloadOffer.Unknown(DownloadFailure.NoAnswer)), offering = true, device = DeviceKind.Phone))
+        // Until the server has said which can come: nothing, never "1 of 6".
+        assertEquals(null, howFarLabel(files, setOf("e3"), null, offering = true, device = DeviceKind.Phone))
+        // Nothing on the phone: no status.
+        assertEquals(null, howFarLabel(files, emptySet(), offers, offering = true, device = DeviceKind.Phone))
+        // A file of two episodes counts both.
+        assertEquals("2 of 3 downloaded", howFarLabel(listOf("a" to 2, "b" to 1, "c" to 1), setOf("a"), mapOf("c" to DownloadOffer.StreamOnly), offering = true, device = DeviceKind.Phone))
+        // The server offers no downloads now: only what is on the phone.
+        assertEquals("1 episode on this phone", howFarLabel(files, setOf("e3"), null, offering = false, device = DeviceKind.Phone))
+        assertEquals("2 episodes on this tablet", howFarLabel(files, setOf("e3", "e4"), offers, offering = false, device = DeviceKind.Tablet))
+    }
 }

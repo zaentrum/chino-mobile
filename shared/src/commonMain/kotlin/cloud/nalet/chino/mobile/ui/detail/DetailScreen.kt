@@ -508,24 +508,14 @@ private fun ReadyContent(
                             // A download waiting for its check does not play;
                             // its control says why.
                             playEnabled = ready.offline?.waitingForCheck?.contains(item.id) != true,
-                            download = when {
-                                hasDownloadControl(item.kind) -> { { TitleDownloadControl(item.id, item.durationMs) } }
-                                // From the phone: how many of its episodes
-                                // are on it, not how far it is downloaded.
-                                item.kind == "series" && ready.offline != null && ready.seasons.isNotEmpty() -> {
-                                    {
-                                        val offline = ready.offline
-                                        val episodes = ready.seasons.flatMap { it.episodes }
-                                        OfflineSeriesSummary(
-                                            episodes = episodesOnThePhone(episodes),
-                                            anyWaitsForCheck = episodes.any { it.id in offline.waitingForCheck },
-                                        )
-                                    }
-                                }
-                                item.kind == "series" && ready.seasons.isNotEmpty() -> {
-                                    { SeriesDownloadSummary(ready.seasons.flatMap { fileEntries(it.episodes) }) }
-                                }
-                                else -> null
+                            // A movie's download, last; a series' row has
+                            // none (title actions, "On a series"): its
+                            // episodes download from their rows and their
+                            // season.
+                            download = if (hasDownloadControl(item.kind)) {
+                                { TitleDownloadControl(item.id, item.durationMs) }
+                            } else {
+                                null
                             },
                             onResume = { onPlay(false) },
                             onPlay = { onPlay(false) },
@@ -544,6 +534,22 @@ private fun ReadyContent(
                             onToggleWatched = onToggleWatched,
                             onToggleLike = onToggleLike,
                         )
+                        // How far a series is on the phone - a status under
+                        // the row, never a control in it: from the phone how
+                        // many of its episodes are on it, else "3 of 8
+                        // downloaded" of those that can be downloaded.
+                        if (item.kind == "series" && ready.seasons.isNotEmpty()) {
+                            val offline = ready.offline
+                            if (offline != null) {
+                                val episodes = ready.seasons.flatMap { it.episodes }
+                                OfflineSeriesSummary(
+                                    episodes = episodesOnThePhone(episodes),
+                                    anyWaitsForCheck = episodes.any { it.id in offline.waitingForCheck },
+                                )
+                            } else {
+                                SeriesDownloadSummary(ready.seasons.flatMap { fileEntries(it.episodes) })
+                            }
+                        }
                         item.overview?.takeIf { it.isNotBlank() }?.let { overview ->
                             Text(
                                 text = overview,

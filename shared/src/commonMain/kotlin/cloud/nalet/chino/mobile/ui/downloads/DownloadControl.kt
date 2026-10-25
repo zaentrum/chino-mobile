@@ -46,9 +46,9 @@ import cloud.nalet.chino.mobile.data.downloads.DownloadOffer
 import cloud.nalet.chino.mobile.data.downloads.DownloadStatus
 import cloud.nalet.chino.mobile.data.downloads.canTryAgain
 import cloud.nalet.chino.mobile.data.downloads.episodesOnThePhoneLabel
+import cloud.nalet.chino.mobile.data.downloads.howFarLabel
 import cloud.nalet.chino.mobile.data.downloads.offerLabel
 import cloud.nalet.chino.mobile.data.downloads.sentence
-import cloud.nalet.chino.mobile.data.downloads.partLabel
 import cloud.nalet.chino.mobile.data.downloads.rowLabel
 import cloud.nalet.chino.mobile.data.downloads.seasonOfferLabel
 import cloud.nalet.chino.mobile.data.downloads.statusLabel
@@ -445,10 +445,12 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
     if (!offering && downloaded + onTheWay == 0) return
     // The open season's episodes' offers at once: the planner asks the
     // server three at a time and keeps the answers, which the rows below
-    // share. A closed season asks nothing.
-    val offers by produceState<Map<String, DownloadOffer>?>(null, ids, prefs.quality, audioPref, offering, expanded) {
+    // share. A closed season asks nothing - unless part of it is on the
+    // phone: how far it is counts only the episodes that can come along.
+    val partly = downloaded > 0
+    val offers by produceState<Map<String, DownloadOffer>?>(null, ids, prefs.quality, audioPref, offering, expanded, partly) {
         val pref = audioPref ?: return@produceState
-        if (!offering || !expanded) return@produceState
+        if (!offering || !(expanded || partly)) return@produceState
         value = coroutineScope {
             ids.map { id -> async { id to container.downloadPlanner.offer(id, prefs.quality, durations[id], pref) } }.awaitAll().toMap()
         }
@@ -461,22 +463,21 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
         val sizes = remaining.map { (o[it] as? DownloadOffer.Available)?.bytes }
         if (sizes.any { it == null }) null else sizes.sumOf { it ?: 0L }
     }
+    val device = LocalDeviceKind.current
+    val there = remember(onPhone) { onPhone.filter { it.status.isOnThePhone() }.mapTo(HashSet()) { it.itemId } }
+    val howFar = howFarLabel(entries.map { it.episode.id to it.held.size }, there, known, offering, device)
     FlowRow(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // How far, once part of it is on the phone.
-        if (downloaded > 0) {
-            StatusPill(
-                label = partLabel(downloaded, episodes),
-                icon = if (downloaded == episodes) Lucide.Check else Lucide.Download,
-                tint = if (downloaded == episodes) ChinoGreen else ChinoMuted,
-                percent = null,
-                compact = true,
-                onClick = null,
-                modifier = Modifier.align(Alignment.CenterVertically),
-                height = SEASON_CONTROL_HEIGHT,
+        // How far, once part of it is on the phone: a status, not a button -
+        // of the episodes that can come along.
+        if (howFar != null) {
+            DownloadStatusLine(
+                label = howFar,
+                complete = downloaded == episodes || remaining.isEmpty() && onTheWay == 0,
+                modifier = Modifier.align(Alignment.CenterVertically).heightIn(min = SEASON_CONTROL_HEIGHT),
             )
         }
         // Once the server has said which of them can come: "download season
@@ -509,45 +510,79 @@ fun SeasonDownloadControl(season: Int, entries: List<FileEntry<Episode>>, expand
 }
 
 
-/** How far a series is on the phone, where it is partly there: "3 of 8
- *  downloaded", in episodes. [entries] are all its files, every season's. */
+/**
+ * How far a series is on the phone, where it is partly there: "3 of 8
+ * downloaded", in episodes - of those that can be downloaded, the ones that
+ * only stream not counted ([howFarLabel]). A status under the title's row,
+ * which has no download of its own (docs/chino title actions, "On a
+ * series"): episodes download from their rows and their season. [entries]
+ * are all its files, every season's; the server is asked which can come
+ * only where part of the series is on the phone.
+ */
 @Composable
 fun SeriesDownloadSummary(entries: List<FileEntry<Episode>>, modifier: Modifier = Modifier) {
     val container = LocalAppContainer.current
     val downloads = container.downloads ?: return
     val onPhone by downloads.entries.collectAsState()
-    val there = onPhone.filter { it.status.isOnThePhone() }.mapTo(HashSet()) { it.itemId }
-    val episodes = entries.sumOf { it.held.size }
-    val downloaded = entries.filter { it.episode.id in there }.sumOf { it.held.size }
-    if (downloaded == 0) return
-    StatusPill(
-        label = partLabel(downloaded, episodes),
-        icon = if (downloaded == episodes) Lucide.Check else Lucide.Download,
-        tint = if (downloaded == episodes) ChinoGreen else ChinoMuted,
-        percent = null,
-        compact = false,
-        onClick = null,
-        modifier = modifier,
-    )
+    val prefs by downloads.preferences.collectAsState()
+    val audioPref = rememberAudioPref()
+    val features by container.serverReach.features.collectAsState()
+    val device = LocalDeviceKind.current
+    val there = remember(onPhone) { onPhone.filter { it.status.isOnThePhone() }.mapTo(HashSet()) { it.itemId } }
+    val files = remember(entries) { entries.map { it.episode.id to it.held.size } }
+    val partly = files.any { it.first in there }
+    val offering = features?.downloads != false
+    val offers by produceState<Map<String, DownloadOffer>?>(null, files, prefs.quality, audioPref, offering, partly) {
+        val pref = audioPref ?: return@produceState
+        if (!offering || !partly) return@produceState
+        value = coroutineScope {
+            entries.map { e -> async { e.episode.id to container.downloadPlanner.offer(e.episode.id, prefs.quality, fileDurationMs(e), pref) } }
+                .awaitAll().toMap()
+        }
+    }
+    val label = howFarLabel(files, there, offers, offering, device) ?: return
+    val downloaded = files.filter { it.first in there }.sumOf { it.second }
+    val canCome = files.filter { (id, _) -> id in there || offers?.get(id) !is DownloadOffer.StreamOnly }.sumOf { it.second }
+    DownloadStatusLine(label = label, complete = offering && downloaded == canCome, modifier = modifier)
 }
 
 /**
  * The page from the phone says only what is on it: "2 episodes on this
  * phone" - no word of "downloaded" for what may wait for its check, and no
- * check mark while any of them does.
+ * check mark while any of them does. A status, as online.
  */
 @Composable
 fun OfflineSeriesSummary(episodes: Int, anyWaitsForCheck: Boolean, modifier: Modifier = Modifier) {
     val device = LocalDeviceKind.current
-    StatusPill(
+    DownloadStatusLine(
         label = episodesOnThePhoneLabel(episodes, device),
-        icon = if (anyWaitsForCheck) Lucide.Info else Lucide.Check,
-        tint = if (anyWaitsForCheck) ChinoMuted else ChinoGreen,
-        percent = null,
-        compact = false,
-        onClick = null,
+        complete = !anyWaitsForCheck,
+        waitsForCheck = anyWaitsForCheck,
         modifier = modifier,
     )
+}
+
+/**
+ * A status of how far something is on the phone - "3 of 8 downloaded",
+ * "2 episodes on this phone" - drawn as a status, not a control: its words
+ * in the label face beside its mark, on no frame or fill, never pressed.
+ * The check, on green, where all of it that can come is on the phone ([complete]);
+ * the information mark while some of it waits for its check
+ * ([waitsForCheck]); no mark while part of it is.
+ */
+@Composable
+internal fun DownloadStatusLine(label: String, complete: Boolean, waitsForCheck: Boolean = false, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        when {
+            waitsForCheck -> Icon(imageVector = Lucide.Info, contentDescription = null, tint = ChinoMuted, modifier = Modifier.size(16.dp))
+            complete -> Icon(imageVector = Lucide.Check, contentDescription = null, tint = ChinoGreen, modifier = Modifier.size(16.dp))
+        }
+        Text(text = label, color = ChinoFg2, fontSize = 13.sp, style = ChinoMono)
+    }
 }
 
 /** What a file of the season plays for: a holder's measured length, else
