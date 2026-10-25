@@ -199,18 +199,19 @@ fun BrowseSection(
             Box(modifier = Modifier.height(8.dp))
         }
 
+        val failure = state.error
         when {
             // The design system's "couldn't load", as Home says it: what,
             // in the screen's own word ("couldn't load the movies"), why -
             // the reason only - and "try again"; the status under details.
-            state.error != null -> item(span = { GridItemSpan(maxLineSpan) }) {
-                cloud.nalet.chino.mobile.ui.components.CouldntLoad(
+            // A refused sign-in is the sign-in, no access its own heading.
+            failure != null -> item(span = { GridItemSpan(maxLineSpan) }) {
+                cloud.nalet.chino.mobile.ui.components.ListCouldntLoad(
                     title = couldntLoadTitle(pageTitle),
-                    sentence = state.error,
-                    action = "try again",
-                    onAction = model::retry,
-                    modifier = Modifier.padding(vertical = 32.dp),
+                    failure = failure,
                     details = state.errorDetails,
+                    onTryAgain = model::retry,
+                    modifier = Modifier.padding(vertical = 32.dp),
                 )
             }
             state.items.isEmpty() && state.loading -> item(span = { GridItemSpan(maxLineSpan) }) {

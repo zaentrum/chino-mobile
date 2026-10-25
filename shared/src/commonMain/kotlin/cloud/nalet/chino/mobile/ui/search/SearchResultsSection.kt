@@ -59,7 +59,8 @@ import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.api.Person
 import cloud.nalet.chino.mobile.data.api.artworkUrl
-import cloud.nalet.chino.mobile.data.api.listFailureSentence
+import cloud.nalet.chino.mobile.data.api.LoadFailure
+import cloud.nalet.chino.mobile.data.api.loadFailure
 import cloud.nalet.chino.mobile.data.api.loadDetails
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.data.slots.SLOT_SEARCH_EMPTY
@@ -124,7 +125,7 @@ fun SearchResultsSection(
         peopleState.value = found.people
         state.value = found.titles.fold(
             onSuccess = { SearchState.Ready(it) },
-            onFailure = { SearchState.Error(it.listFailureSentence(), it.loadDetails()) },
+            onFailure = { SearchState.Error(it.loadFailure(singleThing = false), it.loadDetails()) },
         )
     }
 
@@ -183,15 +184,15 @@ fun SearchResultsSection(
                 ) { CircularProgressIndicator(color = ChinoCloudBlue) }
             }
             // The design system's "couldn't load": what, why - the reason
-            // only - and "try again"; the status under details.
+            // only - and "try again"; the status under details. A refused
+            // sign-in is the sign-in, no access its own heading.
             is SearchState.Error -> item(span = { GridItemSpan(maxLineSpan) }) {
-                cloud.nalet.chino.mobile.ui.components.CouldntLoad(
+                cloud.nalet.chino.mobile.ui.components.ListCouldntLoad(
                     title = "couldn't load the results",
-                    sentence = s.message,
-                    action = "try again",
-                    onAction = { attempt += 1 },
-                    modifier = Modifier.padding(vertical = 32.dp),
+                    failure = s.failure,
                     details = s.details,
+                    onTryAgain = { attempt += 1 },
+                    modifier = Modifier.padding(vertical = 32.dp),
                 )
             }
             is SearchState.Ready -> {
@@ -222,7 +223,7 @@ private sealed interface SearchState {
     data object Idle : SearchState
     data object Loading : SearchState
     data class Ready(val items: List<Item>) : SearchState
-    data class Error(val message: String, val details: String? = null) : SearchState
+    data class Error(val failure: LoadFailure, val details: String? = null) : SearchState
 }
 
 /** "Cast & crew" — matching people, rendered above the title grid. Each row

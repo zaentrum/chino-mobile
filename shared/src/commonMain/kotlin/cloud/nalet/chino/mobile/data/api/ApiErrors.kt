@@ -155,11 +155,9 @@ fun LoadFailure.sentence(): String? = when (this) {
     LoadFailure.Removed, LoadFailure.NoAccess, LoadFailure.SignedOut -> null
 }
 
-/** What a list that couldn't load says under its title: a sign-in the
- *  server refuses in its own words, which say the way on
- *  ([catalogueMessage]); else the case's sentence, by the answer's status. */
-fun Throwable.listFailureSentence(): String =
-    if (signInRefused) catalogueMessage() else loadFailure(singleThing = false).sentence() ?: NO_ANSWER_SENTENCE
+/** The design system's heading for no access (403): what the screen is,
+ *  with nothing under it. */
+const val NO_ACCESS_TITLE = "you don't have access to this"
 
 /** What separates the cases, for a couldn't-load screen's details: the
  *  answer's status, or that none came. Never a message, an id or a path. */
