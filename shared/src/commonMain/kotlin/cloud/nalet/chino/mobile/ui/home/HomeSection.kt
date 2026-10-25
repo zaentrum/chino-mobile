@@ -12,7 +12,13 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshState
+import androidx.compose.material3.pulltorefresh.pullToRefreshIndicator
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -50,15 +56,13 @@ import cloud.nalet.chino.mobile.ui.onboarding.AddServerScreen
 import cloud.nalet.chino.mobile.ui.theme.ChinoHeading
 import cloud.nalet.chino.mobile.ui.trailer.TrailerChoice
 import cloud.nalet.chino.mobile.ui.downloads.InformationBanner
-import cloud.nalet.chino.mobile.data.downloads.DownloadStatus
+import cloud.nalet.chino.mobile.ui.downloads.unreachableBanner
 import cloud.nalet.chino.mobile.data.downloads.Reach
-import cloud.nalet.chino.mobile.data.downloads.UNREACHABLE_BANNER
-import cloud.nalet.chino.mobile.data.downloads.UNREACHABLE_BANNER_NOTHING
+import cloud.nalet.chino.mobile.ui.theme.ChinoCloudBlue
+import cloud.nalet.chino.mobile.ui.theme.ChinoSurfaceHi
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -89,24 +93,34 @@ fun HomeSection(
     val model = remember { HomeSectionModel(container) }
     val state by model.state.collectAsState()
     val uriHandler = LocalUriHandler.current
-    // Home from what the phone knows, and the server answers again: Home
-    // from the server. While it doesn't, a look at it now and then.
+    // The server as the app last found it - the shell's look at it every
+    // SERVER_LOOK_MS, or any other request: gone, the banner over the rows
+    // Home shows, without a tab change; back, Home from the server again.
     val reach by container.serverReach.state.collectAsState()
     val offline = (state as? HomeUiState.Ready)?.offline == true
     LaunchedEffect(reach, offline) {
-        if (!offline) return@LaunchedEffect
-        if (reach == Reach.Reachable) {
-            model.refresh()
-            return@LaunchedEffect
+        when {
+            offline && reach == Reach.Reachable -> model.refresh()
+            !offline && reach == Reach.Unreachable -> model.serverGone()
         }
-        while (true) {
-            delay(OFFLINE_RECHECK_MS)
-            if (container.serverReach.check() == Reach.Reachable) break
+    }
+    // A pull-down asks the server at once ([HomeSectionModel.pullDown]).
+    var pulling by remember { mutableStateOf(false) }
+    val pullScope = rememberCoroutineScope()
+    val onPullDown: () -> Unit = {
+        if (!pulling) {
+            pulling = true
+            pullScope.launch {
+                try {
+                    model.pullDown()
+                } finally {
+                    pulling = false
+                }
+            }
         }
     }
     // "Your downloads still play" only where one does, as on the downloads.
-    val downloads by remember(container) { container.downloads?.entries ?: MutableStateFlow(emptyList()) }.collectAsState()
-    val banner = if (!offline) null else if (downloads.any { it.status is DownloadStatus.Downloaded }) UNREACHABLE_BANNER else UNREACHABLE_BANNER_NOTHING
+    val banner = unreachableBanner(container, offline)
 
     when (val s = state) {
         HomeUiState.Loading -> Center { CircularProgressIndicator() }
@@ -167,6 +181,8 @@ fun HomeSection(
             s,
             onItemSelected,
             banner = banner,
+            refreshing = pulling,
+            onPullDown = onPullDown,
             onRetry = { model.retry() },
             // The hero's first button as the title's page has it: a movie
             // resumed or played, a series' episode by its code; "start over"
@@ -206,13 +222,19 @@ fun HomeSection(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ReadyContent(
     s: HomeUiState.Ready,
     onItemSelected: (String) -> Unit,
     /** The server can't be reached: the information banner on top, as on
-     *  the other screens; null while it answers. */
+     *  the other screens - fixed under the top bar, as on a title's page,
+     *  the rows scrolling under it; null while it answers. */
     banner: String? = null,
+    /** A pull-down's ask is on its way. */
+    refreshing: Boolean = false,
+    /** Pulled down from the top: the server asked at once. */
+    onPullDown: () -> Unit = {},
     /** "try again" where Continue watching couldn't load. */
     onRetry: () -> Unit = {},
     onPlayCard: (itemId: String, series: Boolean) -> Unit,
@@ -226,101 +248,140 @@ internal fun ReadyContent(
     // and between shelves; `<main p-4>` puts the hero at y=80 (64
     // header + 16 top padding). Previous 20dp + 0dp top padding read
     // tighter than the reference.
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(top = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(32.dp),
+    Column(modifier = Modifier.fillMaxSize()) {
+        banner?.let { InformationBanner(it, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)) }
+        val pull = rememberPullToRefreshState()
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = onPullDown,
+            state = pull,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            indicator = { PullDownIndicator(pull, refreshing, Modifier.align(Alignment.TopCenter)) },
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(32.dp),
+            ) {
+                if (s.heroPool.isNotEmpty()) {
+                    HeroBanner(
+                        pool = s.heroPool,
+                        baseUrl = s.baseUrl,
+                        streamToken = s.streamToken,
+                        plays = s.heroPlays,
+                        onMoreInfo = onItemSelected,
+                        onPlay = onPlayHero,
+                        onTrailer = onTrailerHero,
+                    )
+                }
+                if (s.continueWatching.isNotEmpty()) {
+                    ContinueWatchingShelf(
+                        items = s.continueWatching,
+                        baseUrl = s.baseUrl,
+                        streamToken = s.streamToken,
+                        showProgress = true,
+                        onItemClick = onItemSelected,
+                        // Only the in-progress CW rail surfaces the dismiss
+                        // affordance — web gates it the same way (HomeSection.tsx
+                        // L43-44: `onRemove && !it.up_next`).
+                        onRemoveFromContinueWatching = onRemoveFromContinueWatching,
+                        // #188: the watched toggle is ADDITIONAL to dismiss; both
+                        // live in the same overflow menu.
+                        onToggleWatched = onToggleWatched,
+                        onPlay = { id -> onPlayCard(id, false) },
+                    )
+                } else {
+                    // Never gone without a word: where it couldn't load and the
+                    // phone knows none of it, it says so in its place.
+                    s.continueWatchingFailed?.let { failure -> ContinueWatchingCouldntLoad(failure, onRetry) }
+                }
+                if (s.nextUp.isNotEmpty()) {
+                    ContinueWatchingShelf(
+                        items = s.nextUp,
+                        baseUrl = s.baseUrl,
+                        streamToken = s.streamToken,
+                        title = "Next Up",
+                        // Next Up is server-substituted next episodes with
+                        // position=0 — web hides the progress bar on these
+                        // (HomeSection.tsx L18-19, "no progress bar").
+                        showProgress = false,
+                        onItemClick = onItemSelected,
+                        // No dismiss on Next Up cards (web parity).
+                        onRemoveFromContinueWatching = null,
+                        // #188: but the watched toggle is on every card surface.
+                        onToggleWatched = onToggleWatched,
+                        onPlay = { id -> onPlayCard(id, false) },
+                    )
+                }
+                if (s.recentMovies.isNotEmpty()) {
+                    MediaRow(
+                        title = "Recently added — Movies",
+                        items = s.recentMovies,
+                        baseUrl = s.baseUrl,
+                        streamToken = s.streamToken,
+                        onItemClick = onItemSelected,
+                        onSeeAll = onNavigateToSection?.let { nav -> { nav("movies") } },
+                        onToggleWatched = onToggleWatched,
+                        onPlay = { id -> onPlayCard(id, false) },
+                    )
+                }
+                if (s.recentSeries.isNotEmpty()) {
+                    MediaRow(
+                        title = "Recently added — Shows",
+                        items = s.recentSeries,
+                        baseUrl = s.baseUrl,
+                        streamToken = s.streamToken,
+                        onItemClick = onItemSelected,
+                        onSeeAll = onNavigateToSection?.let { nav -> { nav("series") } },
+                        onToggleWatched = onToggleWatched,
+                        onPlay = { id -> onPlayCard(id, true) },
+                    )
+                }
+                if (s.topRated.isNotEmpty()) {
+                    MediaRow(
+                        title = "Top rated",
+                        items = s.topRated,
+                        baseUrl = s.baseUrl,
+                        streamToken = s.streamToken,
+                        onItemClick = onItemSelected,
+                        onSeeAll = onNavigateToSection?.let { nav -> { nav("movies") } },
+                        onToggleWatched = onToggleWatched,
+                        onPlay = { id -> onPlayCard(id, false) },
+                    )
+                }
+                Box(modifier = Modifier.padding(bottom = 16.dp))
+            }
+        }
+    }
+}
+
+/** What a pull-down shows at the top: square, as every frame in the design
+ *  system, in the surface colour - the ring filling as it is pulled, then
+ *  turning while its ask is on its way. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PullDownIndicator(state: PullToRefreshState, refreshing: Boolean, modifier: Modifier) {
+    Box(
+        modifier = modifier.pullToRefreshIndicator(
+            state = state,
+            isRefreshing = refreshing,
+            shape = RectangleShape,
+            containerColor = ChinoSurfaceHi,
+        ),
+        contentAlignment = Alignment.Center,
     ) {
-        banner?.let { InformationBanner(it, modifier = Modifier.padding(horizontal = 16.dp)) }
-        if (s.heroPool.isNotEmpty()) {
-            HeroBanner(
-                pool = s.heroPool,
-                baseUrl = s.baseUrl,
-                streamToken = s.streamToken,
-                plays = s.heroPlays,
-                onMoreInfo = onItemSelected,
-                onPlay = onPlayHero,
-                onTrailer = onTrailerHero,
-            )
-        }
-        if (s.continueWatching.isNotEmpty()) {
-            ContinueWatchingShelf(
-                items = s.continueWatching,
-                baseUrl = s.baseUrl,
-                streamToken = s.streamToken,
-                showProgress = true,
-                onItemClick = onItemSelected,
-                // Only the in-progress CW rail surfaces the dismiss
-                // affordance — web gates it the same way (HomeSection.tsx
-                // L43-44: `onRemove && !it.up_next`).
-                onRemoveFromContinueWatching = onRemoveFromContinueWatching,
-                // #188: the watched toggle is ADDITIONAL to dismiss; both
-                // live in the same overflow menu.
-                onToggleWatched = onToggleWatched,
-                onPlay = { id -> onPlayCard(id, false) },
-            )
+        if (refreshing) {
+            CircularProgressIndicator(modifier = Modifier.size(22.dp), color = ChinoCloudBlue, strokeWidth = 2.dp)
         } else {
-            // Never gone without a word: where it couldn't load and the
-            // phone knows none of it, it says so in its place.
-            s.continueWatchingFailed?.let { failure -> ContinueWatchingCouldntLoad(failure, onRetry) }
-        }
-        if (s.nextUp.isNotEmpty()) {
-            ContinueWatchingShelf(
-                items = s.nextUp,
-                baseUrl = s.baseUrl,
-                streamToken = s.streamToken,
-                title = "Next Up",
-                // Next Up is server-substituted next episodes with
-                // position=0 — web hides the progress bar on these
-                // (HomeSection.tsx L18-19, "no progress bar").
-                showProgress = false,
-                onItemClick = onItemSelected,
-                // No dismiss on Next Up cards (web parity).
-                onRemoveFromContinueWatching = null,
-                // #188: but the watched toggle is on every card surface.
-                onToggleWatched = onToggleWatched,
-                onPlay = { id -> onPlayCard(id, false) },
+            CircularProgressIndicator(
+                progress = { state.distanceFraction.coerceIn(0f, 1f) },
+                modifier = Modifier.size(22.dp),
+                color = ChinoCloudBlue,
+                strokeWidth = 2.dp,
             )
         }
-        if (s.recentMovies.isNotEmpty()) {
-            MediaRow(
-                title = "Recently added — Movies",
-                items = s.recentMovies,
-                baseUrl = s.baseUrl,
-                streamToken = s.streamToken,
-                onItemClick = onItemSelected,
-                onSeeAll = onNavigateToSection?.let { nav -> { nav("movies") } },
-                onToggleWatched = onToggleWatched,
-                onPlay = { id -> onPlayCard(id, false) },
-            )
-        }
-        if (s.recentSeries.isNotEmpty()) {
-            MediaRow(
-                title = "Recently added — Shows",
-                items = s.recentSeries,
-                baseUrl = s.baseUrl,
-                streamToken = s.streamToken,
-                onItemClick = onItemSelected,
-                onSeeAll = onNavigateToSection?.let { nav -> { nav("series") } },
-                onToggleWatched = onToggleWatched,
-                onPlay = { id -> onPlayCard(id, true) },
-            )
-        }
-        if (s.topRated.isNotEmpty()) {
-            MediaRow(
-                title = "Top rated",
-                items = s.topRated,
-                baseUrl = s.baseUrl,
-                streamToken = s.streamToken,
-                onItemClick = onItemSelected,
-                onSeeAll = onNavigateToSection?.let { nav -> { nav("movies") } },
-                onToggleWatched = onToggleWatched,
-                onPlay = { id -> onPlayCard(id, false) },
-            )
-        }
-        Box(modifier = Modifier.padding(bottom = 16.dp))
     }
 }
 
@@ -445,9 +506,6 @@ internal const val CONTINUE_WATCHING = "Continue watching"
 
 /** What couldn't load, in the screen's own words. */
 internal const val CONTINUE_WATCHING_COULDNT_LOAD = "couldn't load continue watching"
-
-/** How often Home from what the phone knows asks the server again. */
-private const val OFFLINE_RECHECK_MS = 15_000L
 
 @Composable
 private fun Center(content: @Composable () -> Unit) {

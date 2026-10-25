@@ -62,6 +62,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.repeatOnLifecycle
+import cloud.nalet.chino.mobile.data.downloads.keepLooking
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -138,6 +140,13 @@ class MainShellScreen(
         // signed in — POST /v1/feedback needs the bearer. Once per process;
         // files that fail to submit survive for the next launch.
         androidx.compose.runtime.LaunchedEffect(Unit) { container.bugReporter.flushPending() }
+        // The server looked at every SERVER_LOOK_MS while the shell shows
+        // and the app is in front: stopped, Home, Movies and Shows put the
+        // banner over what they show and the bell goes; back, they ask again.
+        val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+        androidx.compose.runtime.LaunchedEffect(lifecycle) {
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { container.serverReach.keepLooking() }
+        }
 
         // Saveable: a title opened from Movies or Series covers the shell,
         // and Back lands on that tab again, not on Home. Voyager keeps a

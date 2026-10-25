@@ -1,6 +1,7 @@
 package cloud.nalet.chino.mobile.data.downloads
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,6 +90,24 @@ class ServerReach(
     private fun set(r: Reach): Reach {
         _state.value = r
         return r
+    }
+}
+
+/** How often the shell looks at the server while it shows, the server
+ *  answering or not: a server that stops is noticed within one look, and
+ *  one that is back again too. */
+const val SERVER_LOOK_MS = 15_000L
+
+/**
+ * Looks at the server every [everyMs] for as long as it is let run - while
+ * the shell shows, the app in front: Home, Movies and Shows hear at once
+ * that it stopped - the banner over what they show, the bell gone - or that
+ * it answers again, wherever the person is, without a tab change.
+ */
+suspend fun ServerReach.keepLooking(everyMs: Long = SERVER_LOOK_MS) {
+    while (true) {
+        delay(everyMs)
+        check()
     }
 }
 

@@ -5,7 +5,15 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import cloud.nalet.chino.mobile.AppConfig
 import cloud.nalet.chino.mobile.LocalAppContainer
 import cloud.nalet.chino.mobile.data.AppContainer
@@ -27,8 +35,10 @@ import kotlin.test.assertEquals
 
 /**
  * Home with the server gone, as drawn: the banner on top as on the other
- * screens, the rows the phone knows under it with the hero still resuming,
- * or Continue watching saying it couldn't load - never gone without a word.
+ * screens - fixed under the top bar as on a title's page - the rows the
+ * phone knows under it with the hero still resuming, or Continue watching
+ * saying it couldn't load - never gone without a word; and a pull-down that
+ * asks the server at once.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
@@ -64,7 +74,12 @@ class HomeOfflineScreenTest {
         continueWatchingFailed = failed,
     )
 
-    private fun home(state: HomeUiState.Ready, onRetry: () -> Unit = {}, banner: String? = UNREACHABLE_BANNER_NOTHING) {
+    private fun home(
+        state: HomeUiState.Ready,
+        onRetry: () -> Unit = {},
+        banner: String? = UNREACHABLE_BANNER_NOTHING,
+        onPullDown: () -> Unit = {},
+    ) {
         val c = container()
         compose.setContent {
             CompositionLocalProvider(LocalAppContainer provides c) {
@@ -72,6 +87,7 @@ class HomeOfflineScreenTest {
                     state,
                     onItemSelected = {},
                     banner = banner,
+                    onPullDown = onPullDown,
                     onRetry = onRetry,
                     onPlayCard = { _, _ -> },
                     onPlayHero = { _, _ -> },
@@ -116,5 +132,35 @@ class HomeOfflineScreenTest {
         compose.onNodeWithText(CONTINUE_WATCHING_COULDNT_LOAD).assertDoesNotExist()
         compose.onNodeWithText("try again").assertDoesNotExist()
         compose.onNodeWithText("Can't reach the server.").assertDoesNotExist()
+    }
+
+    /** Rows enough for the page to scroll well past a screen. */
+    private fun longer(state: HomeUiState.Ready) = state.copy(
+        recentMovies = (1..8).map { Item(id = "r$it", title = "Northern Coast $it", kind = "movie") },
+        recentSeries = (1..8).map { Item(id = "s$it", title = "Quiet Water $it", kind = "series") },
+        topRated = (1..8).map { Item(id = "t$it", title = "Harbour Lights $it", kind = "movie") },
+    )
+
+    @Test
+    fun theBannerStaysUnderTheTopBarAsThePageScrollsAsOnATitlesPage() {
+        home(longer(ready(listOf(row), failed = null)))
+        val banner = compose.onNodeWithContentDescription("information: $UNREACHABLE_BANNER_NOTHING")
+        banner.assertIsDisplayed()
+        val top = banner.fetchSemanticsNode().boundsInRoot.top
+        // Down to the last row: the hero has gone up out of sight, the
+        // banner is where it was.
+        compose.onNodeWithText("Top rated").performScrollTo()
+        compose.onNodeWithText("resume 1:43").assertIsNotDisplayed()
+        banner.assertIsDisplayed()
+        assertEquals(top, banner.fetchSemanticsNode().boundsInRoot.top)
+    }
+
+    @Test
+    fun aPullDownAsksAtOnce() {
+        var pulled = 0
+        home(longer(ready(listOf(row), failed = null)).copy(offline = false), banner = null, onPullDown = { pulled++ })
+        // The page's own scroll, not a row's.
+        compose.onNode(hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).performTouchInput { swipeDown(startY = top + 10f, endY = bottom, durationMillis = 400) }
+        compose.runOnIdle { assertEquals(1, pulled) }
     }
 }

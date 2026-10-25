@@ -206,6 +206,37 @@ class HomeOfflineTest {
         }
     }
 
+    /** Home as one load of it, the server answering. */
+    private fun ready(failed: ShelfFailure? = null) = HomeUiState.Ready(
+        heroPool = emptyList(),
+        continueWatching = listOf(film),
+        nextUp = listOf(episode),
+        recentMovies = movies,
+        recentSeries = emptyList(),
+        topRated = emptyList(),
+        baseUrl = "https://media.example.com",
+        streamToken = "t",
+        continueWatchingFailed = failed,
+    )
+
+    @Test
+    fun theServerFoundGoneByTheShellsLookTheRowsHomeShowsStayUnderTheBanner() {
+        val online = ready()
+        val gone = homeServerGone(online)
+        assertTrue(gone.offline)
+        // Nothing vanishes: the same rows, the same token for the posters.
+        assertEquals(online.copy(offline = true), gone)
+    }
+
+    @Test
+    fun aContinueWatchingThatCouldntLoadKeepsItsLineTheBannerNowSaysWhy() {
+        val couldnt = ShelfFailure(sentence = "The server ran into a problem.", details = "HTTP 500")
+        assertEquals(ShelfFailure(sentence = null, details = "HTTP 500"), homeServerGone(ready(failed = couldnt)).continueWatchingFailed)
+        // No access stays what it is: the banner changes nothing about it.
+        val noAccess = ShelfFailure(sentence = null, details = "HTTP 403", title = NO_ACCESS_TITLE, tryAgain = false)
+        assertEquals(noAccess, homeServerGone(ready(failed = noAccess)).continueWatchingFailed)
+    }
+
     @Test
     fun theWordsAreTheScreensOwn() = runTest {
         assertEquals("couldn't load continue watching", CONTINUE_WATCHING_COULDNT_LOAD)

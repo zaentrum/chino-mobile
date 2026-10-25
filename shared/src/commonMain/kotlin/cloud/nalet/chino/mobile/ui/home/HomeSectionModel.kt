@@ -15,6 +15,7 @@ import cloud.nalet.chino.mobile.data.api.sentence
 import cloud.nalet.chino.mobile.data.api.signInRefused
 import cloud.nalet.chino.mobile.data.downloads.Reach
 import cloud.nalet.chino.mobile.data.model.Item
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -210,13 +211,34 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
     /** Loads Home again where it stands - the server answers again after
      *  it couldn't be reached: the rows it shows stay until the new ones
      *  are in. */
-    fun refresh() = load()
+    fun refresh() {
+        load()
+    }
+
+    /** The server can't be reached any more - the shell's look found it, or
+     *  another request did: the rows Home shows stay, under the banner, as
+     *  where its own ask finds it ([homeServerGone]). */
+    fun serverGone() {
+        val s = _state.value as? HomeUiState.Ready ?: return
+        if (!s.offline) _state.value = homeServerGone(s)
+    }
+
+    /** A pull-down: the server asked at once - gone, the banner over the
+     *  rows Home shows; there, Home loaded again. Returns once either is
+     *  done. */
+    suspend fun pullDown() {
+        if (container.serverReach.check() == Reach.Unreachable) {
+            serverGone()
+            return
+        }
+        load().join()
+    }
 
     /** Home's rows are kept per server and account ([KnownHome]). */
     private suspend fun knownKey(): String =
         container.config.apiBaseUrl + "|" + (container.accountStore.activeAccountId.first() ?: "")
 
-    private fun load() {
+    private fun load(): Job =
         screenModelScope.launch {
             _state.value = try {
                 coroutineScope {
@@ -338,5 +360,4 @@ class HomeSectionModel(private val container: AppContainer) : ScreenModel {
                 }
             }
         }
-    }
 }

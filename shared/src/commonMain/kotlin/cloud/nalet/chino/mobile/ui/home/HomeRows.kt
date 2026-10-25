@@ -194,3 +194,15 @@ internal suspend fun homeLoad(
         streamToken = token.value ?: lastToken.orEmpty(),
     )
 }
+
+/**
+ * Home as it stands once the server can't be reached - found by the
+ * shell's look at it, a pull-down's ask or another request, not by a load
+ * of Home's own: the same rows, under the banner ([HomeUiState.Ready.offline]);
+ * a Continue watching that couldn't load keeps its line, without the reason
+ * the banner now says.
+ */
+internal fun homeServerGone(s: HomeUiState.Ready): HomeUiState.Ready = s.copy(
+    offline = true,
+    continueWatchingFailed = s.continueWatchingFailed?.let { f -> if (f.title == CONTINUE_WATCHING_COULDNT_LOAD) f.copy(sentence = null) else f },
+)
