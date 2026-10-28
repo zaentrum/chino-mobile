@@ -98,7 +98,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = ciVersionCode ?: 1
-        versionName = "0.2.0"
+        versionName = "0.2.1"
         // AndroidJUnitRunner — invoked by `am instrument` to enumerate +
         // execute @Test methods inside the androidInstrumentedTest APK.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

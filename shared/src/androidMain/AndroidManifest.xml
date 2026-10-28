@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
+    <!-- Downloads (downloads/DownloadLocks): Wi-Fi and the processor kept
+         awake while a download is on its way, so it keeps its speed with
+         the screen off. A normal permission: nothing to ask. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application>
         <!-- Google Cast: the framework's options - the Default Media
              Receiver, the full controls, the notification (cast/). -->

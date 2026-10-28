@@ -205,13 +205,31 @@ internal class DownloadEngine private constructor(context: Context) {
     @Volatile
     private var ticking = false
 
+    /** Wi-Fi and the processor kept awake while a download is on its way. */
+    private val locks = DownloadLocks(this.context)
+
+    /** Holds the locks while the manager downloads, lets them go when it
+     *  does not (DownloadLocks.shouldHold). On the manager's thread. */
+    private fun updateLocks() {
+        val states = runCatching { manager.currentDownloads.map { it.state } }.getOrDefault(emptyList())
+        locks.hold(DownloadLocks.shouldHold(states, manager.notMetRequirements, manager.downloadsPaused))
+    }
+
     init {
         applyRequirements()
         manager.addListener(object : DownloadManager.Listener {
-            override fun onInitialized(downloadManager: DownloadManager) = readAll()
+            override fun onInitialized(downloadManager: DownloadManager) {
+                readAll()
+                updateLocks()
+            }
+
+            override fun onDownloadsPausedChanged(downloadManager: DownloadManager, downloadsPaused: Boolean) = updateLocks()
+
+            override fun onIdle(downloadManager: DownloadManager) = updateLocks()
 
             override fun onDownloadChanged(downloadManager: DownloadManager, download: Download, finalException: Exception?) {
                 val key = download.request.id
+                updateLocks()
                 starting.value = starting.value - key
                 _downloads.value = _downloads.value + (key to download.snapshot())
                 if (download.state == Download.STATE_FAILED) {
@@ -231,6 +249,7 @@ internal class DownloadEngine private constructor(context: Context) {
 
             override fun onDownloadRemoved(downloadManager: DownloadManager, download: Download) {
                 _downloads.value = _downloads.value - download.request.id
+                updateLocks()
                 forgetResumeWhenNothingWaits()
             }
 
@@ -240,6 +259,7 @@ internal class DownloadEngine private constructor(context: Context) {
                 notMetRequirements: Int,
             ) {
                 _notMet.value = notMetRequirements
+                updateLocks()
                 // Waiting for a connection: no service in the foreground for
                 // it, and no notification for hours.
                 if (notMetRequirements != 0) stopServiceWhileWaiting()
@@ -374,6 +394,8 @@ internal class DownloadEngine private constructor(context: Context) {
                         _downloads.value = _downloads.value + current.associate { it.request.id to it.snapshot() }
                     }
                     if (current.none { it.state == Download.STATE_DOWNLOADING }) break
+                    // Still on its way: the processor's lock runs on.
+                    locks.keep()
                     val free = kotlinx.coroutines.withContext(Dispatchers.IO) { freeBytes() }
                     if (free < LOW_SPACE_BYTES) onLowSpace?.invoke()
                 }
