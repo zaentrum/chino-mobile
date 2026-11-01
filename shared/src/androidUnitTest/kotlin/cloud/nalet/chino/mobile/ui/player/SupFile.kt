@@ -25,8 +25,9 @@ private fun u16(v: Int) = byteArrayOf((v shr 8).toByte(), v.toByte())
 
 private fun u24(v: Int) = byteArrayOf((v shr 16).toByte(), (v shr 8).toByte(), v.toByte())
 
-/** An object a composition shows, where, and whether it is forced. */
-internal class Shown(val objectId: Int, val x: Int, val y: Int, val forced: Boolean = false)
+/** An object a composition shows, where, whether it is forced, and the part
+ *  of it shown ([crop]: x, y, width, height of the object) where it is cropped. */
+internal class Shown(val objectId: Int, val x: Int, val y: Int, val forced: Boolean = false, val crop: IntArray? = null)
 
 /** A composition's payload: the plane, its number and state, the palette,
  *  the objects it shows. */
@@ -43,9 +44,10 @@ internal fun composition(number: Int, state: Int, vararg shown: Shown, paletteId
     for (s in shown) {
         out.write(u16(s.objectId))
         out.write(0) // window
-        out.write(if (s.forced) 0x40 else 0)
+        out.write((if (s.crop != null) 0x80 else 0) or (if (s.forced) 0x40 else 0))
         out.write(u16(s.x))
         out.write(u16(s.y))
+        s.crop?.forEach { out.write(u16(it)) }
     }
     return out.toByteArray()
 }
@@ -92,10 +94,22 @@ internal fun box(width: Int, height: Int, colour: Int): ByteArray {
     return out.toByteArray()
 }
 
+/** A box [width] x [height], its upper [upperRows] rows of the palette's
+ *  [upper] colour, the rest of [lower]. */
+internal fun twoTone(width: Int, height: Int, upperRows: Int, upper: Int, lower: Int): ByteArray =
+    box(width, upperRows, upper) + box(width, height - upperRows, lower)
+
 /** An object's payloads: one segment, or [parts] of it, the first with the
- *  object's size and the length of its data. */
-internal fun objectSegments(id: Int, width: Int, height: Int, colour: Int, parts: Int = 1, version: Int = 0): List<ByteArray> {
-    val data = box(width, height, colour)
+ *  object's size and the length of its data ([data]: a box of [colour]). */
+internal fun objectSegments(
+    id: Int,
+    width: Int,
+    height: Int,
+    colour: Int,
+    parts: Int = 1,
+    version: Int = 0,
+    data: ByteArray = box(width, height, colour),
+): List<ByteArray> {
     val cut = (0..parts).map { data.size * it / parts }
     return (0 until parts).map { i ->
         val out = ByteArrayOutputStream()
@@ -117,6 +131,14 @@ internal fun objectSegments(id: Int, width: Int, height: Int, colour: Int, parts
 internal fun brokenObject(id: Int): ByteArray {
     val data = box(1, 1, colour = 1)
     return u16(id) + byteArrayOf(0, 0xC0.toByte()) + u24(data.size + 4) + u16(0xFFFF) + u16(0xFFFF) + data
+}
+
+/** An object's payload of a size a picture can have, [width] x [height],
+ *  whose one run (16383 pixels of colour 1) goes past its last pixel:
+ *  PgsParser throws on it. */
+internal fun overrunObject(id: Int, width: Int, height: Int): ByteArray {
+    val data = byteArrayOf(0, 0xFF.toByte(), 0xFF.toByte(), 1)
+    return u16(id) + byteArrayOf(0, 0xC0.toByte()) + u24(data.size + 4) + u16(width) + u16(height) + data
 }
 
 /** A stream of segments, as a .sup file has them ([sup], each behind its

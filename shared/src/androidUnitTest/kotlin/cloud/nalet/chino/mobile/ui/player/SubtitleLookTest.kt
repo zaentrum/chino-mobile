@@ -152,6 +152,43 @@ class SubtitleLookTest {
     }
 
     @Test
+    fun aPictureAcrossTheMiddleHangsFromItsBottomEdgeWhereMostOfItIsBelowTheMiddle() {
+        // From 450 to 650 of 1080: its centre below the middle.
+        val across = inTheLook(pgs(400, 200, 760, 450))
+        assertEquals(Cue.ANCHOR_TYPE_END, across.lineAnchor)
+        assertEquals(650f / 1080f, across.line, 1e-6f)
+        // From 420 to 620: its centre above it.
+        val above = inTheLook(pgs(400, 200, 760, 420))
+        assertEquals(Cue.ANCHOR_TYPE_START, above.lineAnchor)
+        assertEquals(420f / 1080f, above.line, 1e-6f)
+    }
+
+    @Test
+    fun aPicturesBottomEdgeIsWhereMedia3DrawsItATextCueHasNone() {
+        // As PgsParser places it, on the plane's shape: 940 of 1080.
+        assertEquals(940f, pictureBottom(pgs(400, 40, 760, 900), 1920, 1080)!!, 0.01f)
+        // In its own shape on a 1920 x 800 picture: hung from 940 / 1080 of it.
+        assertEquals(940f / 1080f * 800f, pictureBottom(inTheLook(pgs(400, 40, 760, 900)), 1920, 800)!!, 0.01f)
+        // At the top, from its top edge, as high as its width makes it.
+        assertEquals(60f / 1080f * 800f + 30f, pictureBottom(inTheLook(pgs(200, 30, 100, 60)), 1920, 800)!!, 0.01f)
+        assertEquals(null, pictureBottom(Cue.Builder().setText("Hello").build(), 1920, 1080))
+    }
+
+    @Test
+    fun aboveTheControlsThePictureRisesByItsOwnBottomEdgeALineByTheLooksMargin() {
+        // A 1920 x 1080 picture from the window's top, its line ending at
+        // 92 % (993.6 px), the controls from 800 px, a gap of 8 px.
+        fun rise(shown: List<Cue>) = subtitleClearance(shown, 1920, 1080, 0f, 993.6f, 800f, 8f)
+        // Nothing shown yet, or a line of text: as the line.
+        assertEquals(201.6f, rise(emptyList()), 0.01f)
+        assertEquals(201.6f, rise(listOf(Cue.Builder().setText("Hello").build())), 0.01f)
+        // A picture whose bottom edge is at 1000 px: by that edge.
+        assertEquals(208f, rise(listOf(inTheLook(pgs(400, 40, 760, 960)))), 0.01f)
+        // One that ends at 640 px, above the controls: none.
+        assertEquals(0f, rise(listOf(inTheLook(pgs(400, 40, 760, 600)))), 0.01f)
+    }
+
+    @Test
     fun aPictureOnAPlaneOfAnotherShapeIsDrawnAsMedia3DrawsIt() {
         // A DVD's or a broadcast's plane (720x576), whose pixels are not square.
         val sd = pgs(300, 40, 210, 500, planeWidth = 720, planeHeight = 576)

@@ -1206,6 +1206,9 @@ private fun PlaybackSurface(
             .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
             .build()
     }
+    // The player's .sup sidecars on disk, its own until it is released
+    // (SupFiles.kt).
+    val sidecarFiles = remember(activeMasterUrl) { SupSidecarCache.of(context).session() }
     val player = remember(activeMasterUrl) {
         val httpFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(streamClient)
             .setUserAgent("chino-mobile/0.2 (Android)")
@@ -1297,8 +1300,13 @@ private fun PlaybackSurface(
             //   "Legacy decoding is disabled, can't handle text/vtt
             //    samples (expected application/x-media3-cues)".
             val sideSources = sideSubs.map { cfg ->
-                // A download's subtitles are files beside it.
-                androidx.media3.exoplayer.source.SingleSampleMediaSource.Factory(state.local?.sidecarSources ?: httpFactory)
+                // A download's subtitles are files beside it. A .sup sidecar
+                // reaches Media3 as the place of its file on disk, never as
+                // its bytes (SupSidecarDataSource): a film's PGS dialogue is
+                // tens of megabytes.
+                val files = state.local?.sidecarSources ?: httpFactory
+                val source = if (cfg.mimeType == MimeTypes.APPLICATION_PGS) SupSidecarDataSource.Factory(files, sidecarFiles) else files
+                androidx.media3.exoplayer.source.SingleSampleMediaSource.Factory(source)
                     .createMediaSource(cfg, C.TIME_UNSET)
             }
             androidx.media3.exoplayer.source.MergingMediaSource(
@@ -1628,6 +1636,7 @@ private fun PlaybackSurface(
             saveProgress(player)
             player.removeListener(listener)
             player.release()
+            sidecarFiles.release()
         }
     }
     // Marked watched once per screen: the iOS player's moment (reachedWatched),
@@ -1939,7 +1948,11 @@ private fun PlaybackSurface(
                     useController = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     keepScreenOn = true
-                    subtitles[0] = LookSubtitles(this).also { it.bind(player) }
+                    subtitles[0] = LookSubtitles(this).also {
+                        it.bind(player)
+                        // A picture lower than the last one rises further.
+                        it.onClearance = { px -> subtitleClearancePx = px }
+                    }
                 }
             },
             // A quality switch rebuilds the ExoPlayer instance (player is

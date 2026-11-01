@@ -236,16 +236,28 @@ internal class LookSubtitles(playerView: PlayerView) : Player.Listener {
             ?: own?.let { applySubtitleLook(it, playerView.context) }
     }
 
-    /** How far the line must rise to clear controls that start at
-     *  [controlsTopPx] (window pixels), with a small gap: none where the
-     *  picture ends above them (a phone held upright). */
+    // The cues on screen, or the last ones while none are: what the rise
+    // above the controls goes by. The controls' top edge, once known.
+    private var shown: List<Cue> = emptyList()
+    private var controlsTop: Float? = null
+
+    /** Hears the rise [clearance] asks for again as what is on screen
+     *  changes, the controls where they were. */
+    var onClearance: ((Float) -> Unit)? = null
+
+    /** How far the subtitle must rise to clear controls that start at
+     *  [controlsTopPx] (window pixels), with a small gap: none where what it
+     *  shows ends above them (a phone held upright). A line of text ends at
+     *  the look's bottom margin, a picture (PGS) at its own bottom edge
+     *  ([subtitleClearance]). */
     fun clearance(controlsTopPx: Float): Float {
+        controlsTop = controlsTopPx
         val frame = view?.parent as? View ?: return 0f
         val at = IntArray(2)
         frame.getLocationInWindow(at)
-        val lineBottom = at[1] + frame.height * (1f - SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION)
+        val textBottom = at[1] + frame.height * (1f - SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION)
         val gap = 8f * frame.resources.displayMetrics.density
-        return (lineBottom - (controlsTopPx - gap)).coerceAtLeast(0f)
+        return subtitleClearance(shown, frame.width, frame.height, at[1].toFloat(), textBottom, controlsTopPx, gap)
     }
 
     /** The line [px] higher than the look puts it. */
@@ -258,11 +270,56 @@ internal class LookSubtitles(playerView: PlayerView) : Player.Listener {
         if (player === next) return
         player?.removeListener(this)
         player = next
-        v.setCues(next?.currentCues?.cues?.let(::inTheLook))
+        show(v, next?.currentCues?.cues?.let(::inTheLook))
         next?.addListener(this)
     }
 
     override fun onCues(cueGroup: CueGroup) {
-        view?.setCues(inTheLook(cueGroup.cues))
+        view?.let { show(it, inTheLook(cueGroup.cues)) }
     }
+
+    private fun show(v: SubtitleView, cues: List<Cue>?) {
+        v.setCues(cues)
+        if (cues.isNullOrEmpty() || cues == shown) return
+        shown = cues
+        val top = controlsTop ?: return
+        onClearance?.invoke(clearance(top))
+    }
+}
+
+/**
+ * Where a picture cue's bottom edge is drawn, in pixels from the top of a box
+ * [width] x [height], as Media3's SubtitlePainter places a bitmap; null for a
+ * text cue.
+ */
+internal fun pictureBottom(cue: Cue, width: Int, height: Int): Float? {
+    val bitmap = cue.bitmap ?: return null
+    if (width <= 0 || height <= 0 || bitmap.width <= 0 || bitmap.height <= 0) return null
+    if (cue.line == Cue.DIMEN_UNSET || cue.lineType != Cue.LINE_TYPE_FRACTION || cue.size == Cue.DIMEN_UNSET) return null
+    val drawnHeight = if (cue.bitmapHeight != Cue.DIMEN_UNSET) {
+        height * cue.bitmapHeight
+    } else {
+        width * cue.size * bitmap.height / bitmap.width
+    }
+    val anchor = height * cue.line
+    return when (cue.lineAnchor) {
+        Cue.ANCHOR_TYPE_END -> anchor
+        Cue.ANCHOR_TYPE_MIDDLE -> anchor + drawnHeight / 2f
+        else -> anchor + drawnHeight
+    }
+}
+
+/**
+ * How far the subtitle must rise, in pixels, so that what it shows - [shown],
+ * the cues on screen or the last ones - ends [gap] above [edge] (window
+ * pixels): the controls' top. A line of text ends at [textBottom] (window
+ * pixels), a picture at its own bottom edge in the box [width] x [height]
+ * whose top is at [boxTop] ([pictureBottom]). Nothing shown yet: as a line
+ * of text would.
+ */
+internal fun subtitleClearance(shown: List<Cue>, width: Int, height: Int, boxTop: Float, textBottom: Float, edge: Float, gap: Float): Float {
+    var lowest = if (shown.isEmpty() || shown.any { it.bitmap == null }) textBottom else Float.NEGATIVE_INFINITY
+    for (cue in shown) pictureBottom(cue, width, height)?.let { lowest = maxOf(lowest, boxTop + it) }
+    if (lowest == Float.NEGATIVE_INFINITY) return 0f
+    return (lowest - (edge - gap)).coerceAtLeast(0f)
 }

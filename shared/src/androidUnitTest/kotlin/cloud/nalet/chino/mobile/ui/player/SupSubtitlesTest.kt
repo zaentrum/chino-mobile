@@ -31,6 +31,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -158,15 +159,18 @@ class SupSubtitlesTest {
 
     @Test
     fun aPictureThatCannotBeDrawnIsLeftOutAndTheRestShows() {
-        val bytes = Pgs().set(
-            1_000_000,
-            composition(0, STATE_EPOCH_START, Shown(0, 100, 60), Shown(1, 660, 950)),
-            PALETTE to palette(0, 0, white(1)),
-            OBJECT to brokenObject(0),
-            *objectSegments(1, 600, 40, colour = 1).map { OBJECT to it }.toTypedArray(),
-        ).clears(2_000_000, number = 1).sup()
-        assertBox(parseAll(bytes).single().cues.single(), 600, 40, 660, 950)
-        assertBox(SupParser().parseToLegacySubtitle(bytes, 0, bytes.size).getCues(1_500_000).single(), 600, 40, 660, 950)
+        // One larger than any plane; one of a plane's size whose data PgsParser can't draw.
+        for (broken in listOf(brokenObject(0), overrunObject(0, 400, 40))) {
+            val bytes = Pgs().set(
+                1_000_000,
+                composition(0, STATE_EPOCH_START, Shown(0, 100, 60), Shown(1, 660, 950)),
+                PALETTE to palette(0, 0, white(1)),
+                OBJECT to broken,
+                *objectSegments(1, 600, 40, colour = 1).map { OBJECT to it }.toTypedArray(),
+            ).clears(2_000_000, number = 1).sup()
+            assertBox(parseAll(bytes).single().cues.single(), 600, 40, 660, 950)
+            assertBox(SupParser().parseToLegacySubtitle(bytes, 0, bytes.size).getCues(1_500_000).single(), 600, 40, 660, 950)
+        }
     }
 
     @Test
@@ -243,6 +247,11 @@ class SupSubtitlesTest {
     private class WholeFile(private val format: Format, private val data: ByteArray) : SampleStream {
         private var sent = 0
 
+        /** After a seek the file comes again, its format already known. */
+        fun seek() {
+            if (sent == 2) sent = 1
+        }
+
         override fun isReady() = true
 
         override fun maybeThrowError() = Unit
@@ -300,6 +309,316 @@ class SupSubtitlesTest {
             assertBox(renderAt(4_500_000)!!.cues.single(), 600, 40, 660, 950)
             assertBox(renderAt(7_000_000)!!.cues.single(), 200, 30, 100, 60, colour = 0xFFEBEB0B.toInt())
             assertEquals(emptyList(), renderAt(8_000_000)!!.cues)
+        } finally {
+            text.stop()
+            text.disable()
+            text.release()
+        }
+    }
+
+    private val YELLOW = 0xFFEBEB0B.toInt()
+
+    @Test
+    fun ofTwoSetsAtOneTimeTheLaterOneCounts() {
+        val pgs = Pgs()
+            .shows(1_000_000, number = 0, width = 400, height = 40, x = 760, y = 900)
+            // A clear, then a line at the same time: the line shows.
+            .clears(3_000_000, number = 1)
+            .shows(3_000_000, number = 2, width = 600, height = 40, x = 660, y = 950)
+            // A line, then a clear at the same time: nothing shows.
+            .shows(5_000_000, number = 3, width = 200, height = 30, x = 100, y = 60)
+            .clears(5_000_000, number = 4)
+        val bytes = pgs.sup()
+        assertEquals(listOf(1_000_000L to 2_000_000L, 3_000_000L to 2_000_000L), parseAll(bytes).map { it.startTimeUs to it.durationUs })
+        val subtitle = SupParser().parseToLegacySubtitle(bytes, 0, bytes.size)
+        assertEquals(listOf(1_000_000L, 3_000_000L, 5_000_000L), (0 until subtitle.eventTimeCount).map(subtitle::getEventTime))
+        assertBox(subtitle.getCues(4_000_000).single(), 600, 40, 660, 950)
+        assertEquals(emptyList(), subtitle.getCues(5_500_000))
+    }
+
+    @Test
+    fun aPaletteUpdateGivesSomeOfItsEntriesTheOthersStayAsTheyWere() {
+        val pgs = Pgs()
+            .set(
+                1_000_000,
+                composition(0, STATE_EPOCH_START, Shown(0, 100, 60), Shown(1, 660, 950)),
+                PALETTE to palette(0, 0, white(1), yellow(2)),
+                *objectSegments(0, 200, 30, colour = 1).map { OBJECT to it }.toTypedArray(),
+                *objectSegments(1, 600, 40, colour = 2).map { OBJECT to it }.toTypedArray(),
+            )
+            // Only the yellow fades; the white is not given again.
+            .set(
+                1_500_000,
+                composition(1, STATE_NORMAL, Shown(0, 100, 60), Shown(1, 660, 950), paletteUpdate = true),
+                PALETTE to palette(0, 1, Entry(2, 210, 146, 16, 0x40)),
+            )
+            .clears(2_000_000, number = 2)
+        val faded = parseAll(pgs.sup())[1].cues
+        assertBox(faded[0], 200, 30, 100, 60)
+        assertEquals(0x40, android.graphics.Color.alpha(faded[1].bitmap!!.getPixel(300, 20)))
+    }
+
+    @Test
+    fun aCroppedObjectShowsThePartItsCompositionCutsTheObjectsAfterItInTheirPlaces() {
+        // One object of two lines, white over yellow; the composition shows
+        // its lower line at (760, 900), then a second object at (100, 60).
+        val pgs = Pgs().set(
+            1_000_000,
+            composition(0, STATE_EPOCH_START, Shown(0, 760, 900, crop = intArrayOf(0, 40, 400, 40)), Shown(1, 100, 60)),
+            PALETTE to palette(0, 0, white(1), yellow(2)),
+            *objectSegments(0, 400, 80, colour = 1, data = twoTone(400, 80, 40, upper = 1, lower = 2)).map { OBJECT to it }.toTypedArray(),
+            *objectSegments(1, 200, 30, colour = 1).map { OBJECT to it }.toTypedArray(),
+        ).clears(2_000_000, number = 1)
+        val cues = parseAll(pgs.sup()).single().cues
+        assertEquals(2, cues.size)
+        assertBox(cues[0], 200, 30, 100, 60)
+        assertBox(cues[1], 400, 40, 760, 900, colour = YELLOW)
+    }
+
+    @Test
+    fun aCompositionTooShortToReadClearsTheScreenAtItsTime() {
+        for (length in listOf(0, 5, 10)) {
+            val bytes = Pgs()
+                .shows(1_000_000, number = 0, width = 400, height = 40, x = 760, y = 900)
+                .segment(3_000_000, COMPOSITION, composition(1, STATE_NORMAL).copyOf(length))
+                .segment(3_000_000, WINDOW, window())
+                .segment(3_000_000, END)
+                .shows(4_000_000, number = 2, width = 600, height = 40, x = 660, y = 950)
+                .sup()
+            assertEquals(listOf(1_000_000L to 2_000_000L, 4_000_000L to C.TIME_UNSET), parseAll(bytes).map { it.startTimeUs to it.durationUs }, "a composition of $length bytes")
+            assertEquals(emptyList(), SupParser().parseToLegacySubtitle(bytes, 0, bytes.size).getCues(3_500_000))
+        }
+    }
+
+    @Test
+    fun aStrayHeaderOrOneWhoseLengthRunsPastTheEndIsSkippedToTheSegmentsThatFollow() {
+        val first = Pgs().shows(1_000_000, number = 0, width = 400, height = 40, x = 760, y = 900).sup()
+        val rest = Pgs().clears(3_000_000, number = 1).shows(4_000_000, number = 2, width = 600, height = 40, x = 660, y = 950).clears(6_000_000, number = 3).sup()
+        val header = byteArrayOf('P'.code.toByte(), 'G'.code.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, COMPOSITION.toByte(), 0xFF.toByte(), 0xFF.toByte())
+        val expected = listOf(1_000_000L to 2_000_000L, 4_000_000L to 2_000_000L)
+        // Between other bytes, its length past the end of the file.
+        val overrunning = first + byteArrayOf(1, 2, 3) + header + byteArrayOf(9, 9) + rest
+        assertEquals(expected, parseAll(overrunning).map { it.startTimeUs to it.durationUs })
+        // Right after a segment, its length into the next one.
+        val stray = first + header.copyOf().also { it[11] = 0; it[12] = 40 } + rest
+        assertEquals(expected, parseAll(stray).map { it.startTimeUs to it.durationUs })
+        // A segment cut short at the end still ends the file. (The last
+        // set's composition cut after its first byte: its clear is lost.)
+        val cut = (first + rest).let { it.copyOf(it.size - 46) }
+        assertEquals(listOf(1_000_000L to 2_000_000L, 4_000_000L to C.TIME_UNSET), parseAll(cut).map { it.startTimeUs to it.durationUs })
+    }
+
+    @Test
+    fun aHeaderOfATypeNoSupFileHasIsNoHeaderEvenWhereItsLengthEndsOnTheNextOne() {
+        val first = Pgs().shows(1_000_000, number = 0, width = 400, height = 40, x = 760, y = 900).sup()
+        val clear = Pgs().clears(3_000_000, number = 1).sup()
+        val next = Pgs().shows(4_000_000, number = 2, width = 600, height = 40, x = 660, y = 950).clears(6_000_000, number = 3).sup()
+        // "PG", a type 0x01 and a length that ends where the set at 4 s starts: round the clear at 3 s.
+        val fake = byteArrayOf('P'.code.toByte(), 'G'.code.toByte(), 0, 0, 0, 0, 0, 0, 0, 0, 0x01, (clear.size shr 8).toByte(), clear.size.toByte())
+        assertEquals(listOf(1_000_000L to 2_000_000L, 4_000_000L to 2_000_000L), parseAll(first + fake + clear + next).map { it.startTimeUs to it.durationUs })
+    }
+
+    @Test
+    fun thePicturesOfOneHalfOfThePlaneAreOnePictureEachInItsPlaceInIt() {
+        // Two lines as two objects, 5 pixels apart, in the lower half; a
+        // sign in the upper half.
+        val pgs = Pgs().set(
+            1_000_000,
+            composition(0, STATE_EPOCH_START, Shown(0, 760, 900), Shown(1, 660, 945), Shown(2, 100, 60)),
+            PALETTE to palette(0, 0, white(1), yellow(2)),
+            *objectSegments(0, 400, 40, colour = 1).map { OBJECT to it }.toTypedArray(),
+            *objectSegments(1, 600, 40, colour = 2).map { OBJECT to it }.toTypedArray(),
+            *objectSegments(2, 200, 30, colour = 2).map { OBJECT to it }.toTypedArray(),
+        ).clears(2_000_000, number = 1)
+        val cues = parseAll(pgs.sup()).single().cues
+        assertEquals(2, cues.size)
+        assertBox(cues[0], 200, 30, 100, 60, colour = YELLOW)
+        // The lower half's two: one picture from (660, 900) to (1260, 985).
+        val lower = cues[1]
+        val bitmap = lower.bitmap!!
+        assertEquals(600 to 85, bitmap.width to bitmap.height)
+        assertEquals(660f / PLANE_WIDTH, lower.position, 1e-6f)
+        assertEquals(900f / PLANE_HEIGHT, lower.line, 1e-6f)
+        assertEquals(85f / PLANE_HEIGHT, lower.bitmapHeight, 1e-6f)
+        assertEquals(WHITE, bitmap.getPixel(300, 20))
+        assertEquals(YELLOW, bitmap.getPixel(300, 65))
+        // Between the lines and beside the upper one: nothing.
+        assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(300, 42)))
+        assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(50, 20)))
+    }
+
+    @Test
+    fun noPictureIsLargerThanItsPlaneNorAPlaneLargerThanAnUhdFrame() {
+        fun cuesOf(composition: ByteArray, objectPayload: ByteArray): List<Cue> {
+            val bytes = Pgs().set(1_000_000, composition, PALETTE to palette(0, 0, white(1)), OBJECT to objectPayload).clears(2_000_000, number = 1).sup()
+            return SupParser().parseToLegacySubtitle(bytes, 0, bytes.size).getCues(1_500_000)
+        }
+        // An object taller and wider than its 1920x1080 plane, one row of
+        // a single run each: 31 KB that would be a 108 MB picture.
+        assertEquals(emptyList(), cuesOf(composition(0, STATE_EPOCH_START, Shown(0, 0, 0)), runsObject(0, 5200, 5200)))
+        assertEquals(emptyList(), cuesOf(composition(0, STATE_EPOCH_START, Shown(0, 0, 0)), runsObject(0, 3000, 1000)))
+        // A plane larger than an UHD frame: nothing of it is drawn.
+        val huge = composition(0, STATE_EPOCH_START, Shown(0, 0, 0)).also { it[0] = 0x3F; it[1] = 0xFF.toByte(); it[2] = 0x3F; it[3] = 0xFF.toByte() }
+        assertEquals(emptyList(), cuesOf(huge, runsObject(0, 100, 10)))
+        // A picture past the plane's edge: the part inside it.
+        val edge = cuesOf(composition(0, STATE_EPOCH_START, Shown(0, 1820, 1050)), runsObject(0, 200, 50)).single()
+        assertEquals(100 to 30, edge.bitmap!!.width to edge.bitmap!!.height)
+    }
+
+    /** An object [width] x [height] of colour 1, one run a row. */
+    private fun runsObject(id: Int, width: Int, height: Int): ByteArray {
+        val data = java.io.ByteArrayOutputStream()
+        repeat(height) {
+            data.write(0)
+            data.write(0xC0 or (width shr 8))
+            data.write(width and 0xFF)
+            data.write(1)
+            data.write(0)
+            data.write(0)
+        }
+        return objectSegments(id, width, height, colour = 1, data = data.toByteArray()).single()
+    }
+
+    @Test
+    fun aFileCutAnywhereOrDamagedNeverThrows() {
+        val whole = threeLines().sup()
+        for (cut in 0..whole.size) assertNull(everything(whole.copyOf(cut)), "cut at $cut")
+        val random = java.util.Random(42)
+        repeat(500) { run ->
+            val damaged = whole.copyOf()
+            repeat(1 + random.nextInt(8)) { damaged[random.nextInt(damaged.size)] = random.nextInt(256).toByte() }
+            assertNull(everything(damaged), "damaged, run $run")
+        }
+    }
+
+    /** Everything the player does with [bytes]; what it throws, or null. */
+    private fun everything(bytes: ByteArray): Throwable? = try {
+        SupParser().parse(bytes, 0, bytes.size, SubtitleParser.OutputOptions.allCues()) { }
+        SupParser().parse(bytes, 0, bytes.size, SubtitleParser.OutputOptions.cuesAfterThenRemainingCuesBefore(2_000_000)) { }
+        val subtitle = SupParser().parseToLegacySubtitle(bytes, 0, bytes.size)
+        for (i in 0 until subtitle.eventTimeCount) {
+            val time = subtitle.getEventTime(i)
+            subtitle.getCues(time)
+            subtitle.getCues(time - 1)
+            subtitle.getNextEventTimeIndex(time)
+        }
+        subtitle.getEventTime(subtitle.eventTimeCount - 1)
+        null
+    } catch (e: Throwable) {
+        e
+    }
+
+    @Test
+    fun textSidecarsAreDecodedAsBefore() {
+        val vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nOne\n\n00:00:03.000 --> 00:00:04.000\nTwo\n"
+        val srt = "1\n00:00:01,000 --> 00:00:02,000\nOne\n\n2\n00:00:03,000 --> 00:00:04,000\nTwo\n"
+        for ((mime, text) in listOf(MimeTypes.TEXT_VTT to vtt, MimeTypes.APPLICATION_SUBRIP to srt)) {
+            val decoder = SubtitleDecoders().createDecoder(Format.Builder().setSampleMimeType(mime).build())
+            try {
+                val bytes = text.toByteArray()
+                val input = decoder.dequeueInputBuffer()!!
+                input.ensureSpaceForWrite(bytes.size)
+                input.data!!.put(bytes)
+                input.timeUs = 0
+                input.flip()
+                decoder.queueInputBuffer(input)
+                val deadline = System.nanoTime() + 10_000_000_000L
+                var output = decoder.dequeueOutputBuffer()
+                while (output == null && System.nanoTime() < deadline) {
+                    Thread.sleep(5)
+                    output = decoder.dequeueOutputBuffer()
+                }
+                val subtitle = output!!
+                assertEquals(listOf(1_000_000L, 2_000_000L, 3_000_000L, 4_000_000L), (0 until subtitle.eventTimeCount).map(subtitle::getEventTime), mime)
+                assertEquals("One", subtitle.getCues(1_500_000).single().text.toString(), mime)
+                assertEquals("Two", subtitle.getCues(3_500_000).single().text.toString(), mime)
+                subtitle.release()
+            } finally {
+                decoder.release()
+            }
+        }
+    }
+
+    /** The player's text renderer, its cue groups into [shown]. */
+    private fun textRenderer(shown: MutableList<CueGroup>): TextRenderer =
+        PlayerRenderersFactory(ApplicationProvider.getApplicationContext()).createRenderers(
+            Handler(Looper.getMainLooper()),
+            object : VideoRendererEventListener {},
+            object : AudioRendererEventListener {},
+            { group -> shown += group },
+            { },
+        ).filterIsInstance<TextRenderer>().single()
+
+    @Test
+    fun thePlayersTextRendererShowsASupFileFromItsReferenceOnDisk() {
+        val file = java.io.File.createTempFile("track", ".sup").apply {
+            deleteOnExit()
+            writeBytes(threeLines().sup())
+        }
+        val shown = ArrayList<CueGroup>()
+        val text = textRenderer(shown)
+        val format = Format.Builder().setSampleMimeType(MimeTypes.APPLICATION_PGS).setLanguage("en").build()
+        // What Media3 is handed for the file (SupSidecarDataSource): a few bytes.
+        text.init(0, PlayerId.UNSET, Clock.DEFAULT)
+        text.enable(RendererConfiguration.DEFAULT, arrayOf(format), WholeFile(format, SupFileRef.of(file)), 0, false, true, 0, 0, MediaSource.MediaPeriodId(Any()))
+        text.setCurrentStreamFinal()
+        text.start()
+        fun renderAt(us: Long): CueGroup? {
+            text.render(us, SystemClock.elapsedRealtime() * 1000)
+            shadowOf(Looper.getMainLooper()).idle()
+            return shown.lastOrNull()
+        }
+        try {
+            val deadline = System.nanoTime() + 10_000_000_000L
+            while (renderAt(1_500_000)?.cues.isNullOrEmpty() && System.nanoTime() < deadline) Thread.sleep(5)
+            assertBox(shown.last().cues.single(), 400, 40, 760, 900)
+            assertEquals(emptyList(), renderAt(3_000_000)!!.cues)
+            assertBox(renderAt(4_500_000)!!.cues.single(), 600, 40, 660, 950)
+            assertBox(renderAt(7_000_000)!!.cues.single(), 200, 30, 100, 60, colour = YELLOW)
+        } finally {
+            text.stop()
+            text.disable()
+            text.release()
+        }
+    }
+
+    @Test
+    fun afterASeekTheTextRendererShowsTheSetAtTheNewTimeNeverOneFromBefore() {
+        val shown = ArrayList<CueGroup>()
+        val text = textRenderer(shown)
+        val format = Format.Builder().setSampleMimeType(MimeTypes.APPLICATION_PGS).setLanguage("en").build()
+        val stream = WholeFile(format, threeLines().sup())
+        text.init(0, PlayerId.UNSET, Clock.DEFAULT)
+        text.enable(RendererConfiguration.DEFAULT, arrayOf(format), stream, 0, false, true, 0, 0, MediaSource.MediaPeriodId(Any()))
+        text.start()
+        fun renderAt(us: Long): CueGroup? {
+            text.render(us, SystemClock.elapsedRealtime() * 1000)
+            shadowOf(Looper.getMainLooper()).idle()
+            return shown.lastOrNull()
+        }
+        /** What shows at [us] once the file is decoded: the pictures' widths. */
+        fun settleAt(us: Long, widths: List<Int>): List<List<Int>> {
+            val from = shown.size
+            val deadline = System.nanoTime() + 10_000_000_000L
+            while (System.nanoTime() < deadline) {
+                val group = renderAt(us)
+                if (shown.size > from && group != null && group.cues.map { it.bitmap!!.width } == widths) break
+                Thread.sleep(5)
+            }
+            return shown.drop(from).map { group -> group.cues.map { it.bitmap!!.width } }
+        }
+        try {
+            assertEquals(listOf(400), settleAt(1_500_000, listOf(400)).last())
+            // Forward, back, into a clear, past the last set: the screen
+            // clears at once, then shows what is on at the new time.
+            for ((at, widths) in listOf(7_000_000L to listOf(200), 1_500_000L to listOf(400), 3_500_000L to emptyList(), 9_000_000L to emptyList())) {
+                text.resetPosition(at)
+                stream.seek()
+                val groups = settleAt(at, widths)
+                assertEquals(emptyList(), groups.first(), "after a seek to $at")
+                assertEquals(widths, groups.last(), "after a seek to $at")
+                assertTrue(groups.all { it.isEmpty() || it == widths }, "after a seek to $at: $groups")
+            }
         } finally {
             text.stop()
             text.disable()
