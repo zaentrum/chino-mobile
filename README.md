@@ -169,8 +169,11 @@ background, with Picture in Picture, AirPlay, the lock screen's Now Playing
 controls and landscape for full screen. A failure offers Try again, where it
 was.
 
-The Android player side-loads the sidecars into Media3 and lists a package's
-HLS subtitle renditions only where no sidecar carries them. It recovers a
+The Android player side-loads the sidecars into Media3 - a PGS one, a .sup
+file, shown as its pictures, each from its time to the next one's - and
+lists a package's HLS subtitle renditions only where no sidecar carries
+them. VobSub sidecars are listed but not drawn (Media3 1.5 has no decoder
+for them). It recovers a
 failing stream by itself: a packaged title is retried in place, where it
 was; only a title played on the fly steps down its quality ladder.
 

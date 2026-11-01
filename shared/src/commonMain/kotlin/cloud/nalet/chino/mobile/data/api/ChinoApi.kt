@@ -547,7 +547,8 @@ data class SidecarSubtitle(
     val default: Boolean? = null,
     // `format` selects the renderer. `webvtt`/`srt` flow through the
     // native text-track pipeline; `pgs`/`vobsub`/`dvb` bind a Media3
-    // image-subtitle decoder (PgsDecoder for `pgs`). Optional for
+    // image-subtitle decoder (on Android a .sup file's SupParser for
+    // `pgs`; Media3 has none for `vobsub`). Optional for
     // backward compatibility with older manager-api builds that
     // didn't emit the field — those rows are assumed webvtt.
     val format: String? = null,

@@ -123,4 +123,38 @@ class SubtitleLookTest {
         val picture = Cue.Builder().setBitmap(Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)).setPosition(0.2f).build()
         assertSame(picture, inTheLook(picture))
     }
+
+    /** A PGS picture as Media3's PgsParser places it on a 1920x1080 plane. */
+    private fun pgs(width: Int, height: Int, x: Int, y: Int, planeWidth: Int = 1920, planeHeight: Int = 1080) = Cue.Builder()
+        .setBitmap(Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888))
+        .setPosition(x.toFloat() / planeWidth)
+        .setPositionAnchor(Cue.ANCHOR_TYPE_START)
+        .setLine(y.toFloat() / planeHeight, Cue.LINE_TYPE_FRACTION)
+        .setLineAnchor(Cue.ANCHOR_TYPE_START)
+        .setSize(width.toFloat() / planeWidth)
+        .setBitmapHeight(height.toFloat() / planeHeight)
+        .build()
+
+    @Test
+    fun aPictureOnAnHdPlaneKeepsItsOwnShapeAndItsPlace() {
+        // At the bottom: hung from its bottom edge, as high as its width makes it.
+        val bottom = inTheLook(pgs(400, 40, 760, 900))
+        assertEquals(Cue.DIMEN_UNSET, bottom.bitmapHeight)
+        assertEquals(940f / 1080f, bottom.line, 1e-6f)
+        assertEquals(Cue.ANCHOR_TYPE_END, bottom.lineAnchor)
+        assertEquals(760f / 1920f, bottom.position, 1e-6f)
+        assertEquals(400f / 1920f, bottom.size, 1e-6f)
+        // At the top: from its top edge.
+        val top = inTheLook(pgs(200, 30, 100, 60))
+        assertEquals(Cue.DIMEN_UNSET, top.bitmapHeight)
+        assertEquals(60f / 1080f, top.line, 1e-6f)
+        assertEquals(Cue.ANCHOR_TYPE_START, top.lineAnchor)
+    }
+
+    @Test
+    fun aPictureOnAPlaneOfAnotherShapeIsDrawnAsMedia3DrawsIt() {
+        // A DVD's or a broadcast's plane (720x576), whose pixels are not square.
+        val sd = pgs(300, 40, 210, 500, planeWidth = 720, planeHeight = 576)
+        assertSame(sd, inTheLook(sd))
+    }
 }

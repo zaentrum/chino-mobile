@@ -77,7 +77,7 @@ fun pickAudios(renditions: List<HlsRendition>, audioPref: String?): List<HlsRend
  * The sidecar subtitles a download keeps: every text one (WebVTT, SubRip -
  * served as .vtt), whatever its language - a few kilobytes each, so that the
  * download has what the title has online; picture ones (PGS, VobSub) are
- * not files a phone shows. In the server's order, each once.
+ * not kept. In the server's order, each once.
  */
 fun pickSubtitles(sidecars: List<SidecarSubtitle>): List<SidecarSubtitle> =
     sidecars.filter { s -> s.id.isNotBlank() && subtitleKind(s.format) == SubtitleKind.Text }.distinctBy { it.id }

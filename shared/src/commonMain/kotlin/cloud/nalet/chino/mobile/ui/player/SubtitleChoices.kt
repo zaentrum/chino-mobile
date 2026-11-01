@@ -125,9 +125,10 @@ fun buildSubtitleChoices(
 }
 
 /** Whether a sidecar is a forced track: it says so (`forced`), or — from a
- *  server that does not pass the flag on — its label does, as the Android
+ *  server that does not pass the flag on — its label does in the words a
+ *  menu reads ([saysForced]: "Forced", "foreign parts only"), as the Android
  *  player reads a track's label. */
-fun sidecarForced(s: SidecarSubtitle): Boolean = s.forced || s.label.orEmpty().contains("forced", ignoreCase = true)
+fun sidecarForced(s: SidecarSubtitle): Boolean = s.forced || saysForced(s.label)
 
 /**
  * An unpackaged title's embedded text subtitles (/play/info subtitle_tracks),

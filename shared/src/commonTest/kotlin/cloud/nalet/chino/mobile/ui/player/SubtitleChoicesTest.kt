@@ -229,6 +229,25 @@ class SubtitleChoicesTest {
     }
 
     @Test
+    fun aSidecarIsForcedWhereTheServerOrItsLabelSaysSo() {
+        fun sidecar(label: String?, forced: Boolean = false) =
+            SidecarSubtitle(id = "s", lang = "eng", label = label, url = "", format = "pgs", forced = forced)
+        // A server that passes the flag on.
+        assertTrue(sidecarForced(sidecar("English", forced = true)))
+        // One that does not: the label, in the words a menu reads.
+        assertTrue(sidecarForced(sidecar("English (foreign parts only)")))
+        assertTrue(sidecarForced(sidecar("Foreign-language parts")))
+        assertTrue(sidecarForced(sidecar("German (Forced)")))
+        assertTrue(sidecarForced(sidecar("Forced Narrative")))
+        assertFalse(sidecarForced(sidecar("English")))
+        assertFalse(sidecarForced(sidecar(null)))
+        // The menu names it so.
+        val choice = buildSubtitleChoices("m1", listOf(sidecar("English (foreign parts only)")), emptyList(), apiBase, "tok", drawsPgs = true).single()
+        assertTrue(choice.forced)
+        assertEquals("English · foreign-language parts only", choice.label)
+    }
+
+    @Test
     fun theDefaultRuleReadsTheMenuNotTheCopies() {
         val tracks = sidecarsThenOtherRenditions(
             listOf(Track("hls-de", "de"), Track("side-de", "deu", sidecar = true)),

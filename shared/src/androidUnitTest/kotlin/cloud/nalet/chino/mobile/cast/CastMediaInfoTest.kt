@@ -188,6 +188,10 @@ class CastMediaInfoTest {
         assertEquals(TvTrack(6, TvTrackType.Text, "en", "English", forced = true), forced.toTvTrack())
         val named = MediaTrack.Builder(7, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English (Forced)").build()
         assertEquals(true, named.toTvTrack().forced)
+        // As the phone names a forced subtitle, and as a file's title may.
+        for (name in listOf("English · foreign-language parts only", "English (foreign parts only)")) {
+            assertEquals(true, MediaTrack.Builder(9, MediaTrack.TYPE_TEXT).setLanguage("en").setName(name).build().toTvTrack().forced, name)
+        }
         val sdh = MediaTrack.Builder(8, MediaTrack.TYPE_TEXT).setLanguage("en").setName("English SDH").build()
         assertEquals(true, sdh.toTvTrack().sdh)
         val audio = MediaTrack.Builder(2, MediaTrack.TYPE_AUDIO).setLanguage("ja").setName("Japanese").build()

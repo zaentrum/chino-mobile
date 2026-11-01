@@ -3,6 +3,7 @@ package cloud.nalet.chino.mobile.cast
 import android.net.Uri
 import cloud.nalet.chino.mobile.data.auth.withStreamToken
 import cloud.nalet.chino.mobile.ui.player.isSdhSubtitle
+import cloud.nalet.chino.mobile.ui.player.saysForced
 import com.google.android.gms.cast.HlsSegmentFormat
 import com.google.android.gms.cast.HlsVideoSegmentFormat
 import com.google.android.gms.cast.MediaInfo
@@ -154,7 +155,8 @@ private fun signedAgain(track: MediaTrack, token: String): MediaTrack =
         .build()
 
 /** A track of the TV's media in casting's terms ([TvTrack]): forced where it
- *  says so in its role or its name. */
+ *  says so in its role or its name ([saysForced]: "Forced", "foreign parts
+ *  only"). */
 internal fun MediaTrack.toTvTrack(): TvTrack = TvTrack(
     id = id,
     type = when (type) {
@@ -165,7 +167,7 @@ internal fun MediaTrack.toTvTrack(): TvTrack = TvTrack(
     },
     language = language,
     name = name,
-    forced = roles.orEmpty().contains(MediaTrack.ROLE_FORCED_SUBTITLE) || name.orEmpty().contains("forced", ignoreCase = true),
+    forced = roles.orEmpty().contains(MediaTrack.ROLE_FORCED_SUBTITLE) || saysForced(name),
     sdh = isSdhSubtitle(name),
 )
 

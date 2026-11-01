@@ -76,10 +76,11 @@ internal fun applySubtitleLook(view: SubtitleView, context: Context, ownCues: Bo
  * a line, two speakers) stack and never draw over each other, the newer above
  * as Media3 stacks them. A file's places, box and sizes go; of its styles only
  * italics and ruby stay ([keptStyle]). A picture subtitle (PGS, VobSub) keeps
- * its own place: a picture cannot be re-flowed.
+ * its own place: a picture cannot be re-flowed. It keeps its own shape too
+ * ([inItsShape]).
  */
 internal fun inTheLook(cues: List<Cue>): List<Cue> {
-    val pictures = cues.filter { it.bitmap != null }
+    val pictures = cues.filter { it.bitmap != null }.map(::inItsShape)
     val texts = cues.filter { it.bitmap == null && !it.text.isNullOrBlank() }
     if (texts.isEmpty()) return pictures
     val text = SpannableStringBuilder()
@@ -99,6 +100,36 @@ internal fun inTheLook(cues: List<Cue>): List<Cue> {
 
 /** One cue as the look draws it ([inTheLook]). */
 internal fun inTheLook(cue: Cue): Cue = inTheLook(listOf(cue)).singleOrNull() ?: cue
+
+/** How far from 16:9 a picture subtitle's plane may be and still be in an HD
+ *  picture's shape. */
+private const val HD_PLANE_TOLERANCE = 0.02f
+
+/**
+ * A picture subtitle (PGS) in its own shape. Media3 draws a picture over a
+ * share of the picture's width and a share of its height, the shares of the
+ * plane it was made on - stretched wherever the picture played is of
+ * another shape than that plane: a film cropped to 2.39:1 that kept its
+ * Blu-ray's subtitles, made on a 16:9 plane, gets them squashed. A plane in
+ * an HD picture's shape (16:9, square pixels) keeps the picture's own shape
+ * instead: as wide as Media3 draws it, as high as that makes it, and one in
+ * the lower half of its plane hangs from its bottom edge there, so the frame
+ * never cuts it off. Where the picture is of the plane's shape this is
+ * exactly Media3's drawing. A plane of another shape (a DVD's or a
+ * broadcast's, whose pixels are not square) is drawn as Media3 draws it.
+ */
+internal fun inItsShape(cue: Cue): Cue {
+    val bitmap = cue.bitmap ?: return cue
+    if (cue.size <= 0f || cue.bitmapHeight <= 0f || bitmap.width <= 0 || bitmap.height <= 0) return cue
+    if (cue.lineType != Cue.LINE_TYPE_FRACTION || cue.lineAnchor != Cue.ANCHOR_TYPE_START || cue.line == Cue.DIMEN_UNSET) return cue
+    val plane = (bitmap.width / cue.size) / (bitmap.height / cue.bitmapHeight)
+    if (kotlin.math.abs(plane - 16f / 9f) > 16f / 9f * HD_PLANE_TOLERANCE) return cue
+    val shaped = cue.buildUpon().setBitmapHeight(Cue.DIMEN_UNSET)
+    if (cue.line + cue.bitmapHeight / 2f > 0.5f) {
+        shaped.setLine(cue.line + cue.bitmapHeight, Cue.LINE_TYPE_FRACTION).setLineAnchor(Cue.ANCHOR_TYPE_END)
+    }
+    return shaped.build()
+}
 
 /** How high a file placed a cue, from 0 (the top) to 1 (the bottom): what
  *  orders cues shown at once. One with no line is at the bottom; Media3

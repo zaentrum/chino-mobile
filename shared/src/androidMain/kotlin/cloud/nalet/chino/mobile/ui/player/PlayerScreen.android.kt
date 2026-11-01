@@ -821,7 +821,10 @@ private const val SUBTITLES_OFF = ""
  *  parsed from them. */
 private val IMAGE_SUBTITLE_MIMES = setOf(MimeTypes.APPLICATION_PGS, MimeTypes.APPLICATION_VOBSUB, MimeTypes.APPLICATION_DVBSUBS)
 
-private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
+/** The player's text tracks as the menu and the subtitle rule read them:
+ *  forced where the track's flag or its label says so ([saysForced]), a
+ *  picture one (PGS) as such. */
+internal fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
     tracks.groups
         .filter { it.type == C.TRACK_TYPE_TEXT }
         .flatMap { g ->
@@ -833,8 +836,7 @@ private fun collectSubtitleTracks(tracks: Tracks): List<SubtitleTrack> =
                     language = fmt.language,
                     title = fmt.label,
                     key = fmt.id ?: "${fmt.language.orEmpty()}:${fmt.label.orEmpty()}",
-                    forced = (fmt.selectionFlags and C.SELECTION_FLAG_FORCED) != 0 ||
-                        fmt.label.orEmpty().contains("forced", ignoreCase = true),
+                    forced = (fmt.selectionFlags and C.SELECTION_FLAG_FORCED) != 0 || saysForced(fmt.label),
                     image = fmt.sampleMimeType in IMAGE_SUBTITLE_MIMES ||
                         (fmt.sampleMimeType == MimeTypes.APPLICATION_MEDIA3_CUES && fmt.codecs in IMAGE_SUBTITLE_MIMES),
                     sdh = isSdhSubtitle(fmt.label) || (fmt.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND) != 0,
@@ -1213,9 +1215,10 @@ private fun PlaybackSurface(
         // onTracksChanged sees them all in C.TRACK_TYPE_TEXT and the
         // captions menu lists every option.
         val sideSubs = state.sidecarSubtitles.map { sub ->
-            // Format drives MIME so Media3 picks the right decoder: bitmap
-            // subs (.sup) route raw bytes into PgsDecoder etc, text subs flow
-            // through the legacy VTT/SubRip path. Mirrors chino-androidtv.
+            // Format drives MIME so Media3 picks the right decoder: a PGS
+            // sidecar (.sup) goes to SupParser (SupSubtitles.kt), which reads
+            // the file's display sets, text subs flow through the legacy
+            // VTT/SubRip path. Mirrors chino-androidtv.
             val mime = when (sub.format?.lowercase()) {
                 "pgs" -> MimeTypes.APPLICATION_PGS
                 "vobsub" -> MimeTypes.APPLICATION_VOBSUB
@@ -1251,7 +1254,11 @@ private fun PlaybackSurface(
             }
         }
         // A download plays from the phone alone; a stream from the server.
-        val hlsFactory = HlsMediaSource.Factory(state.local?.mediaSources ?: httpFactory).setLoadErrorHandlingPolicy(retryPolicy)
+        // What the master lists of subtitles is parsed as it loads, by the
+        // parsers the sidecars are decoded with (SubtitleParsers).
+        val hlsFactory = HlsMediaSource.Factory(state.local?.mediaSources ?: httpFactory)
+            .setLoadErrorHandlingPolicy(retryPolicy)
+            .setSubtitleParserFactory(SubtitleParsers())
         // The 5.1 companions next to their stereo twins, in one group:
         // Media3 is told each rendition's codec, /play/info's, so it starts
         // from the master alone instead of loading every rendition first
@@ -1299,38 +1306,9 @@ private fun PlaybackSurface(
                 *sideSources.toTypedArray(),
             )
         }
-        // Custom RenderersFactory that enables legacy subtitle decoding
-        // on every TextRenderer it creates. Media3 1.5 disabled this
-        // path by default — but SingleSampleMediaSource.Factory has no
-        // SubtitleParser.Factory setter in 1.5.1, so the side-loaded
-        // VTT samples can't be parsed during extraction either. The
-        // legacy decoder path is the only working option for raw text/
-        // vtt sidecars in this Media3 version.
-        val renderersFactory = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
-            init {
-                // Fall back to the next decoder (e.g. the software
-                // c2.android.avc.decoder) when the preferred hardware decoder
-                // fails to initialize. Some device decoders advertise support
-                // for H.264 High@4.0 1080p (format_supported=YES) yet throw on
-                // MediaCodec init -> ERROR_CODE_DECODER_INIT_FAILED. Fallback
-                // keeps playback alive on those devices (seen on SM-T500).
-                setEnableDecoderFallback(true)
-            }
-            override fun buildTextRenderers(
-                ctx: android.content.Context,
-                output: androidx.media3.exoplayer.text.TextOutput,
-                outputLooper: android.os.Looper,
-                extensionRendererMode: Int,
-                out: ArrayList<androidx.media3.exoplayer.Renderer>,
-            ) {
-                val before = out.size
-                super.buildTextRenderers(ctx, output, outputLooper, extensionRendererMode, out)
-                for (i in before until out.size) {
-                    (out[i] as? androidx.media3.exoplayer.text.TextRenderer)
-                        ?.experimentalSetLegacyDecodingEnabled(true)
-                }
-            }
-        }
+        // Decoder fallback, and a text renderer that decodes the side-loaded
+        // subtitles itself (PlayerRenderersFactory).
+        val renderersFactory = PlayerRenderersFactory(context)
         // On a quality switch `pendingResumeMs` holds the live position so
         // the rebuilt player resumes there; on first mount it's -1 and we
         // fall back to the entry resume position.
