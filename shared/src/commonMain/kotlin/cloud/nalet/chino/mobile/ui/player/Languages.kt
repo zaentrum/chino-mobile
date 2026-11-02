@@ -345,13 +345,15 @@ const val SDH_SUBTITLE_KIND = "for deaf and hard of hearing"
 
 // What a track's own title may say of a forced subtitle: "forced" in any
 // form ("English (Forced)", "EnglishForced", "Forced Narrative", "forced
-// subs") but a negated one ("Non-Forced", "not forced", "no forced",
-// "unforced") or "reinforced"; "foreign parts only", "foreign-language parts",
-// "foreign only" - not where the foreign parts come with the rest ("incl.
-// foreign parts", "including foreign parts", "with foreign parts"). The same
-// words in chino-mobile and chino-androidtv.
+// subs") but a negated one ("Non-Forced", "Non_Forced", "not forced", "no
+// forced", "unforced", "Forced: No", "forced=no"), "enforced" or
+// "reinforced"; "foreign parts only", "foreign-language parts", "foreign
+// only" - not where the foreign parts come with the rest ("incl. foreign
+// parts", "including foreign parts", "with foreign parts"). The same words in
+// chino-mobile and chino-androidtv.
 private val FORCED_WORDS = Regex(
-    """(?<!\bnon)(?<!\bnon[ -])(?<!\bnot[ -])(?<!\bno )(?<!\bun)(?<!rein)forced(?:[ _-]?(?:narrative|subtitles?|subs))?""" +
+    """(?<!\bnon)(?<!\bnon[ _-])(?<!\bnot[ _-])(?<!\bno[ _-])(?<!\bun)(?<!en)(?<!rein)""" +
+        """forced(?!\s*[:=]\s*(?:no|false)\b)(?:[ _-]?(?:narrative|subtitles?|subs))?""" +
         """|(?<![A-Za-z])(?<!\bincl\. )(?<!\bincl )(?<!\binc\. )(?<!\bincluding )(?<!\bwith )(?<!\bplus )""" +
         """foreign(?:(?:[ -]language)? parts(?: only)?| only)(?![A-Za-z])""",
     RegexOption.IGNORE_CASE,

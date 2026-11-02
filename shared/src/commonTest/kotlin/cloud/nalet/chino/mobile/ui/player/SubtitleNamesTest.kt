@@ -130,11 +130,12 @@ class SubtitleNamesTest {
         val forced = listOf(
             "English (Forced)", "Forced", "EnglishForced", "ForcedNarrative", "Forced Narrative", "English Forced Narrative",
             "forced subs", "English (foreign parts only)", "Foreign only", "English (foreign only)", "Foreign-language parts",
-            "English · foreign-language parts only",
+            "English · foreign-language parts only", "Forced: Yes",
         )
         val notForced = listOf(
             "English", "Reinforced", "English (Non-Forced)", "English (not forced)", "Unforced", "English (no forced)",
             "English (incl. foreign parts)", "English (including foreign parts)", "English (with foreign parts)", "English (Foreign)",
+            "Enforced", "English Enforced", "Non_Forced", "Not_Forced", "Forced: No", "forced=no", "Forced = false",
         )
         for (label in forced) assertEquals(true, saysForced(label), label)
         for (label in notForced) assertEquals(false, saysForced(label), label)

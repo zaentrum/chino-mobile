@@ -1,11 +1,16 @@
 package cloud.nalet.chino.mobile.ui.player
 
 import android.net.Uri
+import androidx.media3.common.C
 import androidx.media3.datasource.ByteArrayDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSourceUtil
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.SubtitleParser
 import org.junit.Rule
@@ -25,6 +30,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /**
  * A PGS sidecar on disk (SupFiles.kt): Media3 is handed where the file is,
@@ -154,7 +163,8 @@ class SupFilesTest {
         val bytes = threeLines().sup()
         val upstream = Upstream(bytes)
         val dir = folder.newFolder("cache")
-        val session = SupSidecarCache(dir).session()
+        val cache = SupSidecarCache(dir)
+        val session = cache.session()
         val uri = Uri.parse("https://example.invalid/subs/1.vtt?token=secret")
         val factory = SupSidecarDataSource.Factory(upstream, session)
         val ref = readAll(factory.createDataSource(), uri)
@@ -166,7 +176,7 @@ class SupFilesTest {
         assertFalse(fetched.name.contains("secret"))
         // Again, for the same player or the next: from the cache.
         readAll(factory.createDataSource(), uri)
-        readAll(SupSidecarDataSource.Factory(upstream, SupSidecarCache(dir).session()).createDataSource(), uri)
+        readAll(SupSidecarDataSource.Factory(upstream, cache.session()).createDataSource(), uri)
         assertEquals(1, upstream.opened)
         assertTrue(ref.size < 1024)
     }
@@ -222,13 +232,161 @@ class SupFilesTest {
     }
 
     @Test
-    fun whatAnEarlierRunLeftGoesButItsNewestTwoFilesADownloadItLeftUnfinishedToo() {
+    fun whatAnEarlierRunLeftGoesItsFilesAndADownloadItLeftUnfinished() {
         val dir = folder.newFolder("cache")
+        // Their names come from addresses with that run's stream tokens on them.
         val old = (1..3).map { i -> File(dir, "old$i.sup").apply { writeBytes(byteArrayOf(1)); setLastModified(1_000_000L * i) } }
         val part = File(dir, "x.sup.1234.part").apply { writeBytes(byteArrayOf(1)) }
         val cache = SupSidecarCache(dir)
         readAll(SupSidecarDataSource.Factory(Upstream(threeLines().sup()), cache.session()).createDataSource(), Uri.parse("https://example.invalid/subs/9.vtt"))
-        assertEquals(listOf(false, true, true), old.map { it.isFile })
+        assertEquals(listOf(false, false, false), old.map { it.isFile })
         assertFalse(part.exists())
+        assertEquals(1, dir.list()!!.size)
+    }
+
+    @Test
+    fun aSidecarThereIsNoRoomForIsNotKeptAndNotTriedAgain() {
+        val bytes = threeLines().sup()
+        val dir = folder.newFolder("cache")
+        val upstream = Upstream(bytes)
+        // Less room than the sidecar and the margin a download leaves.
+        val cache = SupSidecarCache(dir, freeSpace = { bytes.size + SupSidecarCache.ROOM_LEFT - 1 })
+        val error = try {
+            readAll(SupSidecarDataSource.Factory(upstream, cache.session()).createDataSource(), Uri.parse("https://example.invalid/subs/4.vtt"))
+            null
+        } catch (e: IOException) {
+            e
+        }
+        assertTrue(error is SupNotKeptException, "$error")
+        assertEquals(1, upstream.opened)
+        assertEquals(emptyList<String>(), dir.list().orEmpty().toList())
+        // Final for the sidecar's load error rules (Media3's own): never retried from its first byte.
+        assertEquals(C.TIME_UNSET, DefaultLoadErrorHandlingPolicy().getRetryDelayMsFor(loadError(error!!)))
+    }
+
+    @Test
+    fun aCacheDirThatCannotBeMadeKeepsNothingAsksTheServerNothingAndIsNotTriedAgain() {
+        val blocked = folder.newFile("not-a-dir")
+        val upstream = Upstream(threeLines().sup())
+        val cache = SupSidecarCache(File(blocked, "pgs-sidecars"))
+        val error = try {
+            readAll(SupSidecarDataSource.Factory(upstream, cache.session()).createDataSource(), Uri.parse("https://example.invalid/subs/5.vtt"))
+            null
+        } catch (e: IOException) {
+            e
+        }
+        assertTrue(error is SupNotKeptException, "$error")
+        assertEquals(0, upstream.opened)
+        assertEquals(C.TIME_UNSET, DefaultLoadErrorHandlingPolicy().getRetryDelayMsFor(loadError(error!!)))
+    }
+
+    private fun loadError(error: IOException) = LoadErrorHandlingPolicy.LoadErrorInfo(
+        LoadEventInfo(0, DataSpec(Uri.EMPTY), 0),
+        MediaLoadData(C.DATA_TYPE_MEDIA),
+        error,
+        1,
+    )
+
+    /** Hands out [bytes] 1 KiB a read; the first read says [entered] and waits for [go]. */
+    private class Gated(private val bytes: ByteArray) : DataSource.Factory {
+        val entered = CountDownLatch(1)
+        val go = CountDownLatch(1)
+
+        override fun createDataSource(): DataSource = object : DataSource {
+            private val inner = ByteArrayDataSource(bytes)
+            private var reads = 0
+
+            override fun addTransferListener(transferListener: TransferListener) = Unit
+
+            override fun open(dataSpec: DataSpec): Long {
+                inner.open(dataSpec)
+                return bytes.size.toLong()
+            }
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (reads++ == 0) {
+                    entered.countDown()
+                    go.await(30, TimeUnit.SECONDS)
+                }
+                return inner.read(buffer, offset, minOf(length, 1024))
+            }
+
+            override fun getUri(): Uri? = inner.uri
+
+            override fun close() = inner.close()
+        }
+    }
+
+    @Test
+    fun aPlayerReleasedWhileItsFetchWaitsNeverTakesTheFileFromOneThatHoldsIt() {
+        val dir = folder.newFolder("cache")
+        val cache = SupSidecarCache(dir)
+        val bytes = threeLines().sup()
+        val uri = Uri.parse("https://example.invalid/subs/f.sup?stream=t")
+        val file = File(dir, SupSidecarCache.nameOf(uri))
+        val gate = Gated(bytes)
+        // The player that plays on, and one released while its load waits for the same file.
+        val live = cache.session()
+        val old = cache.session()
+        val liveLoad = thread { readAll(SupSidecarDataSource.Factory(gate, live).createDataSource(), uri) }
+        assertTrue(gate.entered.await(10, TimeUnit.SECONDS))
+        var oldError: Throwable? = null
+        val oldLoad = thread {
+            try {
+                readAll(SupSidecarDataSource.Factory(Upstream(bytes), old).createDataSource(), uri)
+            } catch (e: IOException) {
+                oldError = e
+            }
+        }
+        val deadline = System.currentTimeMillis() + 10_000
+        while (oldLoad.state != Thread.State.BLOCKED && System.currentTimeMillis() < deadline) Thread.sleep(5)
+        old.release()
+        gate.go.countDown()
+        liveLoad.join(10_000)
+        oldLoad.join(10_000)
+        assertTrue(oldError is java.io.InterruptedIOException, "$oldError")
+        val ref = SupFileRef.of(file)
+        val subtitle = SupParser().parseToLegacySubtitle(ref, 0, ref.size)
+        assertEquals(1, subtitle.getCues(1_500_000).size)
+        // Two other players come and go: the live one's file stays.
+        repeat(2) { i ->
+            val other = cache.session()
+            readAll(SupSidecarDataSource.Factory(Upstream(bytes), other).createDataSource(), Uri.parse("https://example.invalid/subs/other$i.sup"))
+            other.release()
+        }
+        assertTrue(file.isFile)
+        assertEquals(1, subtitle.getCues(4_500_000).size)
+        live.release()
+        // Let go of last: one of the last two, kept.
+        assertTrue(file.isFile)
+    }
+
+    @Test
+    fun aSidecarsIndexIsReadAsItsDownloadEndsTheDecoderOnlyPicksItUp() {
+        val bytes = threeLines().sup()
+        val dir = folder.newFolder("cache")
+        val uri = Uri.parse("https://example.invalid/subs/6.vtt")
+        val ref = readAll(SupSidecarDataSource.Factory(Upstream(bytes), SupSidecarCache(dir).session()).createDataSource(), uri)
+        val file = SupFileRef.fileOf(ref, 0, ref.size)!!
+        assertEquals(5, SupIndexCache.setsOf(file) { fail("the index was read again"); emptyList() }.size)
+    }
+
+    @Test
+    fun aSidecarFileDeletedOrCutUnderItsSubtitleShowsNothingAndNothingThrows() {
+        val bytes = threeLines().sup()
+        val deleted = folder.newFile("deleted.sup").apply { writeBytes(bytes) }
+        val ref = SupFileRef.of(deleted)
+        val subtitle = SupParser().parseToLegacySubtitle(ref, 0, ref.size)
+        assertEquals(1, subtitle.getCues(1_500_000).size)
+        deleted.delete()
+        assertEquals(0, subtitle.getCues(4_500_000).size)
+        // Decoded again, after a seek: nothing, the file gone.
+        val again = SupParser().parseToLegacySubtitle(ref, 0, ref.size)
+        assertEquals(0, again.getCues(4_500_000).size)
+        val cut = folder.newFile("cut.sup").apply { writeBytes(bytes) }
+        val cutRef = SupFileRef.of(cut)
+        val cutSubtitle = SupParser().parseToLegacySubtitle(cutRef, 0, cutRef.size)
+        cut.writeBytes(bytes.copyOf(bytes.size / 2))
+        assertEquals(0, cutSubtitle.getCues(6_600_000).size)
     }
 }

@@ -16,7 +16,10 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.CaptioningManager
 import android.widget.FrameLayout
+import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.text.LanguageFeatureSpan
@@ -236,9 +239,11 @@ internal class LookSubtitles(playerView: PlayerView) : Player.Listener {
             ?: own?.let { applySubtitleLook(it, playerView.context) }
     }
 
-    // The cues on screen, or the last ones while none are: what the rise
-    // above the controls goes by. The controls' top edge, once known.
+    // The cues on screen, or the last ones while none are - of the subtitle
+    // on now: what the rise above the controls goes by. The controls' top
+    // edge, once known.
     private var shown: List<Cue> = emptyList()
+    private var subtitleOn: Format? = null
     private var controlsTop: Float? = null
 
     /** Hears the rise [clearance] asks for again as what is on screen
@@ -257,7 +262,11 @@ internal class LookSubtitles(playerView: PlayerView) : Player.Listener {
         frame.getLocationInWindow(at)
         val textBottom = at[1] + frame.height * (1f - SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION)
         val gap = 8f * frame.resources.displayMetrics.density
-        return subtitleClearance(shown, frame.width, frame.height, at[1].toFloat(), textBottom, controlsTopPx, gap)
+        // Never so far that a picture at the top of the frame - a sign - leaves it.
+        return minOf(
+            subtitleClearance(shown, frame.width, frame.height, at[1].toFloat(), textBottom, controlsTopPx, gap),
+            subtitleRiseRoom(shown, frame.width, frame.height),
+        )
     }
 
     /** The line [px] higher than the look puts it. */
@@ -270,12 +279,23 @@ internal class LookSubtitles(playerView: PlayerView) : Player.Listener {
         if (player === next) return
         player?.removeListener(this)
         player = next
+        subtitleOn = next?.let { selectedSubtitle(it.currentTracks) }
         show(v, next?.currentCues?.cues?.let(::inTheLook))
         next?.addListener(this)
     }
 
     override fun onCues(cueGroup: CueGroup) {
         view?.let { show(it, inTheLook(cueGroup.cues)) }
+    }
+
+    override fun onTracksChanged(tracks: Tracks) {
+        val subtitle = selectedSubtitle(tracks)
+        if (subtitle == subtitleOn) return
+        // Another subtitle: the rise no longer goes by the last one's cues.
+        subtitleOn = subtitle
+        shown = emptyList()
+        val top = controlsTop ?: return
+        onClearance?.invoke(clearance(top))
     }
 
     private fun show(v: SubtitleView, cues: List<Cue>?) {
@@ -288,11 +308,11 @@ internal class LookSubtitles(playerView: PlayerView) : Player.Listener {
 }
 
 /**
- * Where a picture cue's bottom edge is drawn, in pixels from the top of a box
- * [width] x [height], as Media3's SubtitlePainter places a bitmap; null for a
- * text cue.
+ * Where a picture cue is drawn - its top and bottom edges, in pixels from the
+ * top of a box [width] x [height] - as Media3's SubtitlePainter places a
+ * bitmap; null for a text cue.
  */
-internal fun pictureBottom(cue: Cue, width: Int, height: Int): Float? {
+internal fun pictureEdges(cue: Cue, width: Int, height: Int): Pair<Float, Float>? {
     val bitmap = cue.bitmap ?: return null
     if (width <= 0 || height <= 0 || bitmap.width <= 0 || bitmap.height <= 0) return null
     if (cue.line == Cue.DIMEN_UNSET || cue.lineType != Cue.LINE_TYPE_FRACTION || cue.size == Cue.DIMEN_UNSET) return null
@@ -302,24 +322,53 @@ internal fun pictureBottom(cue: Cue, width: Int, height: Int): Float? {
         width * cue.size * bitmap.height / bitmap.width
     }
     val anchor = height * cue.line
-    return when (cue.lineAnchor) {
-        Cue.ANCHOR_TYPE_END -> anchor
-        Cue.ANCHOR_TYPE_MIDDLE -> anchor + drawnHeight / 2f
-        else -> anchor + drawnHeight
+    val top = when (cue.lineAnchor) {
+        Cue.ANCHOR_TYPE_END -> anchor - drawnHeight
+        Cue.ANCHOR_TYPE_MIDDLE -> anchor - drawnHeight / 2f
+        else -> anchor
     }
+    return top to top + drawnHeight
 }
+
+/** Where a picture cue's bottom edge is drawn ([pictureEdges]); null for a
+ *  text cue. */
+internal fun pictureBottom(cue: Cue, width: Int, height: Int): Float? = pictureEdges(cue, width, height)?.second
 
 /**
  * How far the subtitle must rise, in pixels, so that what it shows - [shown],
  * the cues on screen or the last ones - ends [gap] above [edge] (window
- * pixels): the controls' top. A line of text ends at [textBottom] (window
- * pixels), a picture at its own bottom edge in the box [width] x [height]
- * whose top is at [boxTop] ([pictureBottom]). Nothing shown yet: as a line
- * of text would.
+ * pixels): the controls' top. A line of text ends at [textBottom]
+ * (window pixels), a picture at its own bottom edge in the box [width] x
+ * [height] whose top is at [boxTop] ([pictureBottom]). Nothing shown yet: as a
+ * line of text would.
  */
 internal fun subtitleClearance(shown: List<Cue>, width: Int, height: Int, boxTop: Float, textBottom: Float, edge: Float, gap: Float): Float {
     var lowest = if (shown.isEmpty() || shown.any { it.bitmap == null }) textBottom else Float.NEGATIVE_INFINITY
     for (cue in shown) pictureBottom(cue, width, height)?.let { lowest = maxOf(lowest, boxTop + it) }
     if (lowest == Float.NEGATIVE_INFINITY) return 0f
     return (lowest - (edge - gap)).coerceAtLeast(0f)
+}
+
+/**
+ * How far the subtitle may rise and keep whole a picture in the upper half of
+ * its box [width] x [height] - a sign at the top of the frame, shown with a
+ * line at the bottom: that picture's top edge, in pixels from the box's top.
+ * No bound where none shows.
+ */
+internal fun subtitleRiseRoom(shown: List<Cue>, width: Int, height: Int): Float {
+    var room = Float.POSITIVE_INFINITY
+    for (cue in shown) {
+        val (top, bottom) = pictureEdges(cue, width, height) ?: continue
+        if (top + bottom < height) room = minOf(room, top.coerceAtLeast(0f))
+    }
+    return room
+}
+
+/** The subtitle [tracks] play: the format of the selected text track, or null. */
+internal fun selectedSubtitle(tracks: Tracks): Format? {
+    for (group in tracks.groups) {
+        if (group.type != C.TRACK_TYPE_TEXT || !group.isSelected) continue
+        for (i in 0 until group.length) if (group.isTrackSelected(i)) return group.getTrackFormat(i)
+    }
+    return null
 }

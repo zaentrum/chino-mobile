@@ -189,6 +189,31 @@ class SubtitleLookTest {
     }
 
     @Test
+    fun aSignAtTheTopOfTheFrameBoundsTheRiseSoItNeverLeavesTheFrame() {
+        val sign = inTheLook(pgs(600, 50, 660, 60))
+        val line = inTheLook(pgs(400, 40, 760, 960))
+        // Its top edge, 60 px from the top of a 1920 x 1080 picture.
+        assertEquals(60f, subtitleRiseRoom(listOf(sign, line), 1920, 1080), 0.01f)
+        // A line alone, or text: no bound.
+        assertEquals(Float.POSITIVE_INFINITY, subtitleRiseRoom(listOf(line), 1920, 1080))
+        assertEquals(Float.POSITIVE_INFINITY, subtitleRiseRoom(listOf(Cue.Builder().setText("Hello").build()), 1920, 1080))
+    }
+
+    @Test
+    fun theSubtitleAPlayerPlaysIsItsSelectedTextTrack() {
+        val pgs = androidx.media3.common.Format.Builder().setId("pgs").setSampleMimeType(androidx.media3.common.MimeTypes.APPLICATION_PGS).build()
+        val vtt = androidx.media3.common.Format.Builder().setId("vtt").setSampleMimeType(androidx.media3.common.MimeTypes.TEXT_VTT).build()
+        fun tracks(selected: Int?) = androidx.media3.common.Tracks(
+            listOf(pgs, vtt).mapIndexed { i, f ->
+                androidx.media3.common.Tracks.Group(androidx.media3.common.TrackGroup(f), false, intArrayOf(androidx.media3.common.C.FORMAT_HANDLED), booleanArrayOf(i == selected))
+            },
+        )
+        assertEquals("pgs", selectedSubtitle(tracks(0))?.id)
+        assertEquals("vtt", selectedSubtitle(tracks(1))?.id)
+        assertEquals(null, selectedSubtitle(tracks(null)))
+    }
+
+    @Test
     fun aPictureOnAPlaneOfAnotherShapeIsDrawnAsMedia3DrawsIt() {
         // A DVD's or a broadcast's plane (720x576), whose pixels are not square.
         val sd = pgs(300, 40, 210, 500, planeWidth = 720, planeHeight = 576)

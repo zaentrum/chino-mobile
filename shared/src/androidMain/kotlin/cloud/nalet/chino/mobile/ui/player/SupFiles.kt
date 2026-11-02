@@ -3,10 +3,12 @@ package cloud.nalet.chino.mobile.ui.player
 import android.content.Context
 import android.net.Uri
 import androidx.media3.common.C
+import androidx.media3.common.util.Log
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -21,11 +23,11 @@ import java.util.UUID
  * tens of megabytes for a film's dialogue, would be on the heap twice and
  * more. SupSidecarDataSource hands Media3 instead a few bytes that say where
  * the file is ([SupFileRef]), the file fetched into the app's cache dir
- * first ([SupSidecarCache]); SupParser reads the file from there (an index
- * of its segments, an object's bytes as its set is drawn, SupSubtitles.kt).
- * A file kept is the player's for as long as it lives; the last ones it let
- * go stay for the next player (a quality switch, the same title again),
- * the rest are deleted.
+ * first ([SupSidecarCache]) and its index read there too, on the loading
+ * thread; SupParser reads the file from there (the index, an object's bytes
+ * as its set is drawn, SupSubtitles.kt). A file kept is the player's for as
+ * long as it lives; the last ones it let go stay for the next player (a
+ * quality switch, the same title again), the rest are deleted.
  */
 
 /**
@@ -54,17 +56,40 @@ internal object SupFileRef {
 }
 
 /**
+ * A .sup sidecar the cache could not keep: no room for it, or a cache dir
+ * that can't be written. A [FileNotFoundException], which Media3's load
+ * error policies (DefaultLoadErrorHandlingPolicy and those built on it) take
+ * as final: the subtitle ends there, never retried from its first byte, and
+ * the playback goes on (Media3 ends a side-loaded subtitle's stream on a
+ * load error).
+ */
+internal class SupNotKeptException(message: String, cause: Throwable? = null) : FileNotFoundException(message) {
+    init {
+        cause?.let(::initCause)
+    }
+}
+
+/**
  * The .sup sidecars the players fetched, in [dir]: each file kept while a
  * player that fetched it lives ([Session]), and of those no player holds the
  * last [keep] - for the next player, a quality switch's - the others
- * deleted, as are files an earlier run of the app left beyond those.
+ * deleted. Files an earlier run of the app left are deleted all: their names
+ * come from addresses with that run's stream tokens on them, never asked
+ * for again. [freeSpace] is the room left where [dir] is.
  */
-internal class SupSidecarCache(private val dir: File, private val keep: Int = KEEP) {
+internal class SupSidecarCache(
+    private val dir: File,
+    private val keep: Int = KEEP,
+    private val freeSpace: (File) -> Long = { it.usableSpace },
+) {
+    // How many players hold each file; a file with none is loose.
     private val held = HashMap<File, Int>()
 
     // Files no player holds, the oldest first.
     private val loose = LinkedHashSet<File>()
-    private val fetching = HashMap<File, Any>()
+
+    // A file's download, one at a time: a few locks, shared by name.
+    private val fetching = Array(LOCKS) { Any() }
     private var tidied = false
 
     /** A player's hold on the files it fetches: let go with [release]. */
@@ -75,21 +100,22 @@ internal class SupSidecarCache(private val dir: File, private val keep: Int = KE
         private var released = false
 
         /** The file of [dataSpec]'s .sup sidecar, fetched through [upstream]
-         *  where the cache has none. Blocks while it downloads: a loading
-         *  thread's call. */
+         *  where the cache has none - held before it is looked for, so no
+         *  other player's letting go deletes it. Blocks while it downloads:
+         *  a loading thread's call. */
         fun fetch(dataSpec: DataSpec, upstream: DataSource): File {
             val file = File(dir, nameOf(dataSpec.uri))
-            synchronized(lockOf(file)) {
+            synchronized(fetching[(file.name.hashCode() and Int.MAX_VALUE) % LOCKS]) {
                 tidy()
-                if (!file.isFile) download(dataSpec, upstream, file)
-                synchronized(this@SupSidecarCache) {
-                    if (released) {
-                        letGo(file)
-                    } else if (files.add(file)) {
-                        held[file] = (held[file] ?: 0) + 1
-                        loose.remove(file)
-                    }
+                if (!hold(file)) throw InterruptedIOException("The player let go of its sidecars")
+                try {
+                    if (!file.isFile) download(dataSpec, upstream, file)
+                } catch (e: Throwable) {
+                    unhold(file)
+                    throw e
                 }
+                // Released while it downloaded: the file, on disk now, is loose.
+                synchronized(this@SupSidecarCache) { if (released && held[file] == null) letGo(file) }
             }
             return file
         }
@@ -105,9 +131,32 @@ internal class SupSidecarCache(private val dir: File, private val keep: Int = KE
             files.clear()
             trim()
         }
+
+        // This session's hold on [file]: false once it is released.
+        private fun hold(file: File): Boolean = synchronized(this@SupSidecarCache) {
+            if (released) return@synchronized false
+            if (files.add(file)) {
+                held[file] = (held[file] ?: 0) + 1
+                loose.remove(file)
+            }
+            true
+        }
+
+        // A hold given back: the fetch failed.
+        private fun unhold(file: File) = synchronized(this@SupSidecarCache) {
+            if (!files.remove(file)) return@synchronized
+            val count = (held[file] ?: 1) - 1
+            if (count > 0) {
+                held[file] = count
+            } else if (file.isFile) {
+                letGo(file)
+            } else {
+                held.remove(file)
+            }
+        }
     }
 
-    // Called holding the cache's lock.
+    // Called holding the cache's lock: nobody holds [file].
     private fun letGo(file: File) {
         held.remove(file)
         loose.remove(file)
@@ -115,7 +164,8 @@ internal class SupSidecarCache(private val dir: File, private val keep: Int = KE
         trim()
     }
 
-    // Called holding the cache's lock.
+    // Called holding the cache's lock. Only loose files go: a held one is
+    // never in [loose].
     private fun trim() {
         while (loose.size > keep) {
             val oldest = loose.first()
@@ -124,41 +174,48 @@ internal class SupSidecarCache(private val dir: File, private val keep: Int = KE
         }
     }
 
-    private fun lockOf(file: File): Any = synchronized(this) { fetching.getOrPut(file) { Any() } }
-
-    /** Once, before the first fetch: a download an earlier run left
-     *  unfinished goes, and of its files the newest [keep]. */
+    /** Once, before the first fetch: what an earlier run left goes. */
     private fun tidy() = synchronized(this) {
         if (tidied) return@synchronized
         tidied = true
-        val found = dir.listFiles().orEmpty()
-        found.filter { it.name.endsWith(PART) }.forEach { it.delete() }
-        found.filter { it.name.endsWith(SUP) && it !in held }
-            .sortedBy { it.lastModified() }
-            .forEach { loose.add(it) }
-        trim()
+        dir.listFiles().orEmpty()
+            .filter { (it.name.endsWith(PART) || it.name.endsWith(SUP)) && it !in held }
+            .forEach { it.delete() }
     }
 
     private fun download(dataSpec: DataSpec, upstream: DataSource, file: File) {
-        dir.mkdirs()
+        if (!dir.isDirectory && !dir.mkdirs()) throw SupNotKeptException("A .sup sidecar can't be kept: ${dir.name} can't be made")
         val part = File(dir, "${file.name}.${UUID.randomUUID()}$PART")
         try {
             val expected = upstream.open(dataSpec)
+            if (expected != C.LENGTH_UNSET.toLong() && freeSpace(dir) < expected + ROOM_LEFT) {
+                throw SupNotKeptException("No room for a .sup sidecar of $expected bytes in ${dir.name}")
+            }
             var written = 0L
-            FileOutputStream(part).use { out ->
+            val out = try {
+                FileOutputStream(part)
+            } catch (e: IOException) {
+                throw SupNotKeptException("A .sup sidecar can't be kept in ${dir.name}", e)
+            }
+            out.use {
                 val buffer = ByteArray(BUFFER)
                 while (true) {
                     if (Thread.interrupted()) throw InterruptedIOException("A .sup sidecar's download was cancelled")
                     val read = upstream.read(buffer, 0, buffer.size)
                     if (read == C.RESULT_END_OF_INPUT) break
-                    out.write(buffer, 0, read)
+                    try {
+                        it.write(buffer, 0, read)
+                    } catch (e: IOException) {
+                        // No room left, the storage gone: no retry would fare better.
+                        throw SupNotKeptException("A .sup sidecar can't be kept in ${dir.name}", e)
+                    }
                     written += read
                 }
             }
             if (expected != C.LENGTH_UNSET.toLong() && written != expected) {
                 throw IOException("A .sup sidecar ended after $written of its $expected bytes")
             }
-            if (!part.renameTo(file)) throw IOException("A .sup sidecar could not be kept in ${dir.name}")
+            if (!part.renameTo(file)) throw SupNotKeptException("A .sup sidecar could not be kept in ${dir.name}")
         } finally {
             try {
                 upstream.close()
@@ -172,9 +229,13 @@ internal class SupSidecarCache(private val dir: File, private val keep: Int = KE
         /** How many files no player holds are kept. */
         const val KEEP = 2
 
+        /** The room a download leaves where the cache is, at the least. */
+        const val ROOM_LEFT = 32L * 1024 * 1024
+
         private const val SUP = ".sup"
         private const val PART = ".part"
         private const val BUFFER = 64 * 1024
+        private const val LOCKS = 16
 
         @Volatile private var shared: SupSidecarCache? = null
 
@@ -197,8 +258,9 @@ internal class SupSidecarCache(private val dir: File, private val keep: Int = KE
  * A data source that hands Media3, for each .sup sidecar ([isSup]), the
  * reference to its file on disk ([SupFileRef]) rather than its bytes: fetched
  * through [upstream] into [files]' cache, or, where the address is a file
- * already ("file:"), that file where it is. Every other request goes to
- * [upstream] as it comes.
+ * already ("file:"), that file where it is - its index read here, on the
+ * loading thread, so the text renderer's decoder only picks it up. Every
+ * other request goes to [upstream] as it comes.
  */
 internal class SupSidecarDataSource(
     private val upstream: DataSource,
@@ -215,6 +277,12 @@ internal class SupSidecarDataSource(
         if (!isSup(dataSpec.uri)) return upstream.open(dataSpec)
         val local = dataSpec.uri.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf { it.isFile }
         val file = local ?: files.fetch(dataSpec, upstream)
+        try {
+            SupSource.OnDisk(file).displaySets()
+        } catch (e: IOException) {
+            // The decoder reads it then, or shows nothing.
+            Log.w(TAG, "A .sup sidecar's index can't be read yet", e)
+        }
         val ref = SupFileRef.of(file)
         body = ref
         readPosition = 0
@@ -252,5 +320,9 @@ internal class SupSidecarDataSource(
         private val isSup: (Uri) -> Boolean = { true },
     ) : DataSource.Factory {
         override fun createDataSource(): DataSource = SupSidecarDataSource(upstream.createDataSource(), files, isSup)
+    }
+
+    private companion object {
+        const val TAG = "SupSidecarDataSource"
     }
 }

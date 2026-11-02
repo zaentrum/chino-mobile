@@ -419,6 +419,39 @@ class SupSubtitlesTest {
     }
 
     @Test
+    fun anObjectsSegmentsPastItsDeclaredSizeAreLeftOutItsPictureDrawn() {
+        val segments = objectSegments(0, 400, 40, colour = 1)
+        // A damaged stream: hundreds of continuation segments after the object's last.
+        val junk = byteArrayOf(0, 0, 0, 0) + ByteArray(200) { 7 }
+        val bytes = Pgs().set(
+            1_000_000,
+            composition(0, STATE_EPOCH_START, Shown(0, 760, 900)),
+            PALETTE to palette(0, 0, white(1)),
+            *segments.map { OBJECT to it }.toTypedArray(),
+            *Array(400) { OBJECT to junk },
+        ).clears(2_000_000, number = 1).sup()
+        assertBox(parseAll(bytes).single().cues.single(), 400, 40, 760, 900)
+    }
+
+    @Test
+    fun theNextSetsPicturesAreMadeBeforeItShowsReadFromTheFileThen() {
+        val file = java.io.File.createTempFile("track", ".sup").apply {
+            deleteOnExit()
+            writeBytes(threeLines().sup())
+        }
+        val ref = SupFileRef.of(file)
+        val subtitle = SupParser().parseToLegacySubtitle(ref, 0, ref.size)
+        // The clear at 3 s shows: the line at 4 s is made ahead.
+        assertEquals(emptyList(), subtitle.getCues(3_500_000))
+        Thread.sleep(2_000)
+        // Gone from disk now: the line at 4 s was read before.
+        assertTrue(file.delete())
+        assertBox(subtitle.getCues(4_500_000).single(), 600, 40, 660, 950)
+        // The set after it, made ahead as 4 s showed, from a file already gone: nothing.
+        assertEquals(emptyList(), subtitle.getCues(7_000_000))
+    }
+
+    @Test
     fun thePicturesOfOneHalfOfThePlaneAreOnePictureEachInItsPlaceInIt() {
         // Two lines as two objects, 5 pixels apart, in the lower half; a
         // sign in the upper half.

@@ -20,6 +20,11 @@ import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.RejectedExecutionException
 
 /*
  * PGS subtitles (a Blu-ray's pictures) as the server keeps them: a .sup file,
@@ -47,16 +52,17 @@ import java.io.RandomAccessFile
  * A whole track is tens of megabytes. The player hands Media3 the file's
  * place on disk rather than its bytes (SupFiles.kt): SupParser reads the
  * file's segment headers into an index - each set's time, its compositions
- * and palettes, where its objects' bytes are - and reads an object's bytes
- * from the file only as its set is drawn. Bytes handed in place of a file
- * are read the same way, from a copy.
+ * and palettes, where its objects' bytes are; the loading thread reads it as
+ * the download ends - and reads an object's bytes from the file only as its
+ * set is drawn. Bytes handed in place of a file are read the same way, from
+ * a copy.
  *
  * Media3 reads a subtitle one of two ways, and both use it: SubtitleParsers
  * where a media source parses the subtitle as it loads it, SubtitleDecoders
  * where the text renderer decodes it - the player's way with its side-loaded
  * subtitles (legacy decoding). There the pictures are made one display set
- * at a time, as each is shown: a whole film's at once would not fit in
- * memory.
+ * at a time - a whole film's at once would not fit in memory - the next
+ * set's ahead of it, on a thread of their own, off the playback thread.
  */
 
 /** Whether [format] is PGS. */
@@ -230,7 +236,12 @@ private class ArrayReader(private val data: ByteArray, private val offset: Int, 
  *  pass over the file come from a few reads, an object's bytes from one. */
 private class FileReader(file: File) : SupReader() {
     private val file = RandomAccessFile(file, "r")
-    override val length: Long = this.file.length()
+    override val length: Long = try {
+        this.file.length()
+    } catch (e: Throwable) {
+        this.file.close()
+        throw e
+    }
     private val window = ByteArray(WINDOW)
     private var windowAt = 0L
     private var windowLength = 0
@@ -270,23 +281,28 @@ private class FileReader(file: File) : SupReader() {
     }
 }
 
-/** The index of the last .sup files read from disk: a seek has Media3 hand
- *  the text renderer the file again, and its index need not be read again. */
+/** The index of the last .sup files read from disk: read on the loading
+ *  thread as a sidecar's download ends (SupSidecarDataSource), so the text
+ *  renderer's decoder - which a player's release waits for - only picks it
+ *  up, and kept for a seek, after which Media3 hands the decoder the file
+ *  again. A file is read outside the lock: two at once never wait for each
+ *  other. */
 internal object SupIndexCache {
-    private const val KEEP = 2
+    private const val KEEP = 4
 
     private data class Key(val path: String, val length: Long, val modified: Long)
 
-    private val entries = LinkedHashMap<Key, List<SupDisplaySet>>(4, 0.75f, true)
+    private val entries = LinkedHashMap<Key, List<SupDisplaySet>>(8, 0.75f, true)
 
-    @Synchronized
     fun setsOf(file: File, read: () -> List<SupDisplaySet>): List<SupDisplaySet> {
         val key = Key(file.absolutePath, file.length(), file.lastModified())
-        entries[key]?.let { return it }
-        return read().also { sets ->
+        synchronized(this) { entries[key]?.let { return it } }
+        val sets = read()
+        synchronized(this) {
             entries[key] = sets
             while (entries.size > KEEP) entries.remove(entries.keys.first())
         }
+        return sets
     }
 }
 
@@ -455,16 +471,32 @@ internal class SupPictures(private val source: SupSource) {
     }
 }
 
+/** The one thread that makes the pictures of the set a PGS subtitle shows
+ *  next, before it shows: the objects' bytes read from disk and drawn off
+ *  the player's playback thread. */
+private object SupAhead {
+    val thread: ExecutorService = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "SupAhead").apply { isDaemon = true }
+    }
+}
+
 /**
  * A .sup file's display sets as a subtitle the text renderer reads: each set
- * an event at its start, its pictures made when it is shown - one set's at a
- * time, the last one kept, the objects' bytes read from [source] then.
+ * an event at its start, its pictures made as it is shown - one set's at a
+ * time, the last one kept, the objects' bytes read from [source] then. As a
+ * set shows, the next one's pictures are made ahead ([SupAhead]); where they
+ * are not ready when it shows they are made then.
  */
 private class SupSubtitle(source: SupSource, read: List<SupDisplaySet>) : Subtitle {
     // A file without a display set: one event that shows nothing.
     private val sets = read.ifEmpty { listOf(SupDisplaySet(0L, emptyList())) }
     private val startsUs = LongArray(sets.size) { sets[it].startUs }
     private val pictures = SupPictures(source)
+
+    // The ahead thread's own: a set's pictures made there, one at a time.
+    private val picturesAhead = SupPictures(source)
+    private var ahead: Future<List<Cue>>? = null
+    private var aheadIndex = -1
     private var shownIndex = -1
     private var shown: List<Cue> = emptyList()
 
@@ -482,10 +514,40 @@ private class SupSubtitle(source: SupSource, read: List<SupDisplaySet>) : Subtit
         val index = firstStartAfter(timeUs) - 1
         if (index < 0) return emptyList()
         if (index != shownIndex) {
-            shown = pictures.cuesOf(sets[index])
+            shown = madeAhead(index) ?: pictures.cuesOf(sets[index])
             shownIndex = index
+            makeAhead(index + 1)
         }
         return shown
+    }
+
+    /** Set [index]'s pictures, where they were made ahead and are ready. */
+    private fun madeAhead(index: Int): List<Cue>? {
+        val made = ahead?.takeIf { aheadIndex == index } ?: return null
+        ahead = null
+        if (!made.isDone) {
+            made.cancel(false)
+            return null
+        }
+        return try {
+            made.get()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Has set [index]'s pictures made ahead, where it has any. */
+    private fun makeAhead(index: Int) {
+        ahead?.cancel(false)
+        ahead = null
+        if (index >= sets.size || sets[index].pictures.isEmpty()) return
+        val set = sets[index]
+        aheadIndex = index
+        ahead = try {
+            SupAhead.thread.submit(Callable { picturesAhead.cuesOf(set) })
+        } catch (e: RejectedExecutionException) {
+            null
+        }
     }
 
     /** The index of the first set that starts after [timeUs]; the count when none does. */
@@ -559,6 +621,10 @@ internal const val MAX_PLANE_PIXELS = 3840 * 2160
 
 /** An end segment, bare. */
 private val END_SEGMENT = byteArrayOf(SEGMENT_END.toByte(), 0, 0)
+
+/** The most segments an object is read from: 16 MB of data, the most its
+ *  length can say, in segments of 64 KB. */
+private const val MAX_FRAGMENTS = 256
 
 private fun ByteArray.u8(at: Int): Int = this[at].toInt() and 0xFF
 
@@ -655,13 +721,21 @@ private class Palette(private val id: Int) {
     }
 }
 
-/** An object of an epoch: its size, and where its segments' payloads are. */
-private class ObjectBytes(val width: Int, val height: Int) {
+/** An object of an epoch: its size, the length of its data as its first
+ *  segment gives it, and where its segments' payloads are - no more of them
+ *  than that data fills, nor than [MAX_FRAGMENTS]: a damaged stream's
+ *  segments past them are left out. */
+private class ObjectBytes(val width: Int, val height: Int, private val dataLength: Int) {
     private var at = LongArray(1)
     private var length = IntArray(1)
     private var count = 0
+    private var data = 0L
 
     fun add(payload: Long, size: Int) {
+        // The data a segment brings: past the id, version and sequence flag,
+        // and in the first, the data's length and the object's size.
+        val brings = size - if (count == 0) 11 else 4
+        if (count > 0 && (count >= MAX_FRAGMENTS || data >= dataLength)) return
         if (count == at.size) {
             at = at.copyOf(count * 2)
             length = length.copyOf(count * 2)
@@ -669,6 +743,7 @@ private class ObjectBytes(val width: Int, val height: Int) {
         at[count] = payload
         length[count] = size
         count++
+        data += brings.coerceAtLeast(0)
     }
 
     fun positions(): LongArray = at.copyOf(count)
@@ -820,6 +895,8 @@ internal fun readDisplaySets(reader: SupReader): List<SupDisplaySet> {
                     objects[id] = ObjectBytes(
                         width = if (sized) reader.u16(payload + 7) else 0,
                         height = if (sized) reader.u16(payload + 9) else 0,
+                        // The data's length counts the size's 4 bytes.
+                        dataLength = if (sized) ((reader.u16(payload + 4) shl 8) or reader.u8(payload + 6)) - 4 else 0,
                     ).also { it.add(payload, segmentLength) }
                 } else {
                     objects[id]?.add(payload, segmentLength)
