@@ -2791,6 +2791,9 @@ internal fun Scrubber(
                                 val ms = (durationSafe * pct).toLong()
                                 previewMs = ms
                                 onScrubStart(ms)
+                                // The drag takes the press over: it seeks where
+                                // it began, as the press did for it.
+                                onScrubCommit(ms)
                             },
                             onDragEnd = { previewMs = null },
                             onDragCancel = { previewMs = null },
@@ -2811,10 +2814,14 @@ internal fun Scrubber(
                             onPress = {
                                 val pct0 = (it.x / trackWidthPx).coerceIn(0f, 1f)
                                 previewMs = (durationSafe * pct0).toLong()
-                                tryAwaitRelease()
+                                // Let go: a seek. Taken over - by a pinch of the
+                                // picture, by a drag along the bar - none.
+                                val released = tryAwaitRelease()
                                 previewMs = null
-                                val pct = (it.x / trackWidthPx).coerceIn(0f, 1f)
-                                onScrubCommit((durationSafe * pct).toLong())
+                                if (released) {
+                                    val pct = (it.x / trackWidthPx).coerceIn(0f, 1f)
+                                    onScrubCommit((durationSafe * pct).toLong())
+                                }
                             },
                         )
                     },

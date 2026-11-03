@@ -30,8 +30,8 @@ import kotlin.test.assertTrue
 /**
  * A pinch over the player (detectPinch, as PlayerScreen has it): two fingers
  * spread or closed are the picture's, and the controls under them never see
- * them move - a pinch started on the seek bar never seeks. One finger is no
- * pinch. And the fill choice, kept on the phone.
+ * them move (the player's own seek bar under a pinch: SeekBarGesturesTest).
+ * One finger is no pinch. And the fill choice, kept on the phone.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -95,18 +95,6 @@ class PictureZoomTest {
             pinch(Offset(centerX - far, centerY), Offset(centerX - near, centerY), Offset(centerX + far, centerY), Offset(centerX + near, centerY))
         }
         assertTrue(ended!! < 0.5f, "spread ${ended}")
-    }
-
-    @Test
-    fun aPinchOverTheSeekBarNeverSeeks() {
-        player()
-        compose.onNodeWithTag("player").performTouchInput {
-            val y = bottom - 30.dp.toPx()
-            pinch(Offset(centerX - width * 0.1f, y), Offset(centerX - width * 0.45f, y), Offset(centerX + width * 0.1f, y), Offset(centerX + width * 0.45f, y))
-        }
-        assertEquals(1, begun)
-        assertEquals(0, seeks)
-        assertEquals(0, taps)
     }
 
     @Test
