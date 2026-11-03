@@ -2092,6 +2092,11 @@ private fun PlaybackSurface(
                     scrubbing = false
                     noteInteraction()
                 },
+                // A pinch took the drag over: the bar shows the title again.
+                onScrubCancel = {
+                    scrubbing = false
+                    noteInteraction()
+                },
                 onToggleMute = {
                     muted = !muted
                     player.volume = if (muted) 0f else volume
@@ -2376,6 +2381,7 @@ private fun Chrome(
     onScrubStart: (Long) -> Unit,
     onScrubUpdate: (Long) -> Unit,
     onScrubCommit: (Long) -> Unit,
+    onScrubCancel: () -> Unit,
     onToggleMute: () -> Unit,
     onVolumeChange: (Float) -> Unit,
     onVolumeDragStart: () -> Unit,
@@ -2529,6 +2535,7 @@ private fun Chrome(
                         onScrubStart = onScrubStart,
                         onScrubUpdate = onScrubUpdate,
                         onScrubCommit = onScrubCommit,
+                        onScrubCancel = onScrubCancel,
                         spokenPositionMs = spokenPositionMs,
                     )
                 }
@@ -2676,6 +2683,11 @@ private fun Modifier.fadeAtEnd(scroll: androidx.compose.foundation.ScrollState):
     }
 }
 
+/** A drag along the seek bar ([Scrubber]): where it is, in the title. */
+private class BarDrag {
+    var atMs = 0L
+}
+
 /**
  * Drag-capable scrubber. Layout matches web's PlayerPage scrubber Row:
  *   [time-left 64dp]  [track expands]  [time-right 64dp]
@@ -2723,6 +2735,8 @@ internal fun Scrubber(
     onScrubCommit: (Long) -> Unit,
     /** Where the bar tells a screen reader it is ([seekBarSpokenMs]). */
     spokenPositionMs: Long = positionMs,
+    /** A drag along the bar ended without a seek: a pinch took it over. */
+    onScrubCancel: () -> Unit = {},
 ) {
     val durationSafe = durationMs.coerceAtLeast(1L)
     val density = LocalDensity.current
@@ -2731,6 +2745,8 @@ internal fun Scrubber(
     // on touch there's no hover, so press/drag is the analogue). Reset on
     // release/commit.
     var previewMs by remember { mutableStateOf<Long?>(null) }
+    // Where a drag along the bar is: where it seeks once let go.
+    val drag = remember { BarDrag() }
     val seek = PlayerButtons.seek(spokenPositionMs, durationMs)
     Row(
         modifier = Modifier.clearAndSetSemantics {
@@ -2789,17 +2805,24 @@ internal fun Scrubber(
                             onDragStart = { offset ->
                                 val pct = (offset.x / trackWidthPx).coerceIn(0f, 1f)
                                 val ms = (durationSafe * pct).toLong()
+                                drag.atMs = ms
                                 previewMs = ms
                                 onScrubStart(ms)
-                                // The drag takes the press over: it seeks where
-                                // it began, as the press did for it.
-                                onScrubCommit(ms)
                             },
-                            onDragEnd = { previewMs = null },
-                            onDragCancel = { previewMs = null },
+                            // Let go: the seek, where the finger left the bar.
+                            onDragEnd = {
+                                previewMs = null
+                                onScrubCommit(drag.atMs)
+                            },
+                            // Taken over - a second finger's pinch: no seek.
+                            onDragCancel = {
+                                previewMs = null
+                                onScrubCancel()
+                            },
                         ) { change, _ ->
                             val pct = (change.position.x / trackWidthPx).coerceIn(0f, 1f)
                             val ms = (durationSafe * pct).toLong()
+                            drag.atMs = ms
                             previewMs = ms
                             onScrubUpdate(ms)
                             change.consume()
@@ -2811,17 +2834,13 @@ internal fun Scrubber(
                                 val pct = (offset.x / trackWidthPx).coerceIn(0f, 1f)
                                 onScrubCommit((durationSafe * pct).toLong())
                             },
+                            // The press shows where it is; a tap seeks there
+                            // (onTap), a drag where it ends, a pinch nowhere.
                             onPress = {
                                 val pct0 = (it.x / trackWidthPx).coerceIn(0f, 1f)
                                 previewMs = (durationSafe * pct0).toLong()
-                                // Let go: a seek. Taken over - by a pinch of the
-                                // picture, by a drag along the bar - none.
-                                val released = tryAwaitRelease()
+                                tryAwaitRelease()
                                 previewMs = null
-                                if (released) {
-                                    val pct = (it.x / trackWidthPx).coerceIn(0f, 1f)
-                                    onScrubCommit((durationSafe * pct).toLong())
-                                }
                             },
                         )
                     },

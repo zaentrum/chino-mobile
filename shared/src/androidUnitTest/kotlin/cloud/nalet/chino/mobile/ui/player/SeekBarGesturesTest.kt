@@ -29,10 +29,12 @@ import kotlin.test.assertTrue
  * as PlaybackSurface stacks them: the tap that wakes the controls and the
  * pinch of the picture on the screen, the controls' tap absorber over the
  * whole of it, the bar at its bottom. A pinch begun on the bar zooms the
- * picture and never seeks; a tap on the bar seeks there.
+ * picture and never seeks; a tap on the bar seeks there, a drag along it
+ * where the finger lets go.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+// A phone held sideways: room for the 800 x 360 player.
+@Config(sdk = [34], qualifiers = "w891dp-h411dp")
 class SeekBarGesturesTest {
     @get:Rule
     val compose = createComposeRule()
@@ -41,6 +43,7 @@ class SeekBarGesturesTest {
     private val starts = mutableListOf<Long>()
     private val updates = mutableListOf<Long>()
     private val commits = mutableListOf<Long>()
+    private var cancels = 0
 
     private fun player() {
         compose.setContent {
@@ -66,6 +69,7 @@ class SeekBarGesturesTest {
                             onScrubStart = { starts += it },
                             onScrubUpdate = { updates += it },
                             onScrubCommit = { commits += it },
+                            onScrubCancel = { cancels++ },
                         )
                     }
                 }
@@ -85,13 +89,84 @@ class SeekBarGesturesTest {
     }
 
     @Test
-    fun aTapOnTheBarSeeksThere() {
+    fun aTapOnTheBarSeeksThereOnce() {
         player()
         compose.onNodeWithTag("bar").performTouchInput { click(Offset(centerX + 100f, centerY)) }
         compose.waitForIdle()
         assertEquals(0, pinches)
-        assertTrue(commits.isNotEmpty(), "no seek")
-        // Right of the middle of a 6000 s title.
-        assertTrue(commits.all { it == commits.first() && it > 3_000_000L }, "$commits")
+        // Right of the middle of a 6000 s title, once.
+        assertEquals(1, commits.size, "$commits")
+        assertTrue(commits.single() > 3_000_000L, "$commits")
+    }
+
+    @Test
+    fun aDragAlongTheBarSeeksWhereTheFingerLetsGo() {
+        player()
+        val bar = compose.onNodeWithTag("bar").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("player").performTouchInput {
+            down(Offset(bar.center.x - 200f, bar.center.y))
+            for (i in 1..20) {
+                updatePointerTo(0, Offset(bar.center.x - 200f + i * 20f, bar.center.y))
+                move()
+            }
+            up()
+        }
+        compose.waitForIdle()
+        // One seek, where it was let go - the last place the bar showed -
+        // never where the finger first touched.
+        assertEquals(1, commits.size, "$commits")
+        assertEquals(updates.last(), commits.single())
+        assertTrue(commits.single() > starts.single(), "seek $commits from ${starts.single()}")
+        assertEquals(0, cancels)
+    }
+
+    @Test
+    fun aPinchWithAThumbOnTheBarAndAFingerOnThePictureZoomsAndNeverSeeks() {
+        player()
+        val bar = compose.onNodeWithTag("bar").fetchSemanticsNode().boundsInRoot
+        val y = bar.center.y
+        compose.onNodeWithTag("player").performTouchInput {
+            down(0, Offset(bar.center.x - 30f, y))
+            down(1, Offset(bar.center.x + 30f, y - 200f))
+            for (i in 1..20) {
+                updatePointerTo(0, Offset(bar.center.x - 30f - i * 12f, y))
+                updatePointerTo(1, Offset(bar.center.x + 30f + i * 12f, y - 200f - i * 6f))
+                move()
+            }
+            up(0)
+            up(1)
+        }
+        compose.waitForIdle()
+        assertEquals(1, pinches)
+        assertEquals(emptyList(), commits)
+        // The thumb's drag began before the pinch did: it ends, seeking nowhere.
+        assertEquals(starts.size, cancels)
+    }
+
+    @Test
+    fun aDragTheSecondFingerTurnsIntoAPinchEndsWithoutASeek() {
+        player()
+        val bar = compose.onNodeWithTag("bar").fetchSemanticsNode().boundsInRoot
+        val y = bar.center.y
+        compose.onNodeWithTag("player").performTouchInput {
+            down(0, Offset(bar.center.x, y))
+            for (i in 1..10) {
+                updatePointerTo(0, Offset(bar.center.x + i * 15f, y))
+                move()
+            }
+            down(1, Offset(bar.center.x + 150f, y - 200f))
+            for (i in 1..20) {
+                updatePointerTo(0, Offset(bar.center.x + 150f - i * 10f, y))
+                updatePointerTo(1, Offset(bar.center.x + 150f + i * 10f, y - 200f - i * 5f))
+                move()
+            }
+            up(0)
+            up(1)
+        }
+        compose.waitForIdle()
+        assertEquals(1, pinches)
+        assertEquals(1, starts.size)
+        assertEquals(emptyList(), commits)
+        assertEquals(1, cancels)
     }
 }
