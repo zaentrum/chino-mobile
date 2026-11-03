@@ -33,6 +33,10 @@ internal const val PICTURE_AREA_WHOLE = 0.99f
  *  picture. */
 internal const val FILL_GAIN_MIN = 1.01f
 
+/** The most of a picture's width, and of its height, a remembered fill may
+ *  crop and still be taken to the next title ([PictureFit.fillCarriesOver]). */
+internal const val FILL_CARRY_LOSS = 0.10f
+
 /**
  * [area] as the player fits it: its edges in fractions of the frame, inside
  * it. Null - the frame fits as before - where the server gave none, or one
@@ -89,6 +93,36 @@ internal data class PictureFit(val box: Size, val frame: Size, val area: Rect? =
     val fillScale: Float = if (!valid) 1f else max(box.width / pictureWidth, box.height / pictureHeight)
     val fillApplies: Boolean = valid && box.width > box.height && fillScale > fitScale * FILL_GAIN_MIN
 
+    /** The share of the picture's width fill crops, off the box's sides. */
+    val fillLossX: Float = if (!valid) 0f else (1f - box.width / (fillScale * pictureWidth)).coerceAtLeast(0f)
+
+    /** The share of the picture's height fill crops, off its top and bottom. */
+    val fillLossY: Float = if (!valid) 0f else (1f - box.height / (fillScale * pictureHeight)).coerceAtLeast(0f)
+
+    /**
+     * Whether a fill the viewer chose on another title is taken to this one:
+     * it has a picture area, fill applies, and it crops at most
+     * [FILL_CARRY_LOSS] of the picture's width and of its height - a scope
+     * film on a phone held sideways (7 %), never a title without a picture
+     * area, a 4:3 picture on a phone (40 % of its height) or a scope film on
+     * a tablet (a third of its width). Elsewhere a title starts fitted, and a
+     * pinch fills it for itself alone ([choose]).
+     */
+    val fillCarriesOver: Boolean =
+        area != null && fillApplies && fillLossX <= FILL_CARRY_LOSS && fillLossY <= FILL_CARRY_LOSS
+
+    /** Whether the picture rests filled: this title's own choice ([titleFill],
+     *  a pinch on it), else the viewer's remembered one where it carries over
+     *  ([fillCarriesOver]); never where fill doesn't apply. */
+    fun restsFilled(rememberedFill: Boolean, titleFill: Boolean?): Boolean =
+        fillApplies && (titleFill ?: (rememberedFill && fillCarriesOver))
+
+    /** What a pinch to [fill] on this title keeps: where a remembered fill
+     *  carries over to it, the remembered choice, and this title follows it;
+     *  elsewhere this title's own choice, the remembered one as it was. */
+    fun choose(fill: Boolean, rememberedFill: Boolean): FillChoice =
+        if (fillCarriesOver) FillChoice(remembered = fill, title = null) else FillChoice(remembered = rememberedFill, title = fill)
+
     /** The frame's scale at [zoom]: fit at 0, fill at 1, in even steps of
      *  size between them (and on past either, for a pinch that overshoots). */
     fun scaleAt(zoom: Float): Float = if (!fillApplies) fitScale else fitScale * (fillScale / fitScale).pow(zoom)
@@ -126,6 +160,10 @@ internal data class PictureFit(val box: Size, val frame: Size, val area: Rect? =
         return shown.intersect(safe)
     }
 }
+
+/** The viewer's fill after a pinch ([PictureFit.choose]): the remembered
+ *  choice, and this title's own (null: it follows the remembered one). */
+internal data class FillChoice(val remembered: Boolean, val title: Boolean?)
 
 /** How far a picture subtitle keeps from the top and bottom of what shows, at
  *  most, as a share of its height: a text line's 8 %. */

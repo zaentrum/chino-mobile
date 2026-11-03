@@ -1903,11 +1903,14 @@ private fun PlaybackSurface(
     // The picture fitted by its own part of the frame (PictureFit.kt): the
     // frame's bars cropped, never the picture. A pinch out fills the screen
     // with it, its edges cropped, held sideways; a pinch in fits it again.
-    // The choice is kept on the phone (PictureFillChoice).
+    // The choice is kept on the phone (PictureFillChoice) where it carries
+    // over to the next title - a picture area, a tenth cropped at most -
+    // elsewhere it is this title's alone (titleFill).
     val fitter = remember { arrayOfNulls<PictureFitter>(1) }
     val pictureArea = remember(state.info) { fittedArea(state.info?.pictureArea) }
     val fillChoice = remember { PictureFillChoice.of(context) }
     var fillChosen by remember { mutableStateOf(fillChoice.fill) }
+    var titleFill by remember { mutableStateOf<Boolean?>(null) }
     val zoomScope = rememberCoroutineScope()
     val settling = remember { Animatable(0f) }
     var settle by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
@@ -1968,8 +1971,10 @@ private fun PlaybackSurface(
                         val fit = f?.fit
                         if (f != null && fit != null) {
                             val rest = pinchRest(pinchFrom, fit.zoomAfterPinch(pinchFrom, spread))
-                            fillChosen = rest == 1f
-                            fillChoice.fill = fillChosen
+                            val chosen = fit.choose(fill = rest == 1f, rememberedFill = fillChosen)
+                            if (chosen.remembered != fillChosen) fillChoice.fill = chosen.remembered
+                            fillChosen = chosen.remembered
+                            titleFill = chosen.title
                             val from = f.driven ?: rest
                             settle = zoomScope.launch {
                                 settling.snapTo(from)
@@ -1977,6 +1982,7 @@ private fun PlaybackSurface(
                                 // At rest: fill or fit as chosen. A pinch that
                                 // takes it on cancels this before it gets here.
                                 f.fill = fillChosen
+                                f.titleFill = titleFill
                                 f.driven = null
                             }
                         } else {
@@ -2025,6 +2031,7 @@ private fun PlaybackSurface(
                         it.area = pictureArea
                         it.side = cutoutSide
                         it.fill = fillChosen
+                        it.titleFill = titleFill
                         it.bind(player)
                     }
                 }
@@ -2039,8 +2046,11 @@ private fun PlaybackSurface(
                 fitter[0]?.let {
                     it.area = pictureArea
                     it.side = cutoutSide
-                    // A settling pinch sets it as it comes to rest.
-                    if (it.driven == null) it.fill = fillChosen
+                    // A settling pinch sets them as it comes to rest.
+                    if (it.driven == null) {
+                        it.fill = fillChosen
+                        it.titleFill = titleFill
+                    }
                     it.bind(player)
                 }
             },

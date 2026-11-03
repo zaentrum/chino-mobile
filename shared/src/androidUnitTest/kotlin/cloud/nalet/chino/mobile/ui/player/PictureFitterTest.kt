@@ -112,6 +112,48 @@ class PictureFitterTest {
         near(540f / (0.7444f * 540f), rig.content.scaleX)
     }
 
+    private val pillarbox = Rect(0.125f, 0f, 0.875f, 1f)
+
+    @Test
+    fun aRememberedFillLeavesATitleWithoutAPictureAreaFitted() {
+        // A 16:9 title on a phone held sideways: filled, it would lose a fifth
+        // of its height. The viewer's fill was chosen on another title.
+        val rig = rig(1200, 540, null, fill = true)
+        near(1f, rig.content.scaleX)
+        assertTrue(rig.fitter.fit!!.fillApplies)
+    }
+
+    @Test
+    fun aRememberedFillLeavesATitleFillWouldCropByMoreThanATenthFitted() {
+        // A 4:3 picture in a 16:9 frame on a phone: filled, 40 % of its height goes.
+        val pillared = rig(1200, 540, pillarbox, fill = true)
+        near(1f, pillared.content.scaleX)
+        // A scope film on a 16:10 tablet held sideways: a third of its width.
+        val tablet = rig(1280, 800, letterbox, fill = true)
+        near(1f, tablet.content.scaleX)
+    }
+
+    @Test
+    fun aRememberedFillReappliesToAScopeFilmThatLosesLittle() {
+        // 7 % of its width, on a phone held sideways.
+        val rig = rig(1200, 540, letterbox, fill = true)
+        near(540f / (0.7444f * 540f), rig.content.scaleX)
+    }
+
+    @Test
+    fun aTitlesOwnChoiceFillsItWhateverItCropsAndFitsItAgainstTheRememberedOne() {
+        // A pinch filled this title, which has no picture area: filled.
+        val bare = rig(1200, 540, null)
+        bare.fitter.titleFill = true
+        near(1.25f, bare.content.scaleX)
+        // A pinch fitted this one, though fill is remembered: fitted.
+        val scope = rig(1200, 540, letterbox, fill = true)
+        scope.fitter.titleFill = false
+        near(1.25f, scope.content.scaleX)
+        scope.fitter.titleFill = null
+        near(540f / (0.7444f * 540f), scope.content.scaleX)
+    }
+
     @Test
     fun uprightTheFrameIsAsMedia3LaysItOutFillChosenOrNotAndTheSubtitlesHaveTheFrame() {
         val rig = rig(540, 1200, letterbox, fill = true)

@@ -18,8 +18,10 @@ private const val FRAME_SHAPE_SLACK = 0.02f
  * the view's content frame - the video's surface and its shutter - keeps the
  * layout Media3 gives it, fitted whole to the view, and is drawn scaled and
  * moved so that the picture [area] fits the view less the display cutout's
- * bands ([side]), or covers it where the viewer chose [fill] and the view is
- * held sideways; a pinch drives the zoom between them ([driven]). A
+ * bands ([side]), or covers it where the viewer chose fill - this title's own
+ * choice ([titleFill]), else the remembered one ([fill]) where it carries
+ * over - and the view is held sideways; a pinch drives the zoom between them
+ * ([driven]). A
  * SurfaceView follows its frame's transform from API 24 on. The subtitles are
  * told where the frame is drawn and what of it shows ([LookSubtitles.place]).
  *
@@ -56,9 +58,19 @@ internal class PictureFitter(private val playerView: PlayerView, private val sub
             apply()
         }
 
-    /** Whether the viewer chose fill: the picture covers the view where
-     *  fill applies ([PictureFit.fillApplies]). */
+    /** Whether the viewer chose fill, kept from title to title: the picture
+     *  covers the view where that carries over to this title
+     *  ([PictureFit.fillCarriesOver]). */
     var fill: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            apply()
+        }
+
+    /** This title's own choice, by a pinch on it where the remembered one
+     *  doesn't reach it ([PictureFit.choose]); null: it follows that one. */
+    var titleFill: Boolean? = null
         set(value) {
             if (field == value) return
             field = value
@@ -80,7 +92,7 @@ internal class PictureFitter(private val playerView: PlayerView, private val sub
         private set
 
     /** The zoom the picture is drawn at now. */
-    val zoom: Float get() = driven ?: if (fill && fit?.fillApplies == true) 1f else 0f
+    val zoom: Float get() = driven ?: if (fit?.restsFilled(fill, titleFill) == true) 1f else 0f
 
     fun bind(next: Player?) {
         if (player === next) return

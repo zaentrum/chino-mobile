@@ -199,9 +199,13 @@ the phone and a quality switch fit the same.
   where it was. A pinch is the picture's once it starts - a pinch begun on the
   seek bar never seeks - and does nothing while a menu is open, upright, or
   where fill is fit (a picture of the screen's shape).
-- **Remembered** — fill is kept on the phone (`chino_player` preferences):
-  the next episode and every title after it play filled, sideways, until a
-  pinch in. Upright the picture always fits.
+- **Remembered** — fill is kept on the phone (`chino_player` preferences)
+  and taken to the next title only where it crops little: a title with a
+  picture area that fill crops by at most a tenth of its width and of its
+  height (a scope film on a phone held sideways). Elsewhere - a title
+  without a picture area, a 4:3 picture, a scope film on a tablet - the
+  title starts fitted, and a pinch fills it for itself alone, the remembered
+  choice as it was. Upright the picture always fits.
 - **Subtitles** — text is laid out in what shows of the frame (the frame on
   screen, less the cutout's band): its size, its margin and its rise above
   the controls go by that. A picture subtitle (PGS) is drawn where the

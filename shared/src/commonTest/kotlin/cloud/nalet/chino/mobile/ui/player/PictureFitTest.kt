@@ -245,6 +245,51 @@ class PictureFitTest {
     }
 
     @Test
+    fun aRememberedFillCarriesOverOnlyToATitleWithAPictureAreaItCropsLittle() {
+        // A scope film on a phone held sideways: 7 % of its width.
+        val scope = PictureFit(phone, hdFrameOnPhone, letterbox)
+        near(1f - 2400f / (scope.fillScale * 1920f), scope.fillLossX)
+        near(0f, scope.fillLossY)
+        assertTrue(scope.fillLossX in 0.06f..0.08f, "${scope.fillLossX}")
+        assertTrue(scope.fillCarriesOver)
+        // Without a picture area, whatever it would crop.
+        assertFalse(PictureFit(phone, hdFrameOnPhone, null).fillCarriesOver)
+        // A 4:3 picture on a phone: 40 % of its height.
+        val pillared = PictureFit(phone, hdFrameOnPhone, pillarbox)
+        near(0.4f, pillared.fillLossY)
+        assertFalse(pillared.fillCarriesOver)
+        // A scope film on a 16:10 tablet held sideways: a third of its width.
+        val tablet = PictureFit(Size(2560f, 1600f), Size(2560f, 1440f), letterbox)
+        assertTrue(tablet.fillLossX > 0.3f, "${tablet.fillLossX}")
+        assertFalse(tablet.fillCarriesOver)
+        // Upright, nothing fills.
+        assertFalse(PictureFit(Size(1080f, 2400f), Size(1080f, 607.5f), letterbox).fillCarriesOver)
+    }
+
+    @Test
+    fun aTitleRestsFilledByItsOwnChoiceElseByARememberedOneThatCarriesOver() {
+        val scope = PictureFit(phone, hdFrameOnPhone, letterbox)
+        val bare = PictureFit(phone, hdFrameOnPhone, null)
+        assertTrue(scope.restsFilled(rememberedFill = true, titleFill = null))
+        assertFalse(bare.restsFilled(rememberedFill = true, titleFill = null))
+        // A pinch fills any title for itself, and fits one the remembered fill would fill.
+        assertTrue(bare.restsFilled(rememberedFill = false, titleFill = true))
+        assertFalse(scope.restsFilled(rememberedFill = true, titleFill = false))
+        // Never where fill doesn't apply: upright.
+        assertFalse(PictureFit(Size(1080f, 2400f), Size(1080f, 607.5f), letterbox).restsFilled(rememberedFill = true, titleFill = true))
+    }
+
+    @Test
+    fun aPinchSetsTheRememberedFillOnlyWhereItCarriesOverElseThisTitlesOwn() {
+        val scope = PictureFit(phone, hdFrameOnPhone, letterbox)
+        assertEquals(FillChoice(remembered = true, title = null), scope.choose(fill = true, rememberedFill = false))
+        assertEquals(FillChoice(remembered = false, title = null), scope.choose(fill = false, rememberedFill = true))
+        val bare = PictureFit(phone, hdFrameOnPhone, null)
+        assertEquals(FillChoice(remembered = false, title = true), bare.choose(fill = true, rememberedFill = false))
+        assertEquals(FillChoice(remembered = true, title = false), bare.choose(fill = false, rememberedFill = true))
+    }
+
+    @Test
     fun aPinchComesToRestAtFillOrFitOrWhereItBegan() {
         near(1f, pinchRest(0f, 0.3f))
         near(0f, pinchRest(1f, 0.7f))
