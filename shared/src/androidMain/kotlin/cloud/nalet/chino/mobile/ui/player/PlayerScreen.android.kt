@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -1090,8 +1091,8 @@ internal const val PLAYER_WINDOW_BACKGROUND: Int = android.graphics.Color.BLACK
  * ([PLAYER_WINDOW_BACKGROUND]): held sideways, the strip the content keeps
  * clear of beside the display cutout shows the window's background - it was
  * the app's navy beside the picture's black pillarbox. As it was once the
- * player closes. The picture keeps to the safe area ([pictureInSafeArea]),
- * and the chrome too.
+ * player closes. The fitted picture keeps to the safe area ([PictureFitter]:
+ * only fill covers the cutout's band), and the chrome too.
  * No-ops if the host LocalContext isn't an Activity.
  */
 @Composable
@@ -1899,6 +1900,25 @@ private fun PlaybackSurface(
         }
     }
 
+    // The picture fitted by its own part of the frame (PictureFit.kt): the
+    // frame's bars cropped, never the picture. A pinch out fills the screen
+    // with it, its edges cropped, held sideways; a pinch in fits it again.
+    // The choice is kept on the phone (PictureFillChoice).
+    val fitter = remember { arrayOfNulls<PictureFitter>(1) }
+    val pictureArea = remember(state.info) { fittedArea(state.info?.pictureArea) }
+    val fillChoice = remember { PictureFillChoice.of(context) }
+    var fillChosen by remember { mutableStateOf(fillChoice.fill) }
+    val zoomScope = rememberCoroutineScope()
+    val settling = remember { Animatable(0f) }
+    var settle by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var pinchFrom by remember { mutableFloatStateOf(0f) }
+    // The display cutout's band at each side, held sideways: the fitted
+    // picture keeps out of it (fill covers it).
+    val cutout = WindowInsets.displayCutout
+    val density = LocalDensity.current
+    val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
+    val cutoutSide = maxOf(cutout.getLeft(density, layoutDirection), cutout.getRight(density, layoutDirection), 0).toFloat()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1921,13 +1941,60 @@ private fun PlaybackSurface(
                         noteInteraction()
                     }
                 })
+            }
+            // Two fingers zoom the picture, from fit to fill and back, the
+            // picture following them; let go, it settles at fill if they
+            // spread, at fit if they closed (pinchRest). Not while a menu is
+            // open, nor where fill is fit (upright, a picture of the
+            // screen's shape).
+            .pointerInput(Unit) {
+                detectPinch(
+                    mayBegin = { openPopover == OpenPopover.NONE && fitter[0]?.fit?.fillApplies == true },
+                    onBegin = {
+                        // From where the picture is, settling or at rest.
+                        val f = fitter[0]
+                        pinchFrom = f?.zoom ?: 0f
+                        settle?.cancel()
+                        settle = null
+                        f?.driven = pinchFrom
+                    },
+                    onSpread = { spread ->
+                        val f = fitter[0]
+                        val fit = f?.fit
+                        if (f != null && fit != null) f.driven = pinchGive(fit.zoomAfterPinch(pinchFrom, spread))
+                    },
+                    onEnd = { spread ->
+                        val f = fitter[0]
+                        val fit = f?.fit
+                        if (f != null && fit != null) {
+                            val rest = pinchRest(pinchFrom, fit.zoomAfterPinch(pinchFrom, spread))
+                            fillChosen = rest == 1f
+                            fillChoice.fill = fillChosen
+                            val from = f.driven ?: rest
+                            settle = zoomScope.launch {
+                                settling.snapTo(from)
+                                settling.animateTo(rest, spring(stiffness = Spring.StiffnessMediumLow)) { f.driven = value }
+                                // At rest: fill or fit as chosen. A pinch that
+                                // takes it on cancels this before it gets here.
+                                f.fill = fillChosen
+                                f.driven = null
+                            }
+                        } else {
+                            f?.driven = null
+                        }
+                    },
+                )
             },
     ) {
         // The subtitles in the one look (SubtitleLook.kt), over the picture.
         val subtitles = remember { arrayOfNulls<LookSubtitles>(1) }
         DisposableEffect(player) {
             subtitles[0]?.bind(player)
-            onDispose { subtitles[0]?.bind(null) }
+            fitter[0]?.bind(player)
+            onDispose {
+                subtitles[0]?.bind(null)
+                fitter[0]?.bind(null)
+            }
         }
         // The line rises above the controls while they show and comes back
         // down as they hide, at their pace: the chrome's fade's spring.
@@ -1939,9 +2006,10 @@ private fun PlaybackSurface(
         )
         LaunchedEffect(Unit) { snapshotFlow { subtitleLift }.collect { subtitles[0]?.lift(it) } }
         AndroidView(
-            // Inside the safe area, never through the cutout's band held
-            // sideways; the strip beside it is the player's black.
-            modifier = Modifier.fillMaxSize().pictureInSafeArea(WindowInsets.displayCutout),
+            // The whole screen: the fitted picture keeps out of the cutout's
+            // band held sideways (PictureFitter), the strip beside it is the
+            // player's black; fill covers it too.
+            modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     this.player = player
@@ -1953,6 +2021,12 @@ private fun PlaybackSurface(
                         // A picture lower than the last one rises further.
                         it.onClearance = { px -> subtitleClearancePx = px }
                     }
+                    fitter[0] = PictureFitter(this, subtitles[0]).also {
+                        it.area = pictureArea
+                        it.side = cutoutSide
+                        it.fill = fillChosen
+                        it.bind(player)
+                    }
                 }
             },
             // A quality switch rebuilds the ExoPlayer instance (player is
@@ -1962,6 +2036,13 @@ private fun PlaybackSurface(
             update = { view ->
                 if (view.player !== player) view.player = player
                 subtitles[0]?.bind(player)
+                fitter[0]?.let {
+                    it.area = pictureArea
+                    it.side = cutoutSide
+                    // A settling pinch sets it as it comes to rest.
+                    if (it.driven == null) it.fill = fillChosen
+                    it.bind(player)
+                }
             },
         )
         AnimatedVisibility(visible = chromeVisible, enter = fadeIn(), exit = fadeOut()) {

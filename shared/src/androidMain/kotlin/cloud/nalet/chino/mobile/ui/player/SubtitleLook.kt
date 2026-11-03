@@ -16,6 +16,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.CaptioningManager
 import android.widget.FrameLayout
+import androidx.compose.ui.geometry.Rect
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.Player
@@ -28,6 +29,7 @@ import androidx.media3.common.text.TextAnnotation
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
+import kotlin.math.roundToInt
 
 /*
  * The one look of every subtitle (the design system's subtitles pattern):
@@ -39,6 +41,9 @@ import androidx.media3.ui.SubtitleView
  * positions are not used. Where the person switched the device's caption
  * settings on (accessibility), theirs are used instead, box and size
  * included. The line rises above the player's controls while they show.
+ * "The picture" is what shows of it: where the player fits a title's picture
+ * and crops its frame's bars (PictureFit.kt), the size and the margin go by
+ * the frame as it shows on the screen.
  */
 
 /** The look's caption style: white, a black outline, nothing behind it. */
@@ -210,68 +215,134 @@ internal class RubyReading(val reading: String, val under: Boolean) : Replacemen
 
 /**
  * The player's subtitles in the look, over the picture: the PlayerView's own
- * subtitle view gives way to one of the same size - the picture's, so the
- * size follows the picture - fed the cues as [inTheLook] places them. Follows
+ * subtitle view gives way to one over the whole view, above the picture's
+ * frame and outside it - the frame is scaled and moved to fit its picture
+ * (PictureFitter), the subtitles are not - fed the cues as [inTheLook] shapes
+ * them. Text is laid out in the subtitle region ([place]: what shows of the
+ * frame, clear of the display cutout), so its size and margin follow what
+ * shows of the picture; a picture subtitle (PGS) is drawn where the frame's
+ * transform puts it, kept whole inside that region ([placePicture]). Follows
  * the player it is bound to ([bind]); null unbinds. One subtitle at a time:
- * the cues shown at once are one ([inTheLook]). Where the PlayerView has
- * no picture frame, its own view stays, styled the same.
+ * the cues shown at once are one ([inTheLook]). Where the PlayerView has no
+ * overlay, its own view stays, styled the same.
  */
 internal class LookSubtitles(playerView: PlayerView) : Player.Listener {
     private val view: SubtitleView?
+    private val holder: RegionFrame?
     private var player: Player? = null
 
     init {
         val own = playerView.subtitleView
-        val frame = playerView.findViewById<ViewGroup>(androidx.media3.ui.R.id.exo_content_frame)
-        view = if (frame != null && own != null) {
+        val overlay = playerView.overlayFrameLayout
+        if (overlay != null && own != null) {
             own.visibility = View.GONE
-            SubtitleView(playerView.context).also { v ->
-                frame.addView(
-                    v,
-                    frame.indexOfChild(own) + 1,
-                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
-                )
+            val v = SubtitleView(playerView.context)
+            holder = RegionFrame(playerView.context).also { frame ->
+                frame.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                overlay.addView(frame, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             }
+            view = v
         } else {
-            null
+            holder = null
+            view = null
         }
         view?.let { applySubtitleLook(it, playerView.context, ownCues = true) }
             ?: own?.let { applySubtitleLook(it, playerView.context) }
     }
 
-    // The cues on screen, or the last ones while none are - of the subtitle
-    // on now: what the rise above the controls goes by. The controls' top
-    // edge, once known.
+    // The cues on now, as the look shapes them, before they are placed; the
+    // cues on screen, or the last ones while none are - of the subtitle on
+    // now, placed: what the rise above the controls goes by. The controls'
+    // top edge, once known.
+    private var cues: List<Cue>? = null
     private var shown: List<Cue> = emptyList()
     private var subtitleOn: Format? = null
     private var controlsTop: Float? = null
+
+    // Where the frame is drawn, in the player view's pixels, and the subtitle
+    // region, in whole ones (place); null until the fitter has laid them out.
+    private var frame: Rect? = null
+    private var region: Rect? = null
+
+    // A rise asked for while the frame moves (a pinch), told once it rests.
+    private var settled = true
+    private var clearanceDue = false
 
     /** Hears the rise [clearance] asks for again as what is on screen
      *  changes, the controls where they were. */
     var onClearance: ((Float) -> Unit)? = null
 
+    /**
+     * Where the frame is drawn ([frameOnScreen]) and the subtitle region
+     * ([region]: text is laid out in it, pictures kept inside it), in the
+     * player view's pixels. [settled]: the frame is at rest, not moved by a
+     * pinch; the rise above the controls follows only once it is.
+     */
+    fun place(frameOnScreen: Rect, region: Rect, settled: Boolean = true) {
+        val v = view ?: return
+        this.settled = settled
+        val whole = Rect(
+            region.left.roundToInt().toFloat(),
+            region.top.roundToInt().toFloat(),
+            region.right.roundToInt().toFloat(),
+            region.bottom.roundToInt().toFloat(),
+        )
+        if (frameOnScreen != frame || whole != this.region) {
+            frame = frameOnScreen
+            this.region = whole
+            holder?.region = android.graphics.Rect(whole.left.toInt(), whole.top.toInt(), whole.right.toInt(), whole.bottom.toInt())
+            show(v, cues)
+        }
+        if (settled && clearanceDue) {
+            clearanceDue = false
+            controlsTop?.let { onClearance?.invoke(clearance(it)) }
+        }
+    }
+
     /** How far the subtitle must rise to clear controls that start at
      *  [controlsTopPx] (window pixels), with a small gap: none where what it
      *  shows ends above them (a phone held upright). A line of text ends at
-     *  the look's bottom margin, a picture (PGS) at its own bottom edge
-     *  ([subtitleClearance]). */
+     *  the look's bottom margin of the subtitle region, a picture (PGS) at
+     *  its own bottom edge ([subtitleClearance]). */
     fun clearance(controlsTopPx: Float): Float {
         controlsTop = controlsTopPx
-        val frame = view?.parent as? View ?: return 0f
+        val overlay = holder ?: return 0f
         val at = IntArray(2)
-        frame.getLocationInWindow(at)
-        val textBottom = at[1] + frame.height * (1f - SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION)
-        val gap = 8f * frame.resources.displayMetrics.density
-        // Never so far that a picture at the top of the frame - a sign - leaves it.
+        overlay.getLocationInWindow(at)
+        val r = region ?: Rect(0f, 0f, overlay.width.toFloat(), overlay.height.toFloat())
+        val top = at[1] + r.top
+        val textBottom = top + r.height * (1f - SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION)
+        val gap = 8f * overlay.resources.displayMetrics.density
+        val width = r.width.roundToInt()
+        val height = r.height.roundToInt()
+        // Never so far that a picture that rises leaves what shows at its top.
         return minOf(
-            subtitleClearance(shown, frame.width, frame.height, at[1].toFloat(), textBottom, controlsTopPx, gap),
-            subtitleRiseRoom(shown, frame.width, frame.height),
+            subtitleClearance(shown, width, height, top, textBottom, controlsTopPx, gap),
+            subtitleRiseRoom(shown, width, height),
         )
     }
 
-    /** The line [px] higher than the look puts it. */
+    // How far the subtitle is raised now ([lift]).
+    private var lifted = 0f
+
+    /** The line [px] higher than the look puts it: text and the pictures in
+     *  the lower half of what shows; one in the upper half - a sign - stays
+     *  where it is ([heldInPlace]). */
     fun lift(px: Float) {
-        view?.translationY = -px
+        val v = view ?: return
+        v.translationY = -px
+        if (px == lifted) return
+        lifted = px
+        val now = placedNow ?: return
+        if (now.any { it.bitmap != null }) v.setCues(held(now))
+    }
+
+    // The cues placed now, before they are held against the rise.
+    private var placedNow: List<Cue>? = null
+
+    private fun held(cues: List<Cue>): List<Cue> {
+        val r = region ?: return cues
+        return heldInPlace(cues, lifted, r.width.roundToInt(), r.height.roundToInt())
     }
 
     fun bind(next: Player?) {
@@ -298,13 +369,95 @@ internal class LookSubtitles(playerView: PlayerView) : Player.Listener {
         onClearance?.invoke(clearance(top))
     }
 
-    private fun show(v: SubtitleView, cues: List<Cue>?) {
-        v.setCues(cues)
-        if (cues.isNullOrEmpty() || cues == shown) return
-        shown = cues
+    private fun show(v: SubtitleView, next: List<Cue>?) {
+        cues = next
+        val placed = next?.map(::placed)
+        placedNow = placed
+        v.setCues(placed?.let(::held))
+        if (placed.isNullOrEmpty() || placed == shown) return
+        shown = placed
         val top = controlsTop ?: return
-        onClearance?.invoke(clearance(top))
+        if (settled) onClearance?.invoke(clearance(top)) else clearanceDue = true
     }
+
+    /** [cue] where it is drawn: a picture as the frame's transform puts it,
+     *  kept whole in the region ([placePicture]), in fractions of the region;
+     *  text as it is - the view lays it out in the region. */
+    private fun placed(cue: Cue): Cue {
+        val f = frame ?: return cue
+        val r = region ?: return cue
+        if (r.width <= 0f || r.height <= 0f) return cue
+        val drawn = pictureRect(cue, f) ?: return cue
+        val at = placePicture(drawn, f, r)
+        return cue.buildUpon()
+            .setPosition((at.left - r.left) / r.width)
+            .setPositionAnchor(Cue.ANCHOR_TYPE_START)
+            .setLine((at.top - r.top) / r.height, Cue.LINE_TYPE_FRACTION)
+            .setLineAnchor(Cue.ANCHOR_TYPE_START)
+            .setSize(at.width / r.width)
+            .setBitmapHeight(at.height / r.height)
+            .build()
+    }
+}
+
+/**
+ * Where a picture cue is drawn over a frame drawn at [parent] - its box, in
+ * the same pixels - as Media3's SubtitlePainter places a bitmap: its
+ * position and line anchored as the cue says, as wide as its size, as high as
+ * its bitmap height or, without one, as its bitmap's shape makes it; null for
+ * a text cue or one without a place.
+ */
+internal fun pictureRect(cue: Cue, parent: Rect): Rect? {
+    val bitmap = cue.bitmap ?: return null
+    if (parent.width <= 0f || parent.height <= 0f || bitmap.width <= 0 || bitmap.height <= 0) return null
+    if (cue.line == Cue.DIMEN_UNSET || cue.lineType != Cue.LINE_TYPE_FRACTION) return null
+    if (cue.size == Cue.DIMEN_UNSET || cue.position == Cue.DIMEN_UNSET) return null
+    val width = parent.width * cue.size
+    val height = if (cue.bitmapHeight != Cue.DIMEN_UNSET) parent.height * cue.bitmapHeight else width * bitmap.height / bitmap.width
+    val anchorX = parent.left + parent.width * cue.position
+    val anchorY = parent.top + parent.height * cue.line
+    val left = when (cue.positionAnchor) {
+        Cue.ANCHOR_TYPE_END -> anchorX - width
+        Cue.ANCHOR_TYPE_MIDDLE -> anchorX - width / 2f
+        else -> anchorX
+    }
+    val top = when (cue.lineAnchor) {
+        Cue.ANCHOR_TYPE_END -> anchorY - height
+        Cue.ANCHOR_TYPE_MIDDLE -> anchorY - height / 2f
+        else -> anchorY
+    }
+    return Rect(left, top, left + width, top + height)
+}
+
+/**
+ * The look's subtitle view held at the subtitle [region] (its own pixels;
+ * null: all of it): measured and laid out there as soon as the region
+ * changes - in the middle of a layout pass too, where the fitter hears the
+ * frame laid out, and on every frame of a pinch - without asking for a
+ * layout of the screen; and again whenever its own layout runs.
+ */
+internal class RegionFrame(context: Context) : FrameLayout(context) {
+    var region: android.graphics.Rect? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            placeChild()
+        }
+
+    private fun placeChild() {
+        val child = getChildAt(0) ?: return
+        // Not laid out yet: its layout places it.
+        if (width == 0 && height == 0) return
+        val r = region ?: android.graphics.Rect(0, 0, width, height)
+        val w = r.width().coerceAtLeast(0)
+        val h = r.height().coerceAtLeast(0)
+        if (child.measuredWidth != w || child.measuredHeight != h || child.isLayoutRequested) {
+            child.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
+        }
+        child.layout(r.left, r.top, r.left + w, r.top + h)
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) = placeChild()
 }
 
 /**
@@ -334,34 +487,60 @@ internal fun pictureEdges(cue: Cue, width: Int, height: Int): Pair<Float, Float>
  *  text cue. */
 internal fun pictureBottom(cue: Cue, width: Int, height: Int): Float? = pictureEdges(cue, width, height)?.second
 
+/** Whether a picture cue is in the upper half of its box [width] x
+ *  [height] - a sign at the top: it stays where it is while the subtitle
+ *  rises above the controls ([heldInPlace]). False for text. */
+internal fun inUpperHalf(cue: Cue, width: Int, height: Int): Boolean {
+    val (top, bottom) = pictureEdges(cue, width, height) ?: return false
+    return top + bottom < height
+}
+
 /**
  * How far the subtitle must rise, in pixels, so that what it shows - [shown],
  * the cues on screen or the last ones - ends [gap] above [edge] (window
  * pixels): the controls' top. A line of text ends at [textBottom]
  * (window pixels), a picture at its own bottom edge in the box [width] x
- * [height] whose top is at [boxTop] ([pictureBottom]). Nothing shown yet: as a
- * line of text would.
+ * [height] whose top is at [boxTop] ([pictureBottom]); one in the upper half
+ * stays where it is ([inUpperHalf]) and counts for nothing. Nothing shown
+ * yet: as a line of text would.
  */
 internal fun subtitleClearance(shown: List<Cue>, width: Int, height: Int, boxTop: Float, textBottom: Float, edge: Float, gap: Float): Float {
     var lowest = if (shown.isEmpty() || shown.any { it.bitmap == null }) textBottom else Float.NEGATIVE_INFINITY
-    for (cue in shown) pictureBottom(cue, width, height)?.let { lowest = maxOf(lowest, boxTop + it) }
+    for (cue in shown) {
+        if (inUpperHalf(cue, width, height)) continue
+        pictureBottom(cue, width, height)?.let { lowest = maxOf(lowest, boxTop + it) }
+    }
     if (lowest == Float.NEGATIVE_INFINITY) return 0f
     return (lowest - (edge - gap)).coerceAtLeast(0f)
 }
 
 /**
- * How far the subtitle may rise and keep whole a picture in the upper half of
- * its box [width] x [height] - a sign at the top of the frame, shown with a
- * line at the bottom: that picture's top edge, in pixels from the box's top.
- * No bound where none shows.
+ * How far the subtitle may rise and keep whole a picture that rises - one in
+ * the lower half of its box [width] x [height]: that picture's top edge, in
+ * pixels from the box's top. A sign in the upper half bounds nothing: it
+ * stays where it is ([heldInPlace]). No bound where none shows.
  */
 internal fun subtitleRiseRoom(shown: List<Cue>, width: Int, height: Int): Float {
     var room = Float.POSITIVE_INFINITY
     for (cue in shown) {
         val (top, bottom) = pictureEdges(cue, width, height) ?: continue
-        if (top + bottom < height) room = minOf(room, top.coerceAtLeast(0f))
+        if (top + bottom >= height) room = minOf(room, top.coerceAtLeast(0f))
     }
     return room
+}
+
+/**
+ * [cues] as a subtitle view raised [lift] pixels draws them, its box [width]
+ * x [height]: a picture in the upper half ([inUpperHalf]) lowered in it as
+ * far, so that on the screen it stays where it was - a sign stays on what it
+ * translates while the line under it rises above the controls. Text and the
+ * lower half's pictures rise with the view.
+ */
+internal fun heldInPlace(cues: List<Cue>, lift: Float, width: Int, height: Int): List<Cue> {
+    if (lift == 0f || height <= 0) return cues
+    return cues.map { cue ->
+        if (!inUpperHalf(cue, width, height)) cue else cue.buildUpon().setLine(cue.line + lift / height, cue.lineType).build()
+    }
 }
 
 /** The subtitle [tracks] play: the format of the selected text track, or null. */

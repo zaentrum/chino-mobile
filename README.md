@@ -178,6 +178,40 @@ for them). It recovers a
 failing stream by itself: a packaged title is retried in place, where it
 was; only a title played on the fly steps down its quality ladder.
 
+The Android player fits a title's picture to the screen, not its coded frame
+(`ui/player/PictureFit.kt`, the same rules as chino-web's): where `/play/info`
+gives a `pictureArea` - the part of the frame the picture takes, in
+fractions of it, where a file keeps black bars around it (a 2.39:1 film in a
+16:9 frame) - the frame is drawn larger and moved so that the picture is as
+large as the screen allows, in its middle: the bars are cropped, the picture
+never is. Without one, the whole frame fits, as before. Held sideways, the
+fitted picture keeps out of the display cutout's band. Media3 lays the frame
+out as ever; only its drawing is scaled and moved (`PictureFitter`), which
+the video's SurfaceView follows, so a rendition of another size, a turn of
+the phone and a quality switch fit the same.
+
+- **Pinch** — held sideways, two fingers spread apart zoom the picture until
+  it fills the screen, its edges cropped - the cutout's band too, where the
+  window reaches into it (Android 15 and later draw the app there); brought
+  together, they fit it again. The picture follows the fingers, gives a
+  little past either end, and settles at fill or fit when they lift: fill
+  where they spread by a fifth of the way or more, fit where they closed, else
+  where it was. A pinch is the picture's once it starts - a pinch begun on the
+  seek bar never seeks - and does nothing while a menu is open, upright, or
+  where fill is fit (a picture of the screen's shape).
+- **Remembered** — fill is kept on the phone (`chino_player` preferences):
+  the next episode and every title after it play filled, sideways, until a
+  pinch in. Upright the picture always fits.
+- **Subtitles** — text is laid out in what shows of the frame (the frame on
+  screen, less the cutout's band): its size, its margin and its rise above
+  the controls go by that. A picture subtitle (PGS) is drawn where the
+  frame's transform puts it, and kept whole on the screen: one in a bottom
+  bar that is cropped comes up onto the picture with the gap it had to the
+  frame's edge (at most a text line's margin), and one wider than what shows
+  is made smaller in its own shape. Where nothing is cropped, nothing moves.
+- **Downloads** — the play info a download keeps (`title.json`) has the
+  picture area, so a downloaded title fits the same without the server.
+
 Zap's cards start on the master's first variant and the audio it starts
 with — what chino-stream lists first for the device's caps, and warms — and
 on Android the cards ahead are prefetched to exactly those bytes.

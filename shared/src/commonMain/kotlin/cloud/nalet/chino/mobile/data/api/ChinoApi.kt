@@ -23,10 +23,20 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.nullable
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.floatOrNull
 
 /**
  * Mirrors chino-api/internal/http/router.go and chino-androidtv's ChinoApi
@@ -657,7 +667,58 @@ data class PlayInfo(
     @SerialName("audio_tracks") val audioTracks: List<TrackInfo> = emptyList(),
     /** Embedded subtitle tracks (drives the captions menu). */
     @SerialName("subtitle_tracks") val subtitleTracks: List<TrackInfo> = emptyList(),
+    /** The part of the frame the title's picture takes, where the frame
+     *  keeps black bars around it; null where the server doesn't know it or
+     *  it is the whole frame. Kept with a download (title.json), so the
+     *  picture fits the same without the server. */
+    @Serializable(with = LenientPictureArea::class)
+    val pictureArea: PictureArea? = null,
 )
+
+/**
+ * The part of a title's coded frame its picture takes - /play/info's
+ * `pictureArea`: its left and top edges, width and height as fractions (0-1)
+ * of the frame, so the same for every rendition. Outside it, over the whole
+ * title, there is only black: bars the file keeps around its picture, as a
+ * 2.39:1 film in a 16:9 frame has above and below it. The player fits it to
+ * the screen, not the frame ([cloud.nalet.chino.mobile.ui.player.PictureFit]).
+ */
+@Serializable
+data class PictureArea(
+    val left: Float,
+    val top: Float,
+    val width: Float,
+    val height: Float,
+)
+
+/**
+ * [PlayInfo.pictureArea] read so that it never costs the play info: one
+ * that is not an object of four numbers - a string, a part missing - is no
+ * picture area, and the rest of the answer reads as before. Written as it is.
+ */
+internal object LenientPictureArea : KSerializer<PictureArea?> {
+    private val plain = PictureArea.serializer()
+
+    @OptIn(ExperimentalSerializationApi::class)
+    override val descriptor: SerialDescriptor = plain.descriptor.nullable
+
+    @OptIn(ExperimentalSerializationApi::class)
+    override fun serialize(encoder: Encoder, value: PictureArea?) {
+        if (value == null) encoder.encodeNull() else encoder.encodeSerializableValue(plain, value)
+    }
+
+    override fun deserialize(decoder: Decoder): PictureArea? {
+        val json = decoder as? JsonDecoder ?: return decoder.decodeSerializableValue(plain)
+        val area = json.decodeJsonElement() as? JsonObject ?: return null
+        fun number(name: String): Float? = (area[name] as? JsonPrimitive)?.takeIf { !it.isString }?.floatOrNull
+        return PictureArea(
+            left = number("left") ?: return null,
+            top = number("top") ?: return null,
+            width = number("width") ?: return null,
+            height = number("height") ?: return null,
+        )
+    }
+}
 
 /** One row of the People (cast & crew) search results, from /v1/people and
  *  /v1/search alike. `credits` is the number of titles this person is

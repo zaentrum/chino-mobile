@@ -1,5 +1,7 @@
 package cloud.nalet.chino.mobile.downloads
 
+import cloud.nalet.chino.mobile.data.api.PictureArea
+import cloud.nalet.chino.mobile.data.api.PlayInfo
 import cloud.nalet.chino.mobile.data.downloads.BookChange
 import cloud.nalet.chino.mobile.data.downloads.DownloadedTitle
 import cloud.nalet.chino.mobile.data.downloads.OwnerClaim
@@ -106,6 +108,25 @@ class TitleFilesTest {
         files.awaitWrites()
         assertFalse(File(root, t.key).exists())
         assertNull(files[t.key])
+    }
+
+    @Test
+    fun aDownloadKeepsWhereItsPictureIsInTheFrameSoItFitsWithoutTheServer() = runBlocking {
+        val files = TitleFiles(root)
+        files.awaitReady()
+        val area = PictureArea(0f, 0.1278f, 1f, 0.7444f)
+        val t = title("film").copy(info = PlayInfo(mode = "packaged", pictureArea = area))
+        files.put(t)
+        files.awaitWrites()
+        val again = TitleFiles(root)
+        again.awaitReady()
+        assertEquals(area, again[t.key]?.info?.pictureArea)
+        // One downloaded before the server measured it reads as before: none.
+        fileOf(t).writeText(fileOf(t).readText().replace(Regex(",?\"pictureArea\":\\{[^}]*\\}"), ""))
+        val older = TitleFiles(root)
+        older.awaitReady()
+        assertEquals("packaged", older[t.key]?.info?.mode)
+        assertNull(older[t.key]?.info?.pictureArea)
     }
 
     @Test

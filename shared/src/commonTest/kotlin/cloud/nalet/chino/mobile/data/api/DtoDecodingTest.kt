@@ -348,4 +348,45 @@ class DtoDecodingTest {
         assertNull(info.audioTracks[1].surround)
         assertNull(info.audioTracks[0].group)
     }
+
+    @Test
+    fun playInfoSaysWhereInTheFrameThePictureIs() {
+        // A 2.39:1 picture in a 1920x1080 frame, 1920x804 of it.
+        val info = ChinoJson.decodeFromString<PlayInfo>(
+            """
+            {"mode":"packaged","width":1920,"height":1080,
+             "pictureArea":{"left":0.0,"top":0.1278,"width":1.0,"height":0.7444}}
+            """,
+        )
+        assertEquals(PictureArea(0f, 0.1278f, 1f, 0.7444f), info.pictureArea)
+        // A server that doesn't know it says nothing.
+        assertNull(ChinoJson.decodeFromString<PlayInfo>("""{"mode":"packaged"}""").pictureArea)
+        assertNull(ChinoJson.decodeFromString<PlayInfo>("""{"mode":"packaged","pictureArea":null}""").pictureArea)
+    }
+
+    @Test
+    fun aPictureAreaTheAppCantReadCostsNothingElseOfThePlayInfo() {
+        for (area in listOf(
+            """"pictureArea":"0,0.1,1,0.8"""",
+            """"pictureArea":[0,0.1,1,0.8]""",
+            """"pictureArea":{"left":0,"top":0.1,"width":1}""",
+            """"pictureArea":{"left":"0","top":0.1,"width":1,"height":0.8}""",
+            """"pictureArea":{"left":0,"top":0.1,"width":1,"height":null}""",
+        )) {
+            val info = ChinoJson.decodeFromString<PlayInfo>("""{"mode":"packaged","duration_ms":6000000,$area,"default_quality":"auto"}""")
+            assertNull(info.pictureArea, area)
+            assertEquals("packaged", info.mode, area)
+            assertEquals(6_000_000L, info.durationMs, area)
+            assertEquals("auto", info.defaultQuality, area)
+        }
+    }
+
+    @Test
+    fun aPictureAreaIsWrittenAsItCameAndOneThatIsntThereIsNotWritten() {
+        val area = PictureArea(0.125f, 0f, 0.75f, 1f)
+        val written = ChinoJson.encodeToString(PlayInfo.serializer(), PlayInfo(mode = "packaged", pictureArea = area))
+        assertTrue("\"pictureArea\":{\"left\":0.125,\"top\":0.0,\"width\":0.75,\"height\":1.0}" in written, written)
+        assertEquals(area, ChinoJson.decodeFromString<PlayInfo>(written).pictureArea)
+        assertFalse("pictureArea" in ChinoJson.encodeToString(PlayInfo.serializer(), PlayInfo(mode = "packaged")))
+    }
 }

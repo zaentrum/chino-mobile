@@ -189,14 +189,23 @@ class SubtitleLookTest {
     }
 
     @Test
-    fun aSignAtTheTopOfTheFrameBoundsTheRiseSoItNeverLeavesTheFrame() {
+    fun aSignAtTheTopStaysWhereItIsWhileTheLineUnderItRisesAboveTheControls() {
         val sign = inTheLook(pgs(600, 50, 660, 60))
         val line = inTheLook(pgs(400, 40, 760, 960))
-        // Its top edge, 60 px from the top of a 1920 x 1080 picture.
-        assertEquals(60f, subtitleRiseRoom(listOf(sign, line), 1920, 1080), 0.01f)
-        // A line alone, or text: no bound.
-        assertEquals(Float.POSITIVE_INFINITY, subtitleRiseRoom(listOf(line), 1920, 1080))
+        // The sign bounds nothing: the line rises, never past its own top edge.
+        assertEquals(960f, subtitleRiseRoom(listOf(sign, line), 1920, 1080), 0.01f)
+        assertEquals(Float.POSITIVE_INFINITY, subtitleRiseRoom(listOf(sign), 1920, 1080))
         assertEquals(Float.POSITIVE_INFINITY, subtitleRiseRoom(listOf(Cue.Builder().setText("Hello").build()), 1920, 1080))
+        // Raised 200 px, the view draws the sign 200 px lower in it - on the
+        // screen where it was - and the line rises with it.
+        val held = heldInPlace(listOf(sign, line), 200f, 1920, 1080)
+        assertEquals(sign.line + 200f / 1080f, held[0].line, 1e-6f)
+        assertEquals(sign.lineAnchor, held[0].lineAnchor)
+        assertEquals(line.line, held[1].line, 1e-6f)
+        assertEquals(listOf(sign, line), heldInPlace(listOf(sign, line), 0f, 1920, 1080))
+        // The rise goes by what rises: a sign shown alone needs none.
+        assertEquals(0f, subtitleClearance(listOf(sign), 1920, 1080, 0f, 993.6f, 800f, 8f), 0.01f)
+        assertEquals(208f, subtitleClearance(listOf(sign, inTheLook(pgs(400, 40, 760, 960))), 1920, 1080, 0f, 993.6f, 800f, 8f), 0.01f)
     }
 
     @Test
