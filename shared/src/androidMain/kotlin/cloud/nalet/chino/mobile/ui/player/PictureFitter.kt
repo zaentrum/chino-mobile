@@ -91,6 +91,11 @@ internal class PictureFitter(private val playerView: PlayerView, private val sub
     var fit: PictureFit? = null
         private set
 
+    /** Hears whether fill applies here and whether the picture rests filled,
+     *  each time either changes: what a screen reader's zoom action offers. */
+    var onRest: ((fillApplies: Boolean, filled: Boolean) -> Unit)? = null
+    private var rest: Pair<Boolean, Boolean>? = null
+
     /** The zoom the picture is drawn at now. */
     val zoom: Float get() = driven ?: if (fit?.restsFilled(fill, titleFill) == true) 1f else 0f
 
@@ -111,6 +116,11 @@ internal class PictureFitter(private val playerView: PlayerView, private val sub
         val laidOut = Size(frame.width.toFloat(), frame.height.toFloat())
         val next = if (frameKnown(laidOut)) PictureFit(box, laidOut, area, side) else null
         fit = next
+        val atRest = (next?.fillApplies == true) to (next?.restsFilled(fill, titleFill) == true)
+        if (atRest != rest) {
+            rest = atRest
+            onRest?.invoke(atRest.first, atRest.second)
+        }
         val transform = next?.transformAt(zoom) ?: PictureTransform.None
         frame.pivotX = laidOut.width / 2f
         frame.pivotY = laidOut.height / 2f

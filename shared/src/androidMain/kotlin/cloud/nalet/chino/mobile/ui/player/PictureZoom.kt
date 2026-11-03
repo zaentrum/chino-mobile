@@ -6,9 +6,14 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroidSize
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import kotlin.math.abs
 
 /**
@@ -33,6 +38,32 @@ internal class PictureFillChoice private constructor(private val prefs: SharedPr
             PictureFillChoice(context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE))
     }
 }
+
+/** The picture's zoom where a screen reader can change it: whether it fills
+ *  the screen now, and what switches it to fit or to fill as a pinch would. */
+internal class PictureZoomAction(val filled: Boolean, val toggle: () -> Unit)
+
+/**
+ * The picture's zoom for a screen reader: the picture, named [name] (the
+ * title playing), with one action - "zoom to fill", or "zoom to fit" while it
+ * fills the screen ([PlayerButtons.zoom]) - that does what a pinch does.
+ * Without [zoom] (upright, or where fill is fit) the picture is no stop of
+ * its own, as before.
+ */
+internal fun Modifier.pictureZoomAction(name: String, zoom: PictureZoomAction?): Modifier =
+    if (zoom == null) {
+        this
+    } else {
+        semantics {
+            contentDescription = name
+            customActions = listOf(
+                CustomAccessibilityAction(PlayerButtons.zoom(zoom.filled).name) {
+                    zoom.toggle()
+                    true
+                },
+            )
+        }
+    }
 
 /**
  * Two fingers spread apart or brought together over the player: a pinch of

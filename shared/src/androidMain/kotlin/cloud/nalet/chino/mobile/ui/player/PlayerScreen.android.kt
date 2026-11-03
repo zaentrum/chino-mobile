@@ -1915,6 +1915,31 @@ private fun PlaybackSurface(
     val settling = remember { Animatable(0f) }
     var settle by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var pinchFrom by remember { mutableFloatStateOf(0f) }
+    // Whether fill applies, and whether the picture rests filled: the screen
+    // reader's zoom action (pictureZoomAction).
+    var zoomAtRest by remember { mutableStateOf(false to false) }
+    // The picture settles at fit (0) or fill (1), as a pinch's end or the
+    // screen reader's action chose: the remembered choice kept where it
+    // carries over to this title, else this title's own (PictureFit.choose).
+    fun settleAt(f: PictureFitter, fit: PictureFit, rest: Float) {
+        // From where it is: held there before the choice redraws it.
+        val from = f.zoom
+        f.driven = from
+        val chosen = fit.choose(fill = rest == 1f, rememberedFill = fillChosen)
+        if (chosen.remembered != fillChosen) fillChoice.fill = chosen.remembered
+        fillChosen = chosen.remembered
+        titleFill = chosen.title
+        settle?.cancel()
+        settle = zoomScope.launch {
+            settling.snapTo(from)
+            settling.animateTo(rest, spring(stiffness = Spring.StiffnessMediumLow)) { f.driven = value }
+            // At rest: fill or fit as chosen. A pinch that takes it on
+            // cancels this before it gets here.
+            f.fill = fillChosen
+            f.titleFill = titleFill
+            f.driven = null
+        }
+    }
     // The display cutout's band at each side, held sideways: the fitted
     // picture keeps out of it (fill covers it).
     val cutout = WindowInsets.displayCutout
@@ -1970,21 +1995,7 @@ private fun PlaybackSurface(
                         val f = fitter[0]
                         val fit = f?.fit
                         if (f != null && fit != null) {
-                            val rest = pinchRest(pinchFrom, fit.zoomAfterPinch(pinchFrom, spread))
-                            val chosen = fit.choose(fill = rest == 1f, rememberedFill = fillChosen)
-                            if (chosen.remembered != fillChosen) fillChoice.fill = chosen.remembered
-                            fillChosen = chosen.remembered
-                            titleFill = chosen.title
-                            val from = f.driven ?: rest
-                            settle = zoomScope.launch {
-                                settling.snapTo(from)
-                                settling.animateTo(rest, spring(stiffness = Spring.StiffnessMediumLow)) { f.driven = value }
-                                // At rest: fill or fit as chosen. A pinch that
-                                // takes it on cancels this before it gets here.
-                                f.fill = fillChosen
-                                f.titleFill = titleFill
-                                f.driven = null
-                            }
+                            settleAt(f, fit, pinchRest(pinchFrom, fit.zoomAfterPinch(pinchFrom, spread)))
                         } else {
                             f?.driven = null
                         }
@@ -2011,11 +2022,21 @@ private fun PlaybackSurface(
             label = "subtitle lift",
         )
         LaunchedEffect(Unit) { snapshotFlow { subtitleLift }.collect { subtitles[0]?.lift(it) } }
+        // Fill and fit for a screen reader, where a pinch would switch them.
+        val zoomAction = if (!zoomAtRest.first) {
+            null
+        } else {
+            PictureZoomAction(filled = zoomAtRest.second) {
+                val f = fitter[0]
+                val fit = f?.fit
+                if (f != null && fit != null && fit.fillApplies) settleAt(f, fit, if (zoomAtRest.second) 0f else 1f)
+            }
+        }
         AndroidView(
             // The whole screen: the fitted picture keeps out of the cutout's
             // band held sideways (PictureFitter), the strip beside it is the
             // player's black; fill covers it too.
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().pictureZoomAction(state.title, zoomAction),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     this.player = player
@@ -2028,6 +2049,7 @@ private fun PlaybackSurface(
                         it.onClearance = { px -> subtitleClearancePx = px }
                     }
                     fitter[0] = PictureFitter(this, subtitles[0]).also {
+                        it.onRest = { applies, filled -> zoomAtRest = applies to filled }
                         it.area = pictureArea
                         it.side = cutoutSide
                         it.fill = fillChosen

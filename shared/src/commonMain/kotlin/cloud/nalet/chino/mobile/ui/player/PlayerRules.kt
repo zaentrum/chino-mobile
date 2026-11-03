@@ -192,6 +192,10 @@ object PlayerButtons {
     /** What pressing it does: "exit fullscreen" in fullscreen, else "fullscreen". */
     fun fullscreen(on: Boolean) = PlayerButtonName(if (on) "exit fullscreen" else "fullscreen")
 
+    /** The picture's zoom, a screen reader's action on the picture - what a
+     *  pinch does: "zoom to fit" while it fills the screen, else "zoom to fill". */
+    fun zoom(filled: Boolean) = PlayerButtonName(if (filled) "zoom to fit" else "zoom to fill")
+
     /** The seek bar, a slider - "Seek" on chino-web, here in the chrome's
      *  lowercase - with the position and the title's length as the times
      *  beside it read: "1:07 of 10:53"; the position alone while the length

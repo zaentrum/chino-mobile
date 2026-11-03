@@ -199,6 +199,10 @@ the phone and a quality switch fit the same.
   where it was. A pinch is the picture's once it starts - a pinch begun on the
   seek bar never seeks - and does nothing while a menu is open, upright, or
   where fill is fit (a picture of the screen's shape).
+- **Screen reader** — where a pinch would zoom, TalkBack finds the picture,
+  named by the title playing, with one action: "zoom to fill", or "zoom to
+  fit" while it fills the screen. It does what a pinch does, and keeps the
+  choice the same way.
 - **Remembered** — fill is kept on the phone (`chino_player` preferences)
   and taken to the next title only where it crops little: a title with a
   picture area that fill crops by at most a tenth of its width and of its
