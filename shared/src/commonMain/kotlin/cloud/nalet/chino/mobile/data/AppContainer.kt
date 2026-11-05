@@ -257,6 +257,16 @@ class AppContainer(
      *  watchlists surface + the detail add-to-list picker. */
     val watchlists: WatchlistsRepository by lazy { WatchlistsRepository(chinoApi, appScope) }
 
+    /** What the person has set for their account, shared by the screens that
+     *  read it and the one that changes it. */
+    val preferences: PreferencesRepository by lazy {
+        PreferencesRepository(
+            load = { chinoApi.getPreferences() },
+            save = { chinoApi.patchPreferences(it) },
+            scope = appScope,
+        )
+    }
+
     /** What addons told the signed-in person — the bell's count and the list
      *  it opens. Asked for by the poll beside the navigator
      *  (ui/notices/NoticesPolling), which forgets them whenever the
@@ -308,7 +318,7 @@ class AppContainer(
      * its tokens leave [accountStore], and what the process still holds for
      * it goes as well — the bearer the HTTP client keeps (it would ride on
      * the next requests, whoever signs in next), the stream token, and the
-     * watchlist, likes and lists cached for it.
+     * watchlist, likes, lists and settings cached for it.
      */
     suspend fun forgetDeletedAccount(accountId: String) {
         // Casting stops - the TV plays nothing on for whoever comes next -
@@ -325,6 +335,7 @@ class AppContainer(
         streamTokenManager.invalidate()
         userFlags.clear()
         watchlists.clear()
+        preferences.clear()
     }
 
     /** Bug-report funnel (POST /v1/feedback → server-side bug ticket). Same

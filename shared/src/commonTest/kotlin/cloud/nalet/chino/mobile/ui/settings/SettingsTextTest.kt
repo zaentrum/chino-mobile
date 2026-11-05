@@ -24,4 +24,10 @@ class SettingsTextTest {
             SUBTITLE_SETTING_TEXT,
         )
     }
+
+    @Test
+    fun theWatchlistSectionsWordsAreItsSpecsWordForWord() {
+        assertEquals("Each list shows its movies in one row and its shows in another.", WATCHLIST_SETTING_TEXT)
+        assertEquals("Couldn't save this. Check the connection and try again.", WATCHLIST_NOT_SAVED)
+    }
 }

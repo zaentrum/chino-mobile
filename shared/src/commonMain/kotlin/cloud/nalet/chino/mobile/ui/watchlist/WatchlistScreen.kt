@@ -32,8 +32,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -104,6 +108,9 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
 
     val lists by model.lists.collectAsState()
     val shelves by model.shelves.collectAsState()
+    val byKind by model.byKind.collectAsState()
+    val kindRows by model.kindRows.collectAsState()
+    val openRow by model.openRow.collectAsState()
     val loadingShelves by model.loadingShelves.collectAsState()
     val failure by model.failure.collectAsState()
     val openListId by model.openListId.collectAsState()
@@ -132,6 +139,8 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
                 list = openList,
                 items = openItems,
                 loading = loadingOpenItems,
+                byKind = byKind,
+                openRow = openRow,
                 baseUrl = baseUrl,
                 token = token,
                 onBack = { model.closeList() },
@@ -153,11 +162,13 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
             WatchlistHub(
                 lists = lists,
                 shelves = shelves,
+                byKind = byKind,
+                kindRows = kindRows,
                 loading = loadingShelves,
                 baseUrl = baseUrl,
                 token = token,
                 onItemClick = { id -> nav.push(DetailScreen(id)) },
-                onOpenList = { list -> model.openList(list.id) },
+                onOpenList = { list, row -> model.openList(list.id, row) },
                 onNewList = { showCreate = true },
             )
         }
@@ -213,18 +224,22 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
 
 /* ─────────────────────────────────  Hub  ───────────────────────────────── */
 
-/** "Weekend Picks · 7" — shelf header text, list name + live item count. */
-private fun shelfTitle(list: Watchlist): String = "${list.name} · ${list.itemCount}"
+/** "Weekend Picks · 7" — shelf header text, list name + live item count; split,
+ *  the sum of its rows. */
+private fun shelfTitle(list: Watchlist, byKind: Boolean): String = "${list.name} · ${list.headingCount(byKind)}"
 
 @Composable
 private fun WatchlistHub(
     lists: List<Watchlist>,
     shelves: Map<String, List<Item>>,
+    byKind: Boolean,
+    kindRows: Map<String, KindRows>,
     loading: Boolean,
     baseUrl: String,
     token: String,
     onItemClick: (String) -> Unit,
-    onOpenList: (Watchlist) -> Unit,
+    /** Opens a list, at a row if one is given. */
+    onOpenList: (Watchlist, KindRow?) -> Unit,
     onNewList: () -> Unit,
 ) {
     if (loading) {
@@ -252,19 +267,37 @@ private fun WatchlistHub(
         )
         lists.forEach { list ->
             val items = shelves[list.id].orEmpty()
-            if (items.isEmpty()) {
+            val rows = kindRows[list.id] ?: KindRows()
+            if (if (byKind) rows.isEmpty() else items.isEmpty()) {
                 // Empty shelf keeps its header (tappable, like a populated
                 // shelf's) so the MORE view's rename / delete stays reachable.
-                EmptyShelf(list = list, onOpen = { onOpenList(list) })
+                EmptyShelf(list = list, byKind = byKind, onOpen = { onOpenList(list, null) })
+            } else if (byKind) {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    ListHeading(list = list, byKind = true, onOpen = { onOpenList(list, null) })
+                    KindRow.entries.filter { rows[it].isNotEmpty() }.forEach { row ->
+                        MediaRow(
+                            title = "${row.word} · ${list.countOf(row, rows)}",
+                            items = rows[row],
+                            baseUrl = baseUrl,
+                            streamToken = token,
+                            onItemClick = onItemClick,
+                            onSeeAll = { onOpenList(list, row) },
+                            // An episode in the shows row keeps its SxxEyy.
+                            episodeBadges = true,
+                            smallTitle = true,
+                        )
+                    }
+                }
             } else {
                 MediaRow(
-                    title = shelfTitle(list),
+                    title = shelfTitle(list, byKind = false),
                     items = items,
                     baseUrl = baseUrl,
                     streamToken = token,
                     onItemClick = onItemClick,
-                    onSeeAll = { onOpenList(list) },
-                    onTitleClick = { onOpenList(list) },
+                    onSeeAll = { onOpenList(list, null) },
+                    onTitleClick = { onOpenList(list, null) },
                     // Saved EPISODES carry their SxxEyy badge (CW-rail idiom).
                     episodeBadges = true,
                 )
@@ -281,23 +314,12 @@ private fun WatchlistHub(
 
 /** Shelf header + empty-state hint for a list with no items yet. */
 @Composable
-private fun EmptyShelf(list: Watchlist, onOpen: () -> Unit) {
+private fun EmptyShelf(list: Watchlist, byKind: Boolean, onOpen: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Same header type as MediaRow's shelf title (24sp / 32 line / 600),
-        // in Inter as a hub shelf's is: a <button> on the web, no heading.
-        Text(
-            text = shelfTitle(list),
-            color = Color.White,
-            fontSize = 24.sp,
-            lineHeight = 32.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .clickable(onClick = onOpen),
-        )
+        ListHeading(list = list, byKind = byKind, onOpen = onOpen)
         Text(
             text = "Save titles with the + button on any movie or show.",
             color = ChinoMuted,
@@ -306,6 +328,23 @@ private fun EmptyShelf(list: Watchlist, onOpen: () -> Unit) {
             modifier = Modifier.padding(horizontal = 16.dp),
         )
     }
+}
+
+/** A list's name and count, over its rows or its hint; a tap opens the list.
+ *  Same header type as MediaRow's shelf title (24sp / 32 line / 600), in Inter
+ *  as a hub shelf's is: a <button> on the web, no heading. */
+@Composable
+private fun ListHeading(list: Watchlist, byKind: Boolean, onOpen: () -> Unit) {
+    Text(
+        text = shelfTitle(list, byKind),
+        color = Color.White,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .clickable(onClick = onOpen),
+    )
 }
 
 @Composable
@@ -336,6 +375,8 @@ private fun ListMoreView(
     list: Watchlist,
     items: List<Item>,
     loading: Boolean,
+    byKind: Boolean,
+    openRow: KindRow?,
     baseUrl: String,
     token: String,
     onBack: () -> Unit,
@@ -343,6 +384,25 @@ private fun ListMoreView(
     onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val rows = remember(items) { splitByKind(items) }
+    val grid = rememberLazyGridState()
+    // Opened from a row's see all: the grid starts at that row's heading.
+    val target = openRow?.takeIf { byKind && rows[it].isNotEmpty() }
+    LaunchedEffect(target, rows) {
+        if (target != null) grid.scrollToItem(sectionStart(rows, target))
+    }
+    val cards: LazyGridScope.(List<Item>) -> Unit = { cardItems ->
+        items(cardItems, key = { it.id }) { item ->
+            MediaCard(
+                item = item,
+                posterUrl = "$baseUrl/v1/items/${item.id}/poster?stream=$token",
+                onClick = { onItemClick(item.id) },
+                // Saved EPISODES carry their SxxEyy badge (CW-rail idiom).
+                episodeBadge = episodeBadgeFor(item),
+                cardWidth = 110.dp,
+            )
+        }
+    }
     Column(modifier = Modifier.fillMaxSize()) {
         // Header: back to hub + "name · count" + rename / delete actions
         // (the default list can't be renamed or deleted — actions hidden).
@@ -371,7 +431,7 @@ private fun ListMoreView(
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 Text(
-                    text = "· ${list.itemCount}",
+                    text = "· ${list.headingCount(byKind)}",
                     color = ChinoMuted,
                     fontSize = 16.sp,
                 )
@@ -397,21 +457,29 @@ private fun ListMoreView(
                 )
             }
             else -> LazyVerticalGrid(
+                state = grid,
                 columns = GridCells.Adaptive(minSize = 110.dp),
                 contentPadding = PaddingValues(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(items, key = { it.id }) { item ->
-                    MediaCard(
-                        item = item,
-                        posterUrl = "$baseUrl/v1/items/${item.id}/poster?stream=$token",
-                        onClick = { onItemClick(item.id) },
-                        // Saved EPISODES carry their SxxEyy badge (CW-rail idiom).
-                        episodeBadge = episodeBadgeFor(item),
-                        cardWidth = 110.dp,
-                    )
+                if (byKind) {
+                    KindRow.entries.filter { rows[it].isNotEmpty() }.forEach { row ->
+                        item(key = "__heading_${row.query}__", span = { GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                text = "${row.word} · ${rows[row].size}",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                lineHeight = 24.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                style = ChinoHeading,
+                            )
+                        }
+                        cards(rows[row])
+                    }
+                } else {
+                    cards(items)
                 }
             }
         }

@@ -68,6 +68,19 @@ class ServerReachTest {
     }
 
     @Test
+    fun aWatchlistByKindNeedsBothTheSettingAndTheFilter() = runTest {
+        suspend fun offered(features: String): ServerFeatures? {
+            val reach = ServerReach(fetch = { """{"product":"chino","features":$features}""" })
+            reach.check()
+            return reach.features.value
+        }
+        assertEquals(true, offered("""{"preferences":true,"watchlist_kinds":true}""")?.watchlistByKind)
+        assertEquals(false, offered("""{"preferences":true}""")?.watchlistByKind)
+        assertEquals(false, offered("""{"watchlist_kinds":true}""")?.watchlistByKind)
+        assertEquals(false, offered("""{"downloads":true}""")?.watchlistByKind)
+    }
+
+    @Test
     fun theServersFeaturesAreRead() = runTest {
         val off = ServerReach(fetch = { """{"product":"chino","features":{"feedback":true,"downloads":false}}""" })
         assertEquals(Reach.Reachable, off.check())

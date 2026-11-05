@@ -262,7 +262,21 @@ class ChinoApi(private val http: HttpClient) {
     // shared with chino-web/chino-androidtv field-for-field.
 
     /** Default list first, then the rest by createdAt asc. */
-    suspend fun listWatchlists(): WatchlistsResponse = http.get("v1/me/watchlists").body()
+    suspend fun listWatchlists(withCounts: Boolean = false): WatchlistsResponse =
+        http.get("v1/me/watchlists") {
+            // Each list's titles by row, which asks the catalog: only if wanted.
+            if (withCounts) parameter("include", "counts")
+        }.body()
+
+    /** What the person has set for their account. */
+    suspend fun getPreferences(): Preferences = http.get("v1/me/preferences").body()
+
+    /** Changes the fields in [patch]; the answer is the whole document. */
+    suspend fun patchPreferences(patch: PreferencesPatch): Preferences =
+        http.patch("v1/me/preferences") {
+            contentType(ContentType.Application.Json)
+            setBody(patch)
+        }.body()
 
     /** 201 + the created list. Server validates: trim, 1..60 chars, max 50
      *  lists/user (409 "too many lists"), case-insensitive duplicate name
@@ -287,8 +301,11 @@ class ChinoApi(private val http: HttpClient) {
     suspend fun deleteWatchlist(listId: String) { http.delete("v1/me/watchlists/$listId") }
 
     /** A single list's header + its item ids (newest-added first). */
-    suspend fun getWatchlist(listId: String): WatchlistDetail =
-        http.get("v1/me/watchlists/$listId").body()
+    suspend fun getWatchlist(listId: String, kind: String? = null): WatchlistDetail =
+        http.get("v1/me/watchlists/$listId") {
+            // One row of the list: "movie", or "series" with everything else.
+            if (kind != null) parameter("kind", kind)
+        }.body()
 
     /** Idempotent add. 404 when the list isn't the caller's. */
     suspend fun addItemToList(listId: String, itemId: String) {
@@ -797,6 +814,24 @@ data class Watchlist(
     val itemCount: Int = 0,
     val isDefault: Boolean = false,
     val createdAt: String? = null,
+    /** Its titles by row, only when asked for with include=counts. */
+    val counts: WatchlistCounts? = null,
+)
+
+@Serializable
+data class WatchlistCounts(val movie: Int = 0, val series: Int = 0)
+
+/** GET /v1/me/preferences: a key an older server leaves out is its default. */
+@Serializable
+data class Preferences(
+    @SerialName("watchlist_by_kind") val watchlistByKind: Boolean = false,
+)
+
+/** PATCH /v1/me/preferences. The field has no default so that false is always
+ *  sent, however the client's JSON treats a value equal to its default. */
+@Serializable
+data class PreferencesPatch(
+    @SerialName("watchlist_by_kind") val watchlistByKind: Boolean,
 )
 
 @Serializable

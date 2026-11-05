@@ -234,6 +234,13 @@ fun SettingsSection() {
             // where the platform keeps downloads and the server offers them.
             DownloadSettings()
 
+            // Only where the server keeps the setting and can fill the rows
+            // (docs/chino, watchlist).
+            if (features?.watchlistByKind == true) {
+                Box(modifier = Modifier.padding(top = 12.dp))
+                WatchlistSettings()
+            }
+
             Box(modifier = Modifier.padding(top = 12.dp))
             SectionHeading("Server")
             // Change-server entry — re-opens Add-Server prefilled with the current
@@ -356,6 +363,12 @@ internal const val AUDIO_SETTING_TEXT =
         "With Original, each title plays in the language it was made in. " +
         "A choice in the player applies only to what's playing now."
 
+/** The line under the watchlist setting, word for word as docs/chino gives it. */
+internal const val WATCHLIST_SETTING_TEXT = "Each list shows its movies in one row and its shows in another."
+
+/** What the watchlist section says when its setting couldn't be saved. */
+internal const val WATCHLIST_NOT_SAVED = "Couldn't save this. Check the connection and try again."
+
 /** The text under the subtitle setting, word for word as docs/chino
  *  subtitles ("The setting") gives it for every app. */
 internal const val SUBTITLE_SETTING_TEXT =
@@ -410,8 +423,28 @@ internal fun ActionRow(
     }
 }
 
+/** "Separate movies and shows", kept with the account: asked for as the section
+ *  shows, and saying when a change couldn't be saved. */
 @Composable
-internal fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
+private fun WatchlistSettings() {
+    val preferences = LocalAppContainer.current.preferences
+    val current by preferences.preferences.collectAsState()
+    val saveFailed by preferences.saveFailed.collectAsState()
+    LaunchedEffect(preferences) { preferences.refresh() }
+    SectionHeading("Watchlist")
+    ToggleRow(
+        label = "Separate movies and shows",
+        subtitle = WATCHLIST_SETTING_TEXT,
+        value = current?.watchlistByKind == true,
+        onChange = preferences::setWatchlistByKind,
+    )
+    if (saveFailed) {
+        Text(text = WATCHLIST_NOT_SAVED, color = ChinoRed, fontSize = 12.sp)
+    }
+}
+
+@Composable
+internal fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit, subtitle: String? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -421,7 +454,10 @@ internal fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Uni
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, color = Color.White, fontSize = 14.sp)
+            if (subtitle != null) Text(text = subtitle, color = ChinoMuted, fontSize = 12.sp)
+        }
         TogglePill(value = value, onChange = onChange)
     }
 }

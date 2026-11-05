@@ -751,6 +751,8 @@ fun MediaRow(
     onToggleWatched: ((String) -> Unit)? = null,
     /** Each card's menu plays its title ("play"); null: no such item. */
     onPlay: ((String) -> Unit)? = null,
+    /** A row under a heading of its own: a list's movies or shows. */
+    smallTitle: Boolean = false,
 ) {
     // CDP-verified: title → LazyRow gap = 16dp (web `mb-4`).
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -760,8 +762,8 @@ fun MediaRow(
         Text(
             text = title,
             color = Color.White,
-            fontSize = 24.sp,
-            lineHeight = 32.sp,
+            fontSize = if (smallTitle) 16.sp else 24.sp,
+            lineHeight = if (smallTitle) 24.sp else 32.sp,
             fontWeight = FontWeight.SemiBold,
             style = if (onTitleClick == null) ChinoHeading else LocalTextStyle.current,
             modifier = Modifier
