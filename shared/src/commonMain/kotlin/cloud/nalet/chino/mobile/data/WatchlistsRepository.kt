@@ -44,11 +44,16 @@ class WatchlistsRepository(
 
     /** Loads the list overview once. Idempotent. Why it didn't load, where
      *  it didn't - the lists kept as they were; null where they are in. */
-    suspend fun warmLists(force: Boolean = false): Throwable? {
+    suspend fun warmLists(force: Boolean = false, withCounts: Boolean = false): Throwable? {
         mutex.withLock {
             if (listsLoaded && !force) return null
             return try {
-                _lists.value = api.listWatchlists().lists
+                // Asked without them, a list keeps the counts it had: the hub
+                // that split it reads them after other screens have refreshed.
+                val had = _lists.value.associateBy { it.id }
+                _lists.value = api.listWatchlists(withCounts).lists.map { list ->
+                    if (list.counts == null) list.copy(counts = had[list.id]?.counts) else list
+                }
                 listsLoaded = true
                 null
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -154,7 +159,7 @@ class WatchlistsRepository(
     /** Renames a list and updates the cached overview. Throws on rejection. */
     suspend fun rename(listId: String, name: String): Watchlist {
         val updated = api.renameWatchlist(listId, name)
-        _lists.value = _lists.value.map { if (it.id == listId) updated else it }
+        _lists.value = _lists.value.map { if (it.id == listId) updated.copy(counts = it.counts) else it }
         return updated
     }
 

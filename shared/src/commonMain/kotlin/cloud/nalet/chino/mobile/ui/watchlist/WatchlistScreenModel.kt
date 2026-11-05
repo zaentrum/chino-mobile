@@ -34,6 +34,11 @@ data class ListFailure(val failure: LoadFailure, val details: String)
  * complete item set for the MORE grid. Create / rename / delete go straight
  * through the shared [cloud.nalet.chino.mobile.data.WatchlistsRepository] so
  * every other surface (detail add-to-list picker, card badges) stays in sync.
+ *
+ * With "Separate movies and shows" on, each list asks for one row per kind
+ * instead: a list gives only ids, so the server sorts them. The setting is read
+ * as the hub loads. This model is made anew each time the Watchlist section
+ * opens, so a change made in the Settings section is always seen.
  */
 class WatchlistScreenModel(
     private val container: AppContainer,
@@ -50,6 +55,15 @@ class WatchlistScreenModel(
     private val _shelves = MutableStateFlow<Map<String, List<Item>>>(emptyMap())
     val shelves: StateFlow<Map<String, List<Item>>> = _shelves.asStateFlow()
 
+    /** The hub is split ([kindRows] in place of [shelves]). */
+    private val _byKind = MutableStateFlow(false)
+    val byKind: StateFlow<Boolean> = _byKind.asStateFlow()
+
+    /** listId -> its rows, each its first [HUB_SHELF_CAP] Items. As for
+     *  [shelves], a missing key means "not loaded yet". */
+    private val _kindRows = MutableStateFlow<Map<String, KindRows>>(emptyMap())
+    val kindRows: StateFlow<Map<String, KindRows>> = _kindRows.asStateFlow()
+
     private val _loadingShelves = MutableStateFlow(true)
     val loadingShelves: StateFlow<Boolean> = _loadingShelves.asStateFlow()
 
@@ -65,6 +79,10 @@ class WatchlistScreenModel(
     /** The open list's COMPLETE resolved items, newest-added first. */
     private val _openItems = MutableStateFlow<List<Item>>(emptyList())
     val openItems: StateFlow<List<Item>> = _openItems.asStateFlow()
+
+    /** The row "see all" opened the MORE view at (null = its top). */
+    private val _openRow = MutableStateFlow<KindRow?>(null)
+    val openRow: StateFlow<KindRow?> = _openRow.asStateFlow()
 
     private val _loadingOpenItems = MutableStateFlow(false)
     val loadingOpenItems: StateFlow<Boolean> = _loadingOpenItems.asStateFlow()
@@ -88,9 +106,19 @@ class WatchlistScreenModel(
     private suspend fun loadShelves(showSpinner: Boolean = true) {
         if (showSpinner) _loadingShelves.value = true
         val before = _shelves.value
-        val listsFailed = repo.warmLists(force = true)
+        val rowsBefore = _kindRows.value
+        val byKind = watchlistByKindOn(container.serverReach, container.preferences)
+        val listsFailed = repo.warmLists(force = true, withCounts = byKind)
         var failed: Throwable? = listsFailed
-        if (listsFailed == null) {
+        if (listsFailed == null && byKind) {
+            val fetched = coroutineScope {
+                repo.lists.value.map { list ->
+                    async { list.id to runCatching { fetchKindRows(container.chinoApi, list.id) } }
+                }.awaitAll()
+            }
+            failed = fetched.firstNotNullOfOrNull { (_, r) -> r.exceptionOrNull()?.takeUnless { it is CancellationException } }
+            _kindRows.value = fetched.mapNotNull { (id, r) -> (r.getOrNull() ?: rowsBefore[id])?.let { id to it } }.toMap()
+        } else if (listsFailed == null) {
             val overview = repo.lists.value
             val fetched = coroutineScope {
                 overview.map { list ->
@@ -112,8 +140,11 @@ class WatchlistScreenModel(
         // Nothing older on screen for what didn't load: the couldn't-load
         // screen says why, never an empty hub (an empty shelf claims what
         // nobody knows yet). What showed before stays as it was.
-        val unknown = listsFailed != null && before.isEmpty() ||
-            repo.lists.value.any { it.id !in _shelves.value }
+        val known = if (byKind) _kindRows.value.keys else _shelves.value.keys
+        val nothingBefore = if (byKind) rowsBefore.isEmpty() else before.isEmpty()
+        val unknown = listsFailed != null && nothingBefore ||
+            repo.lists.value.any { it.id !in known }
+        _byKind.value = byKind
         _failure.value = failed?.takeIf { unknown }?.let { ListFailure(it.loadFailure(singleThing = false), it.loadDetails()) }
         _loadingShelves.value = false
     }
@@ -124,9 +155,11 @@ class WatchlistScreenModel(
         screenModelScope.launch { loadShelves() }
     }
 
-    /** Opens [listId]'s MORE view and loads its full item set. */
-    fun openList(listId: String) {
+    /** Opens [listId]'s MORE view, at [row] if one is given, and loads its
+     *  full item set. */
+    fun openList(listId: String, row: KindRow? = null) {
         _openListId.value = listId
+        _openRow.value = row
         loadOpenItems(listId)
     }
 
@@ -135,6 +168,7 @@ class WatchlistScreenModel(
      *  reconcile without flashing the whole hub. */
     fun closeList() {
         _openListId.value = null
+        _openRow.value = null
         screenModelScope.launch { loadShelves(showSpinner = false) }
     }
 
@@ -163,6 +197,7 @@ class WatchlistScreenModel(
                 // A fresh list is empty — seed its shelf so the hub renders
                 // the new header + empty hint without a refetch.
                 _shelves.value = _shelves.value + (created.id to emptyList())
+                _kindRows.value = _kindRows.value + (created.id to KindRows())
                 onDone(created)
             }.onFailure {
                 _dialogError.value = friendlyError(it)
@@ -189,6 +224,7 @@ class WatchlistScreenModel(
         screenModelScope.launch {
             runCatching { repo.delete(listId) }.onSuccess {
                 _shelves.value = _shelves.value - listId
+                _kindRows.value = _kindRows.value - listId
                 // Deleting from the MORE view drops the user back on the hub.
                 if (_openListId.value == listId) _openListId.value = null
             }

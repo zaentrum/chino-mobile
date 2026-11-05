@@ -5,6 +5,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -26,7 +27,15 @@ enum class Reach {
 data class ServerFeatures(
     val downloads: Boolean = true,
     val feedback: Boolean = false,
-)
+    /** /v1/me/preferences keeps a person's settings. */
+    val preferences: Boolean = false,
+    /** A list can be asked for by kind, and for its counts by kind. */
+    @SerialName("watchlist_kinds") val watchlistKinds: Boolean = false,
+) {
+    /** The server keeps the setting that splits a list and can fill its rows:
+     *  without both the setting is hidden. */
+    val watchlistByKind: Boolean get() = preferences && watchlistKinds
+}
 
 @Serializable
 private data class ConfigDoc(val product: String? = null, val features: ServerFeatures? = null)
