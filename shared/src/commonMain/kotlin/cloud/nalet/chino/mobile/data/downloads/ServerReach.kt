@@ -5,6 +5,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -26,6 +27,10 @@ enum class Reach {
 data class ServerFeatures(
     val downloads: Boolean = true,
     val feedback: Boolean = false,
+    /** The account keeps Separate movies and shows, and a list is answered
+     *  by kind (changes 8.C18 and 16.C25 of the specification); off where
+     *  the server doesn't say. */
+    @SerialName("watchlist_kinds") val watchlistKinds: Boolean = false,
 )
 
 @Serializable
@@ -40,10 +45,21 @@ private val configJson = Json { ignoreUnknownKeys = true; coerceInputValues = tr
  * answer came; [networkUp] is the platform's word on whether the phone has
  * a connection at all (null where it cannot tell), so a phone in airplane
  * mode is unreachable at once, without a request that has to time out.
+ *
+ * Whether the server fills lists by kind is known from the start
+ * ([watchlistKinds]): [keptWatchlistKinds] is what the server said the last
+ * time it answered, kept on the device with the server, and every answer is
+ * kept again through [keepWatchlistKinds].
  */
 class ServerReach(
     private val fetch: suspend () -> String?,
     private val networkUp: () -> Boolean? = { null },
+    /** features.watchlist_kinds as the server said it the last time it
+     *  answered, kept on the device with the server; null where it never
+     *  did. */
+    keptWatchlistKinds: Boolean?,
+    /** Keeps features.watchlist_kinds as the server says it now. */
+    private val keepWatchlistKinds: suspend (Boolean) -> Unit,
 ) {
     private val _state = MutableStateFlow(Reach.Unknown)
     val state: StateFlow<Reach> = _state.asStateFlow()
@@ -53,6 +69,18 @@ class ServerReach(
     /** What the server said it offers the last time it answered; null
      *  before it has. */
     val features: StateFlow<ServerFeatures?> = _features.asStateFlow()
+
+    /** What is kept on the device of features.watchlist_kinds. */
+    private var kept: Boolean? = keptWatchlistKinds
+
+    private val _watchlistKinds = MutableStateFlow(keptWatchlistKinds ?: false)
+
+    /** Whether the server keeps Separate movies and shows and fills a list
+     *  by kind (features.watchlist_kinds): as it said the last time it
+     *  answered - in this process, else before, as kept on the device - so
+     *  known from the start, before the server answers and where it
+     *  doesn't; off where it never said. */
+    val watchlistKinds: StateFlow<Boolean> = _watchlistKinds.asStateFlow()
 
     /** Asks the server now. */
     suspend fun check(): Reach {
@@ -65,8 +93,25 @@ class ServerReach(
             null
         }
         if (doc == null) return set(Reach.Unreachable)
-        doc.features?.let { _features.value = it } ?: run { _features.value = ServerFeatures() }
+        val features = doc.features ?: ServerFeatures()
+        _features.value = features
+        _watchlistKinds.value = features.watchlistKinds
+        keep(features.watchlistKinds)
         return set(Reach.Reachable)
+    }
+
+    /** [on] kept on the device where it isn't yet. The copy is a
+     *  convenience: the answer stands without it. */
+    private suspend fun keep(on: Boolean) {
+        if (kept == on) return
+        try {
+            keepWatchlistKinds(on)
+            kept = on
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Unit
+        }
     }
 
     /** What another request found: it was answered, or not. */

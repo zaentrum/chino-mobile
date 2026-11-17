@@ -135,6 +135,10 @@ class MainShellScreen(
         // App-start warm: kick a lightweight prefetch of just the FIRST upcoming
         // Zap card once per process, so opening Zap is instant.
         androidx.compose.runtime.LaunchedEffect(Unit) { ZapAppStartWarm.warmOnce(container) }
+        // Beside it, what the server offers and the account's Separate movies
+        // and shows: settings and the watchlist draw them from their first
+        // frame.
+        androidx.compose.runtime.LaunchedEffect(Unit) { container.warmListsByKind() }
         // Drain crash reports a previous process wrote on its way down. Fired
         // here (not Application.onCreate) because the shell only composes once
         // signed in — POST /v1/feedback needs the bearer. Once per process;

@@ -46,6 +46,31 @@ data class ServerConfigBlob(
     /** The subtitle languages the connected server named last
      *  ([ServerConfigStore.subtitleLanguagesBlocking]). */
     @SerialName("subtitle_languages") val subtitleLanguages: KeptSubtitleLanguages? = null,
+    /** Separate movies and shows of the connected server's accounts, as it
+     *  last answered for each ([ServerConfigStore.watchlistByKindBlocking]). */
+    @SerialName("watchlist_by_kind") val watchlistByKind: KeptAccountChoices? = null,
+    /** What the connected server said of its features the last time it
+     *  answered /api/config ([ServerConfigStore.watchlistKindsBlocking]). */
+    @SerialName("features") val features: KeptServerFeatures? = null,
+)
+
+/** What the server at [baseUrl] said of its features the last time it
+ *  answered /api/config: [watchlistKinds], features.watchlist_kinds. Every
+ *  field has a default: a blob written before a field was added, or with one
+ *  missing, still reads, the server's address and the rest of it with it. */
+@Serializable
+data class KeptServerFeatures(
+    @SerialName("base_url") val baseUrl: String = "",
+    @SerialName("watchlist_kinds") val watchlistKinds: Boolean = false,
+)
+
+/** Each account's Separate movies and shows as the server at [baseUrl]
+ *  last answered it, by the account's id. Every field has a default, as
+ *  [KeptServerFeatures]' do. */
+@Serializable
+data class KeptAccountChoices(
+    @SerialName("base_url") val baseUrl: String = "",
+    @SerialName("accounts") val accounts: Map<String, Boolean> = emptyMap(),
 )
 
 /** The subtitle languages a server named (GET /subtitles/languages), kept
@@ -95,6 +120,30 @@ interface ServerConfigStore {
     /** Keeps what the server at [baseUrl] named ([subtitleLanguagesBlocking]):
      *  one server's, the one connected. */
     suspend fun saveSubtitleLanguages(baseUrl: String, languages: List<String>) {}
+
+    /** Separate movies and shows of [accountId] on the server at [baseUrl],
+     *  as that server last answered it - read or saved - kept so that the
+     *  switch shows it while it is read again, and where it couldn't be; null
+     *  where the server never answered it for that account. A copy of the
+     *  account's choice, which the server keeps (change 16.C25). */
+    fun watchlistByKindBlocking(baseUrl: String, accountId: String): Boolean? = null
+
+    /** Keeps what the server at [baseUrl] answered for [accountId]
+     *  ([watchlistByKindBlocking]); [on] null forgets it. */
+    suspend fun saveWatchlistByKind(baseUrl: String, accountId: String, on: Boolean?) {}
+
+    /** Whether the server at [baseUrl] said, the last time it answered
+     *  /api/config, that it keeps Separate movies and shows and fills a list
+     *  by kind (features.watchlist_kinds) - kept so that settings and the
+     *  watchlist know it from their first frame after a start, before the
+     *  server answers again, and where it doesn't; null where it never
+     *  answered. Another server saved, or the server forgotten, takes it
+     *  with it. */
+    fun watchlistKindsBlocking(baseUrl: String): Boolean? = null
+
+    /** Keeps what the server at [baseUrl] said ([watchlistKindsBlocking]):
+     *  one server's, the one connected. */
+    suspend fun saveWatchlistKinds(baseUrl: String, on: Boolean) {}
 }
 
 /** Per-platform factory — Android gives us a Context, iOS gives us a suite

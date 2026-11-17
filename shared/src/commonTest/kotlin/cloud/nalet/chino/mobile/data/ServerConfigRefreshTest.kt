@@ -41,7 +41,7 @@ class ServerConfigRefreshTest {
         val asked = mutableListOf<String>()
         val now = stored.copy(clientId = "chino-home")
 
-        val refresh = refreshServerConfig(store) { origin -> asked += origin; BootstrapResult.Ok(now) }
+        val refresh = refreshServerConfig(store) { origin -> asked += origin; BootstrapResult.Ok(now, watchlistKinds = false) }
 
         assertEquals(ServerRefresh.Changed, refresh)
         assertEquals(listOf("https://media.example.org"), asked, "the server's origin is asked, not its API path")
@@ -52,7 +52,7 @@ class ServerConfigRefreshTest {
     @Test
     fun theSameSettingsAreLeftAsTheyAre() = runTest {
         val store = MemoryStore(stored)
-        assertEquals(ServerRefresh.Unchanged, refreshServerConfig(store) { BootstrapResult.Ok(stored.copy()) })
+        assertEquals(ServerRefresh.Unchanged, refreshServerConfig(store) { BootstrapResult.Ok(stored.copy(), watchlistKinds = false) })
         assertEquals(0, store.saves)
     }
 
@@ -70,7 +70,7 @@ class ServerConfigRefreshTest {
     @Test
     fun withoutAConnectedServerNothingIsAsked() = runTest {
         var asked = 0
-        assertEquals(ServerRefresh.Unknown, refreshServerConfig(MemoryStore(null)) { asked++; BootstrapResult.Ok(stored) })
+        assertEquals(ServerRefresh.Unknown, refreshServerConfig(MemoryStore(null)) { asked++; BootstrapResult.Ok(stored, watchlistKinds = false) })
         assertEquals(0, asked)
     }
 }

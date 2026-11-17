@@ -751,19 +751,23 @@ fun MediaRow(
     onToggleWatched: ((String) -> Unit)? = null,
     /** Each card's menu plays its title ("play"); null: no such item. */
     onPlay: ((String) -> Unit)? = null,
+    /** A row under a heading of its own - a list's movies or its shows on
+     *  the watchlist: its name smaller, in the body face, and closer to its
+     *  cards. */
+    compactTitle: Boolean = false,
 ) {
     // CDP-verified: title → LazyRow gap = 16dp (web `mb-4`).
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(if (compactTitle) 8.dp else 16.dp)) {
         // CDP-verified shelf title: `h2.text-2xl font-semibold` =
         // 24px / 32 line / 600, in the heading face. The watchlist hub's
         // opens its list and is a <button> on the web, so Inter there.
         Text(
             text = title,
             color = Color.White,
-            fontSize = 24.sp,
-            lineHeight = 32.sp,
-            fontWeight = FontWeight.SemiBold,
-            style = if (onTitleClick == null) ChinoHeading else LocalTextStyle.current,
+            fontSize = if (compactTitle) 16.sp else 24.sp,
+            lineHeight = if (compactTitle) 24.sp else 32.sp,
+            fontWeight = if (compactTitle) FontWeight.Medium else FontWeight.SemiBold,
+            style = if (onTitleClick == null && !compactTitle) ChinoHeading else LocalTextStyle.current,
             modifier = Modifier
                 .padding(horizontal = 16.dp)
                 .let { m -> if (onTitleClick != null) m.clickable(onClick = onTitleClick) else m },

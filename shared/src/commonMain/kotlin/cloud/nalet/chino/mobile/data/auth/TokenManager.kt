@@ -49,6 +49,28 @@ class TokenManager(
         }
     }
 
+    /** [accountId]'s own token, valid for at least [REFRESH_SLACK_MS] longer
+     *  - renewed under the mutex where it must be - whoever is active: never
+     *  another account's. Null where the account isn't on this device, has
+     *  no refresh token, or its renewal was refused; a renewal that got no
+     *  answer throws, as [validAccessToken]'s does. */
+    suspend fun validAccessTokenOf(accountId: String): String? {
+        val current = accounts.accounts.first().firstOrNull { it.id == accountId } ?: return null
+        if (currentTimeMillis() < current.expiresAtEpochMillis - REFRESH_SLACK_MS) {
+            return current.accessToken
+        }
+        return mutex.withLock {
+            val target = accounts.accounts.first().firstOrNull { it.id == accountId } ?: return@withLock null
+            if (currentTimeMillis() < target.expiresAtEpochMillis - REFRESH_SLACK_MS) {
+                return@withLock target.accessToken
+            }
+            val rt = target.refreshToken ?: return@withLock null
+            val refreshed = oidc.refresh(rt) ?: return@withLock null
+            accounts.updateTokensForBlocking(target.id, refreshed)
+            refreshed.accessToken
+        }
+    }
+
     /** Called by the Ktor Auth plugin on a 401. Always attempts a refresh
      *  even if the cached token looks fresh — server-side revocation can
      *  invalidate a not-yet-expired token. Returns null when there's

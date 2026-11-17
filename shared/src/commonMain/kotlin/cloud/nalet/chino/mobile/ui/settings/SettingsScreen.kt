@@ -139,6 +139,25 @@ fun SettingsSection() {
     val serverSubtitleLanguages by produceState<List<String>?>(initialValue = null, container, reach) {
         container.subtitleLanguages.answered()?.let { value = it }
     }
+    // Separate movies and shows: the account's, kept on the server. Read
+    // again as settings open - it may have been changed on another device -
+    // where the server keeps it; meanwhile the switch is busy and shows the
+    // choice last known on the phone.
+    // Whether the server offers it is known from the first frame: what it
+    // said before is kept on the phone. Where that says it does, the choice
+    // is read at once, beside asking the server where it hasn't answered in
+    // this process; else once the server has said it does.
+    val watchlistKinds by container.serverReach.watchlistKinds.collectAsState()
+    val watchlistSwitch = remember(container) { WatchlistSwitch(container.accountSettings, scope) }
+    val watchlistGroup by watchlistSwitch.state.collectAsState()
+    LaunchedEffect(container) {
+        if (container.serverReach.watchlistKinds.value) {
+            watchlistSwitch.opened()
+            container.watchlistKindsOffered()
+        } else if (container.watchlistKindsOffered()) {
+            watchlistSwitch.opened()
+        }
+    }
     val signOut: (castingSaid: Boolean) -> Unit = { castingSaid ->
         val id = activeAccount?.id
         if (id != null && !signingOut) {
@@ -230,6 +249,12 @@ fun SettingsSection() {
                 value = s.autoPlayNext,
                 onChange = { v -> scope.launch { container.settings.setAutoPlayNext(v) } },
             )
+            // Right after binge watching, where the server keeps Separate
+            // movies and shows and fills a list by kind (section 16.4.7):
+            // the account's choice, read again as settings open.
+            if (watchlistKinds) {
+                watchlistGroup?.let { WatchlistGroup(state = it, onChange = watchlistSwitch::press) }
+            }
             // Downloads: their quality and whether they use mobile data -
             // where the platform keeps downloads and the server offers them.
             DownloadSettings()
@@ -411,18 +436,34 @@ internal fun ActionRow(
 }
 
 @Composable
-internal fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ToggleRow(
+    label: String,
+    value: Boolean,
+    onChange: (Boolean) -> Unit,
+    /** The line under its name, where it has one. */
+    hint: String? = null,
+    /** False while its choice is read or saved: it shows the choice and a
+     *  press does nothing. */
+    enabled: Boolean = true,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RectangleShape)
             .background(ChinoSurface)
-            .clickable { onChange(!value) }
+            .clickable(enabled = enabled) { onChange(!value) }
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = label, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        TogglePill(value = value, onChange = onChange)
+        if (hint == null) {
+            Text(text = label, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        } else {
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(text = label, color = Color.White, fontSize = 14.sp)
+                Text(text = hint, color = ChinoMuted, fontSize = 12.sp)
+            }
+        }
+        TogglePill(value = value, onChange = onChange, enabled = enabled)
     }
 }
 
@@ -526,7 +567,7 @@ private val LANGUAGE_MENU_MAX_HEIGHT = 336.dp
  *  the settings ToggleRows (the bug-report dialog, now in ui/feedback,
  *  carries its own per-file copy — same idiom as the DialogButtons). */
 @Composable
-private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit) {
+private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
     Box(
         modifier = Modifier
             .width(40.dp)
@@ -536,7 +577,7 @@ private fun TogglePill(value: Boolean, onChange: (Boolean) -> Unit) {
             // knob; off, the dark track, its edge, the dim knob.
             .background(if (value) ChinoCloudBlue else ChinoBg2)
             .border(1.dp, if (value) ChinoCloudBlue else ChinoBorderControl, RectangleShape)
-            .clickable { onChange(!value) },
+            .clickable(enabled = enabled) { onChange(!value) },
         contentAlignment = if (value) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         // Inside the track's 1dp edge and 2dp of room, as the design

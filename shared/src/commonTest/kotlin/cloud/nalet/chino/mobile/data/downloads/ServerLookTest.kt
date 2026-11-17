@@ -18,7 +18,7 @@ class ServerLookTest {
     fun aServerThatStopsIsNoticedWithinOneLook() = runTest {
         var up = true
         var asked = 0
-        val reach = ServerReach(fetch = { asked++; if (up) """{"product":"chino"}""" else throw IllegalStateException("refused") })
+        val reach = reachOf(fetch = { asked++; if (up) """{"product":"chino"}""" else throw IllegalStateException("refused") })
         reach.report(answered = true)
         val look = launch { reach.keepLooking() }
         // The server stops just after a look.
@@ -42,7 +42,7 @@ class ServerLookTest {
     @Test
     fun itLooksOnlyWhileItIsLetRun() = runTest {
         var asked = 0
-        val reach = ServerReach(fetch = { asked++; """{"product":"chino"}""" })
+        val reach = reachOf(fetch = { asked++; """{"product":"chino"}""" })
         val look = launch { reach.keepLooking() }
         advanceTimeBy(3 * SERVER_LOOK_MS + 1)
         assertEquals(3, asked)

@@ -53,7 +53,7 @@ class ServerReachTest {
     @Test
     fun noConnectionIsUnreachableWithoutAskingTheServer() = runTest {
         var asked = 0
-        val reach = ServerReach(fetch = { asked++; "{}" }, networkUp = { false })
+        val reach = reachOf(fetch = { asked++; "{}" }, networkUp = { false })
         assertEquals(Reach.Unreachable, reach.check())
         assertEquals(0, asked)
         assertEquals(Reach.Unreachable, reach.state.value)
@@ -61,22 +61,22 @@ class ServerReachTest {
 
     @Test
     fun noAnswerOrAnAnswerThatIsNoConfigIsUnreachable() = runTest {
-        assertEquals(Reach.Unreachable, ServerReach(fetch = { throw IllegalStateException("timeout") }).check())
-        assertEquals(Reach.Unreachable, ServerReach(fetch = { null }).check())
+        assertEquals(Reach.Unreachable, reachOf(fetch = { throw IllegalStateException("timeout") }).check())
+        assertEquals(Reach.Unreachable, reachOf(fetch = { null }).check())
         // A captive portal's page.
-        assertEquals(Reach.Unreachable, ServerReach(fetch = { "<html>sign in to the hotel wifi</html>" }).check())
+        assertEquals(Reach.Unreachable, reachOf(fetch = { "<html>sign in to the hotel wifi</html>" }).check())
     }
 
     @Test
     fun theServersFeaturesAreRead() = runTest {
-        val off = ServerReach(fetch = { """{"product":"chino","features":{"feedback":true,"downloads":false}}""" })
+        val off = reachOf(fetch = { """{"product":"chino","features":{"feedback":true,"downloads":false}}""" })
         assertEquals(Reach.Reachable, off.check())
         assertEquals(ServerFeatures(downloads = false, feedback = true), off.features.value)
         // A server from before the switch: downloads on, as its default.
-        val older = ServerReach(fetch = { """{"product":"chino","features":{"feedback":false}}""" })
+        val older = reachOf(fetch = { """{"product":"chino","features":{"feedback":false}}""" })
         older.check()
         assertEquals(true, older.features.value?.downloads)
-        val oldest = ServerReach(fetch = { """{"product":"chino"}""" })
+        val oldest = reachOf(fetch = { """{"product":"chino"}""" })
         assertNull(oldest.features.value)
         oldest.check()
         assertEquals(true, oldest.features.value?.downloads)
@@ -84,7 +84,7 @@ class ServerReachTest {
 
     @Test
     fun anyAnsweredRequestMakesTheServerReachableAtOnce() {
-        val reach = ServerReach(fetch = { null })
+        val reach = reachOf(fetch = { null })
         reach.report(false)
         // The first answer after a time out of reach: reachable, and says so.
         assertEquals(true, reach.requestAnswered())
@@ -92,7 +92,7 @@ class ServerReachTest {
         // Then nothing more to say.
         assertEquals(false, reach.requestAnswered())
         // Before the first look: reachable, but nothing waited for it.
-        val fresh = ServerReach(fetch = { null })
+        val fresh = reachOf(fetch = { null })
         assertEquals(false, fresh.requestAnswered())
         assertEquals(Reach.Reachable, fresh.state.value)
     }
@@ -116,10 +116,15 @@ class ServerReachTest {
 
     @Test
     fun anotherRequestsAnswerCounts() {
-        val reach = ServerReach(fetch = { null })
+        val reach = reachOf(fetch = { null })
         reach.report(false)
         assertEquals(Reach.Unreachable, reach.state.value)
         reach.report(true)
         assertEquals(Reach.Reachable, reach.state.value)
     }
 }
+
+/** A [ServerReach] with nothing kept on the device of what the server
+ *  said before, keeping nothing of what it says. */
+internal fun reachOf(fetch: suspend () -> String?, networkUp: () -> Boolean? = { null }) =
+    ServerReach(fetch = fetch, networkUp = networkUp, keptWatchlistKinds = null, keepWatchlistKinds = {})

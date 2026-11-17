@@ -50,18 +50,20 @@ fun downloadsOf(container: AppContainer, accountId: String): DownloadsSummary =
 
 /** An explicit sign-out of [accountId] on this phone: casting stops - what
  *  the TV plays of it written as it first - its downloads go with it (the
- *  media whose last claim it was), then the account. Where no question said
- *  that casting stops ([castingSaid]), a toast does. Runs to its end once
- *  started. */
+ *  media whose last claim it was), then the account, and the phone's copy of
+ *  its choices after it, so that no read begun meanwhile brings the copy
+ *  back. Where no question said that casting stops ([castingSaid]), a toast
+ *  does. Runs to its end once started. */
 suspend fun signOutOfThisPhone(container: AppContainer, accountId: String, castingSaid: Boolean = false) = toItsEnd {
     leaveCastingOf(container, accountId, castingSaid)
     dropDownloadsOf(container, accountId)
     container.accountStore.remove(accountId)
+    container.accountSettings.forget(accountId)
 }
 
 /** [accountId] removed from this phone in the account picker: as a
- *  sign-out - casting stops, its downloads go, then the account. Runs to its
- *  end once started. */
+ *  sign-out - casting stops, its downloads go, then the account and the copy
+ *  of its choices. Runs to its end once started. */
 suspend fun removeFromThisPhone(container: AppContainer, accountId: String, castingSaid: Boolean) =
     signOutOfThisPhone(container, accountId, castingSaid)
 

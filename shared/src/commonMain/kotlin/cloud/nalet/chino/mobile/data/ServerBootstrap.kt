@@ -12,7 +12,10 @@ import kotlinx.serialization.json.Json
 /** Outcome of probing a user-entered server address. Mirrors chino-androidtv's
  *  BootstrapResult so the two clients show the same actionable errors. */
 sealed interface BootstrapResult {
-    data class Ok(val config: ServerConfig) : BootstrapResult
+    /** The server answered: its [config], and whether it fills a list by
+     *  kind ([watchlistKinds], `features.watchlist_kinds`; false where it
+     *  doesn't say). */
+    data class Ok(val config: ServerConfig, val watchlistKinds: Boolean) : BootstrapResult
     data class Fail(val kind: Kind, val detail: String? = null) : BootstrapResult {
         enum class Kind { UNREACHABLE, NOT_CHINO, TLS, NO_CONFIG, NO_DISCOVERY, HTTPS_ONLY }
     }
@@ -125,7 +128,8 @@ class ServerBootstrap(
             ?: return BootstrapResult.Fail(BootstrapResult.Fail.Kind.NO_DISCOVERY, issuer)
 
         return BootstrapResult.Ok(
-            ServerConfig(
+            watchlistKinds = cfg.features?.watchlistKinds ?: false,
+            config = ServerConfig(
                 // Trailing slash matches the apiBaseUrl convention Ktor's
                 // defaultRequest expects (HttpClientFactory.create).
                 baseUrl = "$apiBase/",
@@ -222,6 +226,14 @@ private data class AppConfigDoc(
     val oidcIssuer: String? = null,
     val oidcAudience: String? = null,
     val oidcClientId: ClientIds? = null,
+    val features: ConfigFeatures? = null,
+)
+
+/** What /api/config says the server offers, as far as connecting to it
+ *  needs to know. */
+@Serializable
+private data class ConfigFeatures(
+    @kotlinx.serialization.SerialName("watchlist_kinds") val watchlistKinds: Boolean = false,
 )
 
 @Serializable

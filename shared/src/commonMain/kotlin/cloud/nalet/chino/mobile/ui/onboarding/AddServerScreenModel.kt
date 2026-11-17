@@ -25,6 +25,8 @@ sealed interface AddServerState {
         val summary: DownloadsSummary,
         val config: ServerConfig,
         val url: String,
+        /** Whether the new server fills a list by kind, as it said. */
+        val watchlistKinds: Boolean,
         val dropsDownloads: Boolean = true,
     ) : AddServerState
     data object Done : AddServerState
@@ -84,9 +86,11 @@ class AddServerScreenModel(
                     // every account all the same.
                     val casting = activeAccountId()?.let { container.castingDeviceOf(it) } != null
                     if (asksBeforeChangingServer(clearAccountsOnConnect, summary, casting)) {
-                        _state.value = AddServerState.AskDropDownloads(summary ?: DownloadsSummary(0, 0L), r.config, rawUrl, dropsDownloads = another)
+                        _state.value = AddServerState.AskDropDownloads(
+                            summary ?: DownloadsSummary(0, 0L), r.config, rawUrl, r.watchlistKinds, dropsDownloads = another,
+                        )
                     } else {
-                        finish(r.config, rawUrl, dropDownloadsOf = oldServer.takeIf { another }, castingSaid = false)
+                        finish(r.config, rawUrl, r.watchlistKinds, dropDownloadsOf = oldServer.takeIf { another }, castingSaid = false)
                     }
                 }
                 is BootstrapResult.Fail -> _state.value = AddServerState.Error(messageFor(r))
@@ -100,7 +104,7 @@ class AddServerScreenModel(
         val ask = _state.value as? AddServerState.AskDropDownloads ?: return
         _state.value = AddServerState.Probing
         screenModelScope.launch {
-            finish(ask.config, ask.url, dropDownloadsOf = container.serverBase.takeIf { ask.dropsDownloads }, castingSaid = true)
+            finish(ask.config, ask.url, ask.watchlistKinds, dropDownloadsOf = container.serverBase.takeIf { ask.dropsDownloads }, castingSaid = true)
         }
     }
 
@@ -111,7 +115,7 @@ class AddServerScreenModel(
 
     private fun activeAccountId(): String? = runCatching { container.accountStore.snapshotBlocking().activeAccount?.id }.getOrNull()
 
-    private suspend fun finish(config: ServerConfig, rawUrl: String, dropDownloadsOf: String?, castingSaid: Boolean) {
+    private suspend fun finish(config: ServerConfig, rawUrl: String, watchlistKinds: Boolean, dropDownloadsOf: String?, castingSaid: Boolean) {
         // Another server, or every account removed for the same one again:
         // whoever casts now stops - its last position written first - as
         // the question said (else a toast does), and the TV plays nothing on
@@ -124,10 +128,16 @@ class AddServerScreenModel(
             runCatching {
                 container.accountStore.snapshotBlocking().accounts.forEach {
                     container.accountStore.remove(it.id)
+                    // The phone's copy of its choices goes with the account,
+                    // after it: no read begun meanwhile brings it back.
+                    container.accountSettings.forget(it.id)
                 }
             }
         }
         container.serverConfigStore.save(config)
+        // What the server said it offers, kept with it: settings and the
+        // watchlist know lists by kind from their first frame on it.
+        container.serverConfigStore.saveWatchlistKinds(config.baseUrl.trimEnd('/'), watchlistKinds)
         container.serverConfigStore.addRecent(ServerBootstrap.normalize(rawUrl))
         _state.value = AddServerState.Done
     }

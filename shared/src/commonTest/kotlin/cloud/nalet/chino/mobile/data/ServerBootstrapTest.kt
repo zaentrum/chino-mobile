@@ -57,7 +57,7 @@ class ServerBootstrapTest {
         }
     }
 
-    private fun bootstrap(seen: MutableList<String>, issuer: String): ServerBootstrap {
+    private fun bootstrap(seen: MutableList<String>, issuer: String, features: String = ""): ServerBootstrap {
         val http = HttpClient(
             MockEngine { request ->
                 val url = request.url.toString()
@@ -66,7 +66,7 @@ class ServerBootstrapTest {
                     url.startsWith("https://192.168.1.20") -> respondError(HttpStatusCode.ServiceUnavailable)
                     url.endsWith("/api/healthz") -> respondJson("""{"status":"ok","product":"chino"}""")
                     url.endsWith("/api/config") -> respondJson(
-                        """{"product":"chino","oidcIssuer":"$issuer","oidcClientId":{"mobile":"chino-mobile"}}""",
+                        """{"product":"chino","oidcIssuer":"$issuer","oidcClientId":{"mobile":"chino-mobile"}$features}""",
                     )
                     url.contains("openid-configuration") -> respondJson(
                         """{"issuer":"$issuer","authorization_endpoint":"$issuer/auth","token_endpoint":"$issuer/token"}""",
@@ -96,6 +96,19 @@ class ServerBootstrapTest {
         assertIs<BootstrapResult.Ok>(result)
         assertEquals("http://127.0.0.1:8099/api/", result.config.baseUrl)
         assertEquals("chino-mobile", result.config.clientId)
+    }
+
+    @Test
+    fun theProbeSaysWhetherTheServerFillsAListByKind() = runTest {
+        val says = bootstrap(mutableListOf(), "http://127.0.0.1:8099/oidc", features = ""","features":{"watchlist_kinds":true}""")
+            .probe("http://127.0.0.1:8099")
+        assertIs<BootstrapResult.Ok>(says)
+        assertEquals(true, says.watchlistKinds)
+
+        // A server that doesn't say offers none.
+        val silent = bootstrap(mutableListOf(), "http://127.0.0.1:8099/oidc").probe("http://127.0.0.1:8099")
+        assertIs<BootstrapResult.Ok>(silent)
+        assertEquals(false, silent.watchlistKinds)
     }
 
     @Test

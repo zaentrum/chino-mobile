@@ -257,6 +257,74 @@ class AppContainer(
      *  watchlists surface + the detail add-to-list picker. */
     val watchlists: WatchlistsRepository by lazy { WatchlistsRepository(chinoApi, appScope) }
 
+    /**
+     * The token of [accountId] - its own, looked up by its id and renewed if
+     * it must be - while it is the account signed in, and only then: what a
+     * request made for that account goes out with, so that it is never sent,
+     * or answered, for another one chosen meanwhile, and never carries
+     * another account's token. A renewal that got no answer throws.
+     */
+    internal suspend fun bearerWhileActive(accountId: String): String? {
+        if (accountStore.snapshotBlocking().activeAccount?.id != accountId) return null
+        val token = tokenManager.validAccessTokenOf(accountId)
+        return token.takeIf { accountStore.snapshotBlocking().activeAccount?.id == accountId }
+    }
+
+    /** The settings the active account keeps on the server - Separate movies
+     *  and shows - and nobody else's; with the copy of each account's last
+     *  answer the phone keeps with the server it is connected to. */
+    val accountSettings: AccountSettings by lazy {
+        val server = serverBase
+        AccountSettings(
+            api = chinoApi,
+            activeAccountId = accountStore.activeAccountId,
+            activeAccountNow = { accountStore.snapshotBlocking().activeAccount?.id },
+            bearerOf = ::bearerWhileActive,
+            scope = appScope,
+            device = object : KnownChoices {
+                override fun watchlistByKind(accountId: String): Boolean? =
+                    serverConfigStore.watchlistByKindBlocking(server, accountId)
+
+                override suspend fun keepWatchlistByKind(accountId: String, on: Boolean) =
+                    serverConfigStore.saveWatchlistByKind(server, accountId, on)
+
+                override suspend fun forgetWatchlistByKind(accountId: String) =
+                    serverConfigStore.saveWatchlistByKind(server, accountId, null)
+            },
+        )
+    }
+
+    /** Whether the server keeps Separate movies and shows and fills a list by
+     *  kind (features.watchlist_kinds): asked where it hasn't said in this
+     *  process yet; where that ask isn't answered, as it said before, kept on
+     *  the phone ([ServerReach.watchlistKinds]). */
+    internal suspend fun watchlistKindsOffered(): Boolean {
+        if (serverReach.features.value == null) serverReach.check()
+        return serverReach.watchlistKinds.value
+    }
+
+    /** Section 8.8.1: for whom every list is split by kind now
+     *  ([AccountSettings.split]); [fresh]: the setting read again. */
+    internal suspend fun kindSplit(fresh: Boolean): KindSplit? =
+        accountSettings.split(offered = watchlistKindsOffered(), fresh = fresh)
+
+    /** [kindSplit] as far as is known now, asking nothing: what the server
+     *  said of lists by kind, in this process or before
+     *  ([ServerReach.watchlistKinds]), off where it never said. */
+    internal fun kindSplitNow(): KindSplit? =
+        accountSettings.splitNow(offered = serverReach.watchlistKinds.value)
+
+    /** Home opened: what the server offers, where it hasn't said yet, and the
+     *  choice of the account signed in, where it wasn't read in this process
+     *  yet - asked now, beside the Zap warm, so that settings and the
+     *  watchlist have both from their first frame. Fire-and-forget: they ask
+     *  again as they open. */
+    fun warmListsByKind() {
+        appScope.launch {
+            runCatching { if (watchlistKindsOffered()) accountSettings.warm() }
+        }
+    }
+
     /** What addons told the signed-in person — the bell's count and the list
      *  it opens. Asked for by the poll beside the navigator
      *  (ui/notices/NoticesPolling), which forgets them whenever the
@@ -321,6 +389,9 @@ class AppContainer(
         // Its downloads on this phone go too, as Delete Account said.
         runCatching { downloads?.dropOwner(Owner(serverBase, accountId)) }
         accountStore.remove(accountId)
+        // The copy of its choices goes with it, once it is no longer signed
+        // in: no read begun meanwhile brings the copy back.
+        accountSettings.forget(accountId)
         http.forgetBearer()
         streamTokenManager.invalidate()
         userFlags.clear()
@@ -385,11 +456,14 @@ class AppContainer(
     }
 
     /** Whether the server answers, and what its /api/config says it
-     *  offers (features.downloads). */
+     *  offers (features.downloads); whether it fills lists by kind known
+     *  from the start, from what it said before, kept on the phone with the
+     *  server. */
     val serverReach: ServerReach by lazy {
+        val server = serverBase
         ServerReach(
             fetch = {
-                val resp = probeHttp.get("$serverBase/config") {
+                val resp = probeHttp.get("$server/config") {
                     timeout {
                         connectTimeoutMillis = REACH_CONNECT_TIMEOUT_MS
                         requestTimeoutMillis = REACH_TIMEOUT_MS
@@ -398,6 +472,8 @@ class AppContainer(
                 if (resp.status.isSuccess()) resp.bodyAsText() else null
             },
             networkUp = { downloadsPlatform?.networkUp() },
+            keptWatchlistKinds = serverConfigStore.watchlistKindsBlocking(server),
+            keepWatchlistKinds = { serverConfigStore.saveWatchlistKinds(server, it) },
         )
     }
 
@@ -454,12 +530,9 @@ class AppContainer(
             server = { serverBase },
             scope = appScope,
             postWatched = { id, bearer, playedMsAgo -> chinoApi.postWatched(id, bearer, playedMsAgo) },
-            bearerOf = { accountId ->
-                // The token of the account signed in now, renewed if it must
-                // be - and only while it is still the one asked about.
-                val token = tokenManager.validAccessToken()
-                token.takeIf { accountStore.snapshotBlocking().activeAccount?.id == accountId }
-            },
+            // The token of the account signed in now, renewed if it must be -
+            // and only while it is still the one asked about.
+            bearerOf = ::bearerWhileActive,
             onPhone = { accountId, itemId ->
                 downloads?.isOnPhone(Owner(serverBase, accountId), itemId) ?: false
             },

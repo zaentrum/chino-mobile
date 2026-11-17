@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
@@ -64,7 +65,10 @@ import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cloud.nalet.chino.mobile.LocalAppContainer
+import cloud.nalet.chino.mobile.data.api.LoadFailure
 import cloud.nalet.chino.mobile.data.api.Watchlist
+import cloud.nalet.chino.mobile.data.api.sentence
+import cloud.nalet.chino.mobile.ui.components.CouldntLoad
 import cloud.nalet.chino.mobile.data.model.Item
 import cloud.nalet.chino.mobile.ui.components.MediaCard
 import cloud.nalet.chino.mobile.ui.components.MediaRow
@@ -109,6 +113,8 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
     val openListId by model.openListId.collectAsState()
     val openItems by model.openItems.collectAsState()
     val loadingOpenItems by model.loadingOpenItems.collectAsState()
+    val byKind by model.byKind.collectAsState()
+    val openKinds by model.openKinds.collectAsState()
     val dialogError by model.dialogError.collectAsState()
     val streamToken by container.streamTokenManager.current.collectAsState()
 
@@ -131,6 +137,7 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
             ListMoreView(
                 list = openList,
                 items = openItems,
+                kinds = openKinds,
                 loading = loadingOpenItems,
                 baseUrl = baseUrl,
                 token = token,
@@ -138,6 +145,7 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
                 onItemClick = { id -> nav.push(DetailScreen(id)) },
                 onRename = { renameTarget = openList },
                 onDelete = { deleteTarget = openList },
+                onRetryPart = { kind -> model.retryRow(openList.id, kind) },
             )
         } else if (couldntLoad != null) {
             // The design system's "couldn't load", by its case: what, why -
@@ -153,12 +161,14 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
             WatchlistHub(
                 lists = lists,
                 shelves = shelves,
+                byKind = byKind?.rows,
                 loading = loadingShelves,
                 baseUrl = baseUrl,
                 token = token,
                 onItemClick = { id -> nav.push(DetailScreen(id)) },
                 onOpenList = { list -> model.openList(list.id) },
                 onNewList = { showCreate = true },
+                onRetryRow = { list, kind -> model.retryRow(list.id, kind) },
             )
         }
     }
@@ -217,15 +227,20 @@ fun WatchlistSection(modifier: Modifier = Modifier) {
 private fun shelfTitle(list: Watchlist): String = "${list.name} · ${list.itemCount}"
 
 @Composable
-private fun WatchlistHub(
+internal fun WatchlistHub(
     lists: List<Watchlist>,
     shelves: Map<String, List<Item>>,
+    /** With Separate movies and shows on: each list's two rows, by list id;
+     *  null draws every list as one row, as with the setting off. */
+    byKind: Map<String, KindRows>?,
     loading: Boolean,
     baseUrl: String,
     token: String,
     onItemClick: (String) -> Unit,
     onOpenList: (Watchlist) -> Unit,
     onNewList: () -> Unit,
+    /** try again on a row by kind that couldn't load: that row alone. */
+    onRetryRow: (Watchlist, TitleKind) -> Unit,
 ) {
     if (loading) {
         Center { CircularProgressIndicator() }
@@ -252,7 +267,25 @@ private fun WatchlistHub(
         )
         lists.forEach { list ->
             val items = shelves[list.id].orEmpty()
-            if (items.isEmpty()) {
+            val rows = byKind?.get(list.id)
+            if (byKind != null) {
+                // Movies and shows apart: the list's heading, then its rows;
+                // a list with nothing in it shows its empty line, as with
+                // the setting off.
+                if (rows == null || rows.empty) {
+                    EmptyShelf(list = list, onOpen = { onOpenList(list) })
+                } else {
+                    ListByKind(
+                        list = list,
+                        rows = rows,
+                        baseUrl = baseUrl,
+                        token = token,
+                        onItemClick = onItemClick,
+                        onOpen = { onOpenList(list) },
+                        onRetry = { kind -> onRetryRow(list, kind) },
+                    )
+                }
+            } else if (items.isEmpty()) {
                 // Empty shelf keeps its header (tappable, like a populated
                 // shelf's) so the MORE view's rename / delete stays reachable.
                 EmptyShelf(list = list, onOpen = { onOpenList(list) })
@@ -278,6 +311,110 @@ private fun WatchlistHub(
         Box(modifier = Modifier.padding(bottom = 16.dp))
     }
 }
+
+/**
+ * A list on the watchlist with Separate movies and shows on (section 8.8.1):
+ * its heading - its name and its own count, which opens it, as without the
+ * setting - then the row of its movies and the row of its shows, each named
+ * by its kind with its own answer's count and ending with see all. Each row
+ * is as its answer came: a title may stand in both, or in neither, until the
+ * list is loaded again. A row with nothing in it is left out; one that
+ * couldn't load keeps its name, without a count, and says so in its cards'
+ * place, with try again for that row alone.
+ */
+@Composable
+private fun ListByKind(
+    list: Watchlist,
+    rows: KindRows,
+    baseUrl: String,
+    token: String,
+    onItemClick: (String) -> Unit,
+    onOpen: () -> Unit,
+    onRetry: (TitleKind) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = shelfTitle(list),
+            color = Color.White,
+            fontSize = 24.sp,
+            lineHeight = 32.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .clickable(onClick = onOpen),
+        )
+        rows.drawn.forEach { kind ->
+            when (val row = rows[kind]) {
+                is KindRow.Loaded -> MediaRow(
+                    title = kindName(kind, row.count),
+                    items = row.items,
+                    baseUrl = baseUrl,
+                    streamToken = token,
+                    onItemClick = onItemClick,
+                    onSeeAll = onOpen,
+                    // Saved EPISODES carry their SxxEyy badge (CW-rail idiom).
+                    episodeBadges = true,
+                    compactTitle = true,
+                )
+                is KindRow.Failed -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    KindName(kindName(kind, count = null), modifier = Modifier.padding(horizontal = 16.dp))
+                    RowCouldntLoad(failure = row.failure, onTryAgain = { onRetry(kind) })
+                }
+                KindRow.Loading -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    KindName(kindName(kind, count = null), modifier = Modifier.padding(horizontal = 16.dp))
+                    RowAskedAgain()
+                }
+            }
+        }
+    }
+}
+
+/** A row's name by kind: "movies · 4", "shows · 3"; the name alone where
+ *  its answer failed. */
+internal fun kindName(kind: TitleKind, count: Int?): String =
+    if (count == null) kind.label else "${kind.label} · $count"
+
+/** A row's or a part's name by kind, as a compact row names itself. */
+@Composable
+private fun KindName(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        color = Color.White,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = modifier,
+    )
+}
+
+/** In a row's place where its answer failed (section 8.10): the design
+ *  system's couldn't-load at a row's size - "couldn't load this list", the
+ *  reason, and try again, which asks for that row alone. */
+@Composable
+private fun RowCouldntLoad(failure: LoadFailure, onTryAgain: () -> Unit) {
+    CouldntLoad(
+        title = ROW_COULDNT_LOAD,
+        sentence = failure.sentence(),
+        action = "try again",
+        onAction = onTryAgain,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+    )
+}
+
+/** A row asked again after try again, until its answer comes: a spinner
+ *  alone, as the watchlist loads. */
+@Composable
+private fun RowAskedAgain() {
+    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+    }
+}
+
+/** What a row or a part that couldn't load says (section 8.11). */
+internal const val ROW_COULDNT_LOAD = "couldn't load this list"
 
 /** Shelf header + empty-state hint for a list with no items yet. */
 @Composable
@@ -332,9 +469,12 @@ private fun NewListChip(onClick: () -> Unit) {
 /* ──────────────────────────  MORE view (per-list)  ─────────────────────── */
 
 @Composable
-private fun ListMoreView(
+internal fun ListMoreView(
     list: Watchlist,
     items: List<Item>,
+    /** With Separate movies and shows on: the list's two parts; null draws
+     *  [items] whole, as with the setting off. */
+    kinds: KindRows?,
     loading: Boolean,
     baseUrl: String,
     token: String,
@@ -342,6 +482,8 @@ private fun ListMoreView(
     onItemClick: (String) -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    /** try again on a part that couldn't load: that part alone. */
+    onRetryPart: (TitleKind) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Header: back to hub + "name · count" + rename / delete actions
@@ -384,6 +526,13 @@ private fun ListMoreView(
 
         when {
             loading -> Center { CircularProgressIndicator() }
+            kinds != null && !kinds.empty -> KindParts(
+                kinds = kinds,
+                baseUrl = baseUrl,
+                token = token,
+                onItemClick = onItemClick,
+                onRetry = onRetryPart,
+            )
             items.isEmpty() -> Center {
                 // Where titles come from, by the control that adds them: the
                 // bookmark for the Watchlist, the arrow beside it for a list.
@@ -412,6 +561,57 @@ private fun ListMoreView(
                         episodeBadge = episodeBadgeFor(item),
                         cardWidth = 110.dp,
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * An opened list with Separate movies and shows on (section 8.8.1): "movies ·
+ * 4" over its movies, then "shows · 3" over its shows, in the grid of the
+ * list, each part as its own answer came - a title in both stands in both. A
+ * part with nothing in it is left out; one that couldn't load keeps its name,
+ * without a count, and says so in its place, with try again for that part
+ * alone.
+ */
+@Composable
+private fun KindParts(
+    kinds: KindRows,
+    baseUrl: String,
+    token: String,
+    onItemClick: (String) -> Unit,
+    onRetry: (TitleKind) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 110.dp),
+        contentPadding = PaddingValues(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        kinds.drawn.forEach { kind ->
+            val part = kinds[kind]
+            item(key = "name/${kind.query}", span = { GridItemSpan(maxLineSpan) }) {
+                KindName(kindName(kind, (part as? KindRow.Loaded)?.count))
+            }
+            when (part) {
+                // Keyed by part: a title both answers hold has a card in each.
+                is KindRow.Loaded -> items(part.items, key = { "${kind.query}/${it.id}" }) { item ->
+                    MediaCard(
+                        item = item,
+                        posterUrl = "$baseUrl/v1/items/${item.id}/poster?stream=$token",
+                        onClick = { onItemClick(item.id) },
+                        // Saved EPISODES carry their SxxEyy badge (CW-rail idiom).
+                        episodeBadge = episodeBadgeFor(item),
+                        cardWidth = 110.dp,
+                    )
+                }
+                is KindRow.Failed -> item(key = "failed/${kind.query}", span = { GridItemSpan(maxLineSpan) }) {
+                    RowCouldntLoad(failure = part.failure, onTryAgain = { onRetry(kind) })
+                }
+                KindRow.Loading -> item(key = "again/${kind.query}", span = { GridItemSpan(maxLineSpan) }) {
+                    RowAskedAgain()
                 }
             }
         }

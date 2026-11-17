@@ -163,6 +163,24 @@ class ChinoApi(private val http: HttpClient) {
 
     suspend fun me(): Me = http.get("v1/me").body()
 
+    /** GET /v1/me/settings: what the account keeps on the server, the same
+     *  on every device it signs in on (change 16.C25 of the specification),
+     *  read with [bearer] - the account's own, so the answer is that
+     *  account's whoever is signed in by then. */
+    suspend fun accountSettings(bearer: String): AccountSettingsResponse =
+        http.get("v1/me/settings") { asAccount(bearer) }.body()
+
+    /** PATCH /v1/me/settings: sets the fields [change] names for the account
+     *  [bearer] is, and answers the settings as kept. A refusal (400 with a
+     *  code) changes nothing and is an [ApiStatusException] like any other;
+     *  the app reads it by its status, never by its code. */
+    suspend fun changeAccountSettings(change: AccountSettingsChange, bearer: String): AccountSettingsResponse =
+        http.patch("v1/me/settings") {
+            contentType(ContentType.Application.Json)
+            setBody(change)
+            asAccount(bearer)
+        }.body()
+
     /** DELETE /v1/me: deletes the signed-in person's data and their account
      *  — the app stores ask every app that makes accounts to offer it. The
      *  bearer rides in the Authorization header, as on every call (chino-api
@@ -289,6 +307,18 @@ class ChinoApi(private val http: HttpClient) {
     /** A single list's header + its item ids (newest-added first). */
     suspend fun getWatchlist(listId: String): WatchlistDetail =
         http.get("v1/me/watchlists/$listId").body()
+
+    /** GET /v1/me/watchlists/{listId}?kind=: the list's titles of one
+     *  [kind], in the list's order - `movie` its movies, `series` everything
+     *  else it holds: its shows, its episodes, any other kind (section 8.8.1
+     *  of the specification). Only where /api/config says
+     *  `features.watchlist_kinds`; asked with [bearer], the account's own,
+     *  for the account the list is split for. */
+    suspend fun getWatchlistOfKind(listId: String, kind: String, bearer: String): WatchlistDetail =
+        http.get("v1/me/watchlists/$listId") {
+            parameter("kind", kind)
+            asAccount(bearer)
+        }.body()
 
     /** Idempotent add. 404 when the list isn't the caller's. */
     suspend fun addItemToList(listId: String, itemId: String) {
@@ -814,6 +844,21 @@ data class WatchlistDetail(
 
 @Serializable
 private data class WatchlistNameBody(val name: String)
+
+/** GET and PATCH /v1/me/settings: what the account keeps. */
+@Serializable
+data class AccountSettingsResponse(
+    /** Every list shows its movies and its shows apart; false while nothing
+     *  is set. */
+    @SerialName("watchlist_by_kind") val watchlistByKind: Boolean = false,
+)
+
+/** PATCH /v1/me/settings's body: the one field the switch sets, always
+ *  written out. */
+@Serializable
+data class AccountSettingsChange(
+    @SerialName("watchlist_by_kind") val watchlistByKind: Boolean,
+)
 
 /** GET /me/watchlists/memberships: itemId -> [listId, ...] for the caller's
  *  lists only. Items in no list may be omitted. */
