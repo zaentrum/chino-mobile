@@ -59,6 +59,28 @@ jobs:
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0" > /dev/null
 
+      # Gradle's own downloads - its distribution and every dependency the build
+      # resolves - kept from one run to the next.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Robolectric fetches its Android jars from Maven Central the first time
+      # a test needs them, into ~/.m2: kept here from one run to the next, per
+      # Robolectric version, so a run does not depend on that download.
+      - name: Robolectric's version
+        id: robolectric
+        run: |
+          v=$(sed -n 's/^robolectric = "\(.*\)"$/\1/p' gradle/libs.versions.toml)
+          [ -n "$v" ] || { echo "::error::no robolectric version in gradle/libs.versions.toml"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Robolectric's Android jars
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ steps.robolectric.outputs.version }}
+          restore-keys: robolectric-
+
       - name: Shared unit tests
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2048m"
@@ -129,6 +151,11 @@ jobs:
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0" > /dev/null
+
+      # Gradle's own downloads - its distribution and every dependency the build
+      # resolves - kept from one run to the next.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Decode upload keystore
         env:
