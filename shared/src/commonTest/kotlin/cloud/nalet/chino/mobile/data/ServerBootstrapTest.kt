@@ -112,6 +112,22 @@ class ServerBootstrapTest {
     }
 
     @Test
+    fun featuresTheAppCantReadNeverStopAConnectAndFillNoListByKind() = runTest {
+        for (odd in listOf(
+            ""","features":{"watchlist_kinds":"yes"}""",
+            ""","features":{"watchlist_kinds":null}""",
+            ""","features":{"watchlist_kinds":1}""",
+            ""","features":[]""",
+            ""","features":null""",
+        )) {
+            val result = bootstrap(mutableListOf(), "http://127.0.0.1:8099/oidc", features = odd).probe("http://127.0.0.1:8099")
+            assertIs<BootstrapResult.Ok>(result, odd)
+            assertEquals(false, result.watchlistKinds, odd)
+            assertEquals("chino-mobile", result.config.clientId, odd)
+        }
+    }
+
+    @Test
     fun aPlainHttpIssuerElsewhereIsRefusedToo() = runTest {
         val result = bootstrap(mutableListOf(), "http://id.example.org/realms/media").probe("http://localhost:8099")
 

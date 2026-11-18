@@ -8,6 +8,10 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 
 /** Outcome of probing a user-entered server address. Mirrors chino-androidtv's
  *  BootstrapResult so the two clients show the same actionable errors. */
@@ -128,7 +132,7 @@ class ServerBootstrap(
             ?: return BootstrapResult.Fail(BootstrapResult.Fail.Kind.NO_DISCOVERY, issuer)
 
         return BootstrapResult.Ok(
-            watchlistKinds = cfg.features?.watchlistKinds ?: false,
+            watchlistKinds = watchlistKindsOf(cfg.features),
             config = ServerConfig(
                 // Trailing slash matches the apiBaseUrl convention Ktor's
                 // defaultRequest expects (HttpClientFactory.create).
@@ -226,15 +230,17 @@ private data class AppConfigDoc(
     val oidcIssuer: String? = null,
     val oidcAudience: String? = null,
     val oidcClientId: ClientIds? = null,
-    val features: ConfigFeatures? = null,
+    /** What the server offers, read as it comes: a shape the app can't read
+     *  never stops a connect ([watchlistKindsOf]). */
+    val features: JsonElement? = null,
 )
 
-/** What /api/config says the server offers, as far as connecting to it
- *  needs to know. */
-@Serializable
-private data class ConfigFeatures(
-    @kotlinx.serialization.SerialName("watchlist_kinds") val watchlistKinds: Boolean = false,
-)
+/** Whether [features] say the server fills a list by kind
+ *  (`watchlist_kinds`): only a true says so; anything else - no such field,
+ *  null, another type, features that aren't an object - is false. */
+private fun watchlistKindsOf(features: JsonElement?): Boolean =
+    ((features as? JsonObject)?.get("watchlist_kinds") as? JsonPrimitive)
+        ?.takeUnless { it.isString }?.booleanOrNull ?: false
 
 @Serializable
 private data class ClientIds(

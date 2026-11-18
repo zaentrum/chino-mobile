@@ -14,8 +14,10 @@ import kotlinx.coroutines.runBlocking
 
 private val Context.serverConfigDataStore by preferencesDataStore(name = "chino_server_config")
 
-actual class PlatformServerConfigStoreFactory(private val context: Context) {
-    actual fun create(): ServerConfigStore = AndroidServerConfigStore(context.applicationContext.serverConfigDataStore)
+actual class PlatformServerConfigStoreFactory internal constructor(private val make: () -> ServerConfigStore) {
+    constructor(context: Context) : this({ AndroidServerConfigStore(context.applicationContext.serverConfigDataStore) })
+
+    actual fun create(): ServerConfigStore = make()
 }
 
 /**

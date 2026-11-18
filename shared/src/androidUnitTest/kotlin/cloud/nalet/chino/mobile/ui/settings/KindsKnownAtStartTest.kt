@@ -307,7 +307,7 @@ class KindsKnownAtStartTest {
         compose.onNode(switchRow).assertIsDisplayed()
         assertEquals(0, s.asked("GET /api/v1/me/settings"))
         assertEquals(0, s.asked("PATCH /api/v1/me/settings"))
-        assertEquals(says, c.accountSettings.saveFailed.value?.failure)
+        assertEquals(says, c.accountSettings.saveFailed.value["anna"])
     }
 
     @Test

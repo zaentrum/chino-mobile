@@ -8,6 +8,7 @@ import cloud.nalet.chino.mobile.data.BootstrapResult
 import cloud.nalet.chino.mobile.data.ServerBootstrap
 import cloud.nalet.chino.mobile.data.ServerConfig
 import cloud.nalet.chino.mobile.data.downloads.DownloadsSummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -136,8 +137,16 @@ class AddServerScreenModel(
         }
         container.serverConfigStore.save(config)
         // What the server said it offers, kept with it: settings and the
-        // watchlist know lists by kind from their first frame on it.
-        container.serverConfigStore.saveWatchlistKinds(config.baseUrl.trimEnd('/'), watchlistKinds)
+        // watchlist know lists by kind from their first frame on it. A copy,
+        // a convenience: where it can't be written, the connect goes on and
+        // the server is asked again.
+        try {
+            container.serverConfigStore.saveWatchlistKinds(config.baseUrl.trimEnd('/'), watchlistKinds)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Unit
+        }
         container.serverConfigStore.addRecent(ServerBootstrap.normalize(rawUrl))
         _state.value = AddServerState.Done
     }

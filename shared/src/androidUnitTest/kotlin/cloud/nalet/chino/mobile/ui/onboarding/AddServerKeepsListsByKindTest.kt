@@ -6,6 +6,7 @@ import cloud.nalet.chino.mobile.AppConfig
 import cloud.nalet.chino.mobile.data.AppContainer
 import cloud.nalet.chino.mobile.data.PlatformServerConfigStoreFactory
 import cloud.nalet.chino.mobile.data.PlatformSettingsStoreFactory
+import cloud.nalet.chino.mobile.data.ServerConfigStore
 import cloud.nalet.chino.mobile.data.auth.Account
 import cloud.nalet.chino.mobile.data.auth.PlatformAccountStoreFactory
 import cloud.nalet.chino.mobile.data.auth.PlatformTokenStoreFactory
@@ -23,6 +24,7 @@ import org.robolectric.annotation.Config
 import java.util.Collections
 import kotlinx.coroutines.runBlocking
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -62,14 +64,20 @@ class AddServerKeepsListsByKindTest {
     @After
     fun tearDown() = runCatching { web.shutdown() }.let { }
 
-    private fun container() = AppContainer(
+    private fun container(serverConfigStores: PlatformServerConfigStoreFactory = PlatformServerConfigStoreFactory(app)) = AppContainer(
         buildConfig = AppConfig(flavor = AppConfig.Flavor.PROD, apiBaseUrl = "", oidcIssuer = "", oidcClientId = "chino", displayName = "Chino"),
         accountStoreFactory = PlatformAccountStoreFactory(app),
         tokenStoreFactory = PlatformTokenStoreFactory(app),
         settingsStoreFactory = PlatformSettingsStoreFactory(app),
-        serverConfigStoreFactory = PlatformServerConfigStoreFactory(app),
+        serverConfigStoreFactory = serverConfigStores,
         deviceStaticContext = emptyMap(),
     )
+
+    /** The phone's server store, whose copy of what the server offers can't
+     *  be written. */
+    private class KindsWontKeep(private val inner: ServerConfigStore) : ServerConfigStore by inner {
+        override suspend fun saveWatchlistKinds(baseUrl: String, on: Boolean) = throw IllegalStateException("no space left")
+    }
 
     /** Runs the main thread until [done]: the model's work comes back to it. */
     private fun waitFor(done: () -> Boolean) {
@@ -120,5 +128,18 @@ class AddServerKeepsListsByKindTest {
         assertTrue(c.accountStore.snapshotBlocking().accounts.isEmpty())
         assertNull(c.serverConfigStore.watchlistByKindBlocking(base, "anna"))
         assertEquals(true, c.serverConfigStore.watchlistKindsBlocking(base))
+    }
+
+    @Test
+    fun aCopyOfWhatTheServerOffersThatCantBeWrittenNeverStopsAConnect() {
+        val c = container(PlatformServerConfigStoreFactory { KindsWontKeep(PlatformServerConfigStoreFactory(app).create()) })
+        val model = AddServerScreenModel(c)
+        model.connect(web.url("/").toString().trimEnd('/'))
+        waitFor { model.state.value is AddServerState.Done || model.state.value is AddServerState.Error }
+
+        assertIs<AddServerState.Done>(model.state.value)
+        val saved = assertNotNull(c.serverConfigStore.currentBlocking())
+        assertEquals(web.url("/api/").toString(), saved.baseUrl)
+        assertTrue(runBlocking { c.serverConfigStore.recents() }.isNotEmpty())
     }
 }

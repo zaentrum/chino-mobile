@@ -44,12 +44,6 @@ sealed interface SettingSave {
     data class Failed(val failure: LoadFailure) : SettingSave
 }
 
-/** A save of [on] for [accountId] that is still out. */
-data class SettingSaving(val accountId: String, val on: Boolean)
-
-/** The last save for [accountId] failed, and why. */
-data class SettingSaveFailed(val accountId: String, val failure: LoadFailure)
-
 /**
  * The choice last known on the device for each account, by its id: what the
  * server answered last, read or saved. A copy of the account's choice, never
@@ -169,20 +163,21 @@ class AccountSettings(
     /** Separate movies and shows of the account signed in now. */
     fun current(): AccountSetting? = shown(activeAccountNow(), answered.value, reading.value)
 
-    private val _saving = MutableStateFlow<SettingSaving?>(null)
+    private val _saving = MutableStateFlow<Map<String, Boolean>>(emptyMap())
 
-    /** The save the switch started ([press]) that is still out, whoever is
-     *  signed in now; null while none is. Held here, not by the screen: a
+    /** The saves the switch started ([press]) that are still out: the choice
+     *  being saved, by the account it is saved for - one at a time for each
+     *  account, any number of accounts. Held here, not by the screen: a
      *  switch drawn again after settings were left shows it. */
-    val saving: StateFlow<SettingSaving?> = _saving
+    val saving: StateFlow<Map<String, Boolean>> = _saving
 
-    private val _saveFailed = MutableStateFlow<SettingSaveFailed?>(null)
+    private val _saveFailed = MutableStateFlow<Map<String, LoadFailure>>(emptyMap())
 
-    /** The last save the switch started that failed, and why, until the
-     *  switch is used again or the account leaves the phone; null where it
-     *  didn't. Held here: settings left before it failed say so when they
+    /** Why the last save the switch started for an account failed, by the
+     *  account, until the switch is used again for it or it leaves the
+     *  phone. Held here: settings left before it failed say so when they
      *  open again. */
-    val saveFailed: StateFlow<SettingSaveFailed?> = _saveFailed
+    val saveFailed: StateFlow<Map<String, LoadFailure>> = _saveFailed
 
     /**
      * Reads Separate movies and shows of the account signed in again - it
@@ -262,20 +257,32 @@ class AccountSettings(
      * The switch pressed, to [on], for [under] - the account whose choice it
      * showed: [save]d on the account settings' own scope, so leaving the
      * screen stops nothing, with what it is doing held here ([saving], then
-     * [saveFailed] where it failed). A press while a save is out does
-     * nothing, and says so: false.
+     * [saveFailed] where it failed). A press while a save for the same
+     * account is out does nothing, and says so: false; one for another
+     * account, chosen meanwhile, is saved beside it. A save that failed after
+     * its account left the phone says nothing.
      */
     fun press(on: Boolean, under: String): Boolean {
-        if (!_saving.compareAndSet(null, SettingSaving(under, on))) return false
+        while (true) {
+            val out = _saving.value
+            if (under in out) return false
+            if (_saving.compareAndSet(out, out + (under to on))) break
+        }
         // The banner of a save before goes as the switch is used again.
-        _saveFailed.value = null
+        _saveFailed.update { it - under }
+        // Where the account leaves the phone after this, its banner stays away.
+        val began = asks.value
         scope.launch {
             val result = try {
                 save(on, under)
             } finally {
-                _saving.value = null
+                _saving.update { it - under }
             }
-            if (result is SettingSave.Failed) _saveFailed.value = SettingSaveFailed(under, result.failure)
+            if (result is SettingSave.Failed) {
+                keeps.withLock {
+                    if ((savesFrom[under] ?: 0L) <= began) _saveFailed.update { it + (under to result.failure) }
+                }
+            }
         }
         return true
     }
@@ -319,7 +326,7 @@ class AccountSettings(
         readsFrom[accountId] = now
         savesFrom[accountId] = now
         answered.update { it - accountId }
-        _saveFailed.update { failed -> failed?.takeIf { it.accountId != accountId } }
+        _saveFailed.update { it - accountId }
         try {
             device.forgetWatchlistByKind(accountId)
         } catch (e: CancellationException) {

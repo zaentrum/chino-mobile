@@ -25,8 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cloud.nalet.chino.mobile.data.AccountSetting
 import cloud.nalet.chino.mobile.data.AccountSettings
-import cloud.nalet.chino.mobile.data.SettingSaveFailed
-import cloud.nalet.chino.mobile.data.SettingSaving
 import cloud.nalet.chino.mobile.data.api.LoadFailure
 import cloud.nalet.chino.mobile.data.api.sentence
 import cloud.nalet.chino.mobile.ui.theme.ChinoFg
@@ -83,16 +81,16 @@ class WatchlistSwitch(private val settings: AccountSettings, private val scope: 
         combine(settings.setting, settings.saving, settings.saveFailed) { setting, saving, failed -> stateOf(setting, saving, failed) }
             .stateIn(scope, SharingStarted.Eagerly, stateOf(settings.setting.value, settings.saving.value, settings.saveFailed.value))
 
-    private fun stateOf(setting: AccountSetting?, saving: SettingSaving?, failed: SettingSaveFailed?): WatchlistGroupState? {
+    private fun stateOf(setting: AccountSetting?, saving: Map<String, Boolean>, failed: Map<String, LoadFailure>): WatchlistGroupState? {
         setting ?: return null
         // What is being saved, and why a save failed, are the account's they
         // were for: never shown for another.
-        val pending = saving?.takeIf { it.accountId == setting.accountId }
+        val pending = saving[setting.accountId]
         return WatchlistGroupState(
             accountId = setting.accountId,
-            on = pending?.on ?: setting.watchlistByKind,
+            on = pending ?: setting.watchlistByKind,
             busy = pending != null || setting.reading,
-            failure = failed?.takeIf { pending == null && it.accountId == setting.accountId }?.failure,
+            failure = failed[setting.accountId]?.takeIf { pending == null },
         )
     }
 

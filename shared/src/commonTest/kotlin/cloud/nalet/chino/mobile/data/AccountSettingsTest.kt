@@ -665,7 +665,81 @@ class AccountSettingsTest {
         assertEquals(LoadFailure.Busy, later.state.value?.failure)
         // The account leaves the phone: its banner with it.
         settings.forget("anna")
-        assertNull(settings.saveFailed.value)
+        assertNull(settings.saveFailed.value["anna"])
+    }
+
+    @Test
+    fun aSaveForOneAccountStillOutLeavesAPressForAnotherChosenMeanwhileSavedAndSaid() = runTest {
+        val phone = Phone()
+        val annasHeld = CompletableDeferred<Unit>()
+        var bensFail = false
+        val route = SettingsRoute().apply {
+            patch = { request ->
+                val on = bodyOf(request).contains("true")
+                val who = request.headers[HttpHeaders.Authorization]
+                if (who == "Bearer tok-anna") annasHeld.await()
+                if (who == "Bearer tok-ben" && bensFail) {
+                    respondText("busy", HttpStatusCode.ServiceUnavailable)
+                } else {
+                    respondJson("""{"watchlist_by_kind":$on}""")
+                }
+            }
+        }
+        val server = server(route)
+        val settings = settings(phone, server)
+        val switch = WatchlistSwitch(settings, backgroundScope)
+        runCurrent()
+
+        // Anna's save, still out; Ben chosen, and his switch pressed.
+        switch.press(true)
+        runCurrent()
+        phone.active.value = "ben"
+        runCurrent()
+        assertEquals(WatchlistGroupState("ben", on = false, busy = false), switch.state.value)
+        switch.press(true)
+        runCurrent()
+
+        // Saved, for Ben, beside Anna's.
+        assertEquals(listOf("Bearer tok-anna", "Bearer tok-ben"), server.patches.map { it.headers[HttpHeaders.Authorization] })
+        assertEquals(WatchlistGroupState("ben", on = true, busy = false), switch.state.value)
+        assertEquals(true, phone.device.watchlistByKind("ben"))
+        // And said where it fails: his banner, under his switch.
+        bensFail = true
+        switch.press(false)
+        runCurrent()
+        assertEquals(WatchlistGroupState("ben", on = true, busy = false, failure = LoadFailure.Busy), switch.state.value)
+
+        // Anna's answers: hers, and no banner of Ben's on her switch.
+        annasHeld.complete(Unit)
+        runCurrent()
+        phone.active.value = "anna"
+        runCurrent()
+        assertEquals(WatchlistGroupState("anna", on = true, busy = false), switch.state.value)
+    }
+
+    @Test
+    fun aSaveThatFailsAfterItsAccountLeftThePhoneSaysNothing() = runTest {
+        val phone = Phone()
+        val held = CompletableDeferred<Unit>()
+        val route = SettingsRoute().apply {
+            patch = {
+                held.await()
+                respondText("busy", HttpStatusCode.ServiceUnavailable)
+            }
+        }
+        val settings = settings(phone, server(route))
+        assertTrue(settings.press(true, under = "anna"))
+        runCurrent()
+
+        settings.forget("anna")
+        held.complete(Unit)
+        runCurrent()
+
+        assertNull(settings.saveFailed.value["anna"])
+        // Signed in again later: no banner from before.
+        val switch = WatchlistSwitch(settings, backgroundScope)
+        runCurrent()
+        assertEquals(WatchlistGroupState("anna", on = false, busy = false), switch.state.value)
     }
 }
 
