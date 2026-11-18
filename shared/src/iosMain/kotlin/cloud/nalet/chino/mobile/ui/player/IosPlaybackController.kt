@@ -40,6 +40,10 @@ internal const val STARTUP_DEADLINE_MS = 20_000L
 internal class IosPlaybackController(
     val state: IosPlayState,
     private val container: AppContainer,
+    /** The account the player opened for: its positions and watched mark
+     *  are written for it alone, none once another account is signed in;
+     *  null, nobody was: none. */
+    private val openedFor: String?,
     private val onSwitchItem: (String) -> Unit,
 ) {
     val engine = IosVideoPlayer()
@@ -246,7 +250,12 @@ internal class IosPlaybackController(
         val credits = inCredits(state.segments, s.positionMs)
         if (state.mode.watched && !markedWatched && started && s.playing && reachedWatched(s.positionMs, dur, credits)) {
             markedWatched = true
-            container.appScope.launch { runCatching { api.postWatched(itemId) } }
+            container.appScope.launch {
+                runCatching {
+                    val bearer = ownBearer() ?: return@launch
+                    api.postWatched(itemId, bearer)
+                }
+            }
             event("mark_watched", mapOf("at" to (s.positionMs / 1000).toString(), "via" to if (credits) "credits" else "p95"))
         }
         val now = currentTimeMillis()
@@ -281,14 +290,23 @@ internal class IosPlaybackController(
         )
     }
 
-    /** The position this session played to, if it may write one. */
+    /** The position this session played to, if it may write one: for the
+     *  account it opened for, with its own token, and nothing once another
+     *  is signed in, or nobody is - the release after a sign-out too. */
     fun saveProgress() {
         val pos = guard.position() ?: return
         val dur = (durationMs / 1000).toInt()
         container.appScope.launch {
-            runCatching { api.postProgress(itemId, ProgressBody(positionSec = pos, durationSec = dur)) }
+            runCatching {
+                val bearer = ownBearer() ?: return@launch
+                api.postProgress(itemId, ProgressBody(positionSec = pos, durationSec = dur), bearer)
+            }
         }
     }
+
+    /** The token of the account the player opened for while it is the one
+     *  signed in; null once it is not, or where it opened for nobody. */
+    private suspend fun ownBearer(): String? = openedFor?.let { container.bearerWhileActive(it) }
 
     fun play() {
         playIntent = true

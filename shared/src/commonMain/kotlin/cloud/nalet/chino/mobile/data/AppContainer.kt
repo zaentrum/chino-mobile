@@ -1,7 +1,11 @@
 package cloud.nalet.chino.mobile.data
 
 import cloud.nalet.chino.mobile.AppConfig
+import cloud.nalet.chino.mobile.data.account.ACCOUNT_DELETED_TOAST
 import cloud.nalet.chino.mobile.data.account.AccountDeletion
+import cloud.nalet.chino.mobile.data.account.ACCOUNT_DELETION_NOT_REACHED
+import cloud.nalet.chino.mobile.data.account.AccountLeft
+import cloud.nalet.chino.mobile.data.account.accountDeletionAnswer
 import cloud.nalet.chino.mobile.data.account.deleteAccountThenSignOut
 import cloud.nalet.chino.mobile.data.api.ChinoApi
 import cloud.nalet.chino.mobile.data.api.HttpClientFactory
@@ -11,6 +15,7 @@ import cloud.nalet.chino.mobile.data.auth.OidcDeviceClient
 import cloud.nalet.chino.mobile.data.auth.OidcDiscovery
 import cloud.nalet.chino.mobile.data.auth.PlatformAccountStoreFactory
 import cloud.nalet.chino.mobile.data.auth.PlatformTokenStoreFactory
+import cloud.nalet.chino.mobile.data.auth.RemovedAccount
 import cloud.nalet.chino.mobile.data.auth.StreamTokenManager
 import cloud.nalet.chino.mobile.data.auth.TokenManager
 import cloud.nalet.chino.mobile.data.auth.TokenStore
@@ -34,17 +39,23 @@ import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Hand-rolled DI graph for the mobile client. Mirrors chino-androidtv's
@@ -226,10 +237,18 @@ class AppContainer(
         ServerBootstrap(http = probeHttp, discovery = OidcDiscovery(probeHttp), allowPlainHttp = allowPlainHttp)
     }
 
-    val tokenManager: TokenManager by lazy { TokenManager(accountStore, oidcDeviceClient) }
+    /** No token is renewed for an account the server answered deleted while
+     *  it is signed out ([answeredDeleted]). */
+    val tokenManager: TokenManager by lazy {
+        TokenManager(accountStore, oidcDeviceClient, mayRenew = { it !in answeredDeleted.value })
+    }
 
-    /** Authenticated client — every chino-api call routes through here. */
-    val http: HttpClient by lazy { HttpClientFactory.create(config, tokenManager, onAnswered = ::serverAnswered) }
+    /** Authenticated client — every chino-api call routes through here. A
+     *  401 `account_deleted` signs out the account whose bearer the request
+     *  carried ([accountDeletedWith]). */
+    val http: HttpClient by lazy {
+        HttpClientFactory.create(config, tokenManager, onAnswered = ::serverAnswered, onAccountDeleted = ::accountDeletedWith)
+    }
 
     /**
      * A call to the server had its answer: the server is reached, at once
@@ -251,11 +270,17 @@ class AppContainer(
 
     val settings: SettingsStore by lazy { settingsStoreFactory.create() }
 
-    val userFlags: UserFlagsRepository by lazy { UserFlagsRepository(chinoApi, appScope) }
+    /** The account signed in now: the one a press made now is for. */
+    internal fun accountNow(): String? = accountStore.snapshotBlocking().activeAccount?.id
+
+    /** The likes and watchlist flag; what a press writes goes for the
+     *  account of the press, with its own token, and nothing once another
+     *  account is signed in ([bearerWhileActive]). */
+    val userFlags: UserFlagsRepository by lazy { UserFlagsRepository(chinoApi, appScope, ::accountNow, ::bearerWhileActive) }
 
     /** Lists-aware companion to [userFlags] — backs the multiple-named-
      *  watchlists surface + the detail add-to-list picker. */
-    val watchlists: WatchlistsRepository by lazy { WatchlistsRepository(chinoApi, appScope) }
+    val watchlists: WatchlistsRepository by lazy { WatchlistsRepository(chinoApi, appScope, ::accountNow, ::bearerWhileActive) }
 
     /**
      * The token of [accountId] - its own, looked up by its id and renewed if
@@ -365,20 +390,99 @@ class AppContainer(
     suspend fun deleteAccount(accountId: String): AccountDeletion {
         holdCastWrites(accountId, true)
         try {
-            return chinoApi.deleteAccountThenSignOut { forgetDeletedAccount(accountId) }
+            // The deletion goes with [accountId]'s own token, whoever is
+            // signed in by the time it is sent: it deletes that account and
+            // no other.
+            val bearer = try {
+                tokenManager.validAccessTokenOf(accountId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return AccountDeletion.Failed(ACCOUNT_DELETION_NOT_REACHED)
+            } ?: return accountDeletionAnswer(401, null)
+            // Signed out with the toast; Delete account's dialog starts over.
+            return chinoApi.deleteAccountThenSignOut(bearer) { signOutDeleted(accountId, startOver = false) }
         } finally {
             holdCastWrites(accountId, false)
         }
     }
 
+    private val _startOver = MutableStateFlow<AccountLeft?>(null)
+
+    /** The account signed in that the server answered deleted, once it is
+     *  signed out on this phone, until the app has started over for it
+     *  ([startedOver]): on who's watching, or sign in where nobody is left
+     *  (App.kt). A state, not an event: where no screen is drawn as it is
+     *  signed out, the next one drawn starts over. */
+    val startOver: StateFlow<AccountLeft?> = _startOver.asStateFlow()
+
+    /** The app started over for [left]: nothing is left to start over for,
+     *  unless another account left since. */
+    fun startedOver(left: AccountLeft) {
+        _startOver.compareAndSet(left, null)
+    }
+
+    /** One deleted account signed out at a time, each once. */
+    private val deletedSignOuts = Mutex()
+
+    /** The accounts answered deleted whose sign-out on this phone has not
+     *  ended yet: no token of theirs is renewed meanwhile ([tokenManager]). */
+    private val answeredDeleted = MutableStateFlow<Set<String>>(emptySet())
+
+    /** chino-api answered a request that went out with [bearer] that its
+     *  account is deleted (401 `account_deleted`): that account - the one
+     *  whose token it is, or was until it was renewed - while it is on this
+     *  phone, is signed out on the app's scope. The bearer the client holds
+     *  goes at once: after that answer the Auth plugin holds none, and a
+     *  request sent without one until the sign-out ends would be answered a
+     *  plain 401 and renew a token; the next request loads the token of the
+     *  account signed in then. */
+    private fun accountDeletedWith(bearer: String) {
+        http.forgetBearer()
+        val accountId = tokenManager.accountOf(bearer) ?: return
+        answeredDeleted.update { it + accountId }
+        appScope.launch {
+            try {
+                runCatching { signOutDeleted(accountId, startOver = true) }
+            } finally {
+                answeredDeleted.update { it - accountId }
+            }
+        }
+    }
+
+    /**
+     * [accountId], which the server has deleted, signed out on this phone
+     * ([forgetDeletedAccount]) with the toast "Account deleted"; another
+     * account stays. [startOver]: where it was the account signed in, the
+     * app starts over ([AppContainer.startOver]). Nothing where it is not on
+     * the phone (any more): one sign-out for each account however many
+     * answers said so.
+     */
+    internal suspend fun signOutDeleted(accountId: String, startOver: Boolean) {
+        val left = deletedSignOuts.withLock {
+            if (accountStore.snapshotBlocking().accounts.none { it.id == accountId }) return
+            AccountLeft(
+                accountId = accountId,
+                wasActive = forgetDeletedAccount(accountId),
+                othersRemain = accountStore.snapshotBlocking().accounts.isNotEmpty(),
+            )
+        }
+        toasts.tryEmit(Toast(ACCOUNT_DELETED_TOAST))
+        if (startOver && left.wasActive) _startOver.value = left
+    }
+
     /**
      * Signs [accountId] out of this device once the server has deleted it:
-     * its tokens leave [accountStore], and what the process still holds for
-     * it goes as well — the bearer the HTTP client keeps (it would ride on
-     * the next requests, whoever signs in next), the stream token, and the
-     * watchlist, likes and lists cached for it.
+     * its tokens leave [accountStore], with what the phone keeps of its
+     * positions and watched marks, sent or not; where it was the account
+     * signed in, nobody is signed in after it - who's watching follows, or
+     * sign in where nobody is left - and what the process still holds for it
+     * goes as well — the bearer the HTTP client keeps (it would ride on the
+     * next requests, whoever signs in next), the stream token, and the
+     * watchlist, likes and lists cached for it. Whether it was the account
+     * signed in, as the store says, removing it.
      */
-    suspend fun forgetDeletedAccount(accountId: String) {
+    suspend fun forgetDeletedAccount(accountId: String): Boolean {
         // Casting stops - the TV plays nothing on for whoever comes next -
         // and a toast says so: the question did not. Its last position is
         // not written: the server has just deleted what it kept of the
@@ -388,14 +492,21 @@ class AppContainer(
         }
         // Its downloads on this phone go too, as Delete Account said.
         runCatching { downloads?.dropOwner(Owner(serverBase, accountId)) }
-        accountStore.remove(accountId)
+        // Where it was the account signed in, nobody is now: not the next
+        // account, in whose name what its screens still send would go.
+        val wasActive = accountStore.removeDeleted(accountId) == RemovedAccount.WasActive
+        // Its positions and watched marks still to send go: none is sent for
+        // it later, nor if the same account signs in here again.
+        runCatching { progressSync.forgetAccount(accountId) }
         // The copy of its choices goes with it, once it is no longer signed
         // in: no read begun meanwhile brings the copy back.
         accountSettings.forget(accountId)
+        if (!wasActive) return false
         http.forgetBearer()
         streamTokenManager.invalidate()
         userFlags.clear()
         watchlists.clear()
+        return true
     }
 
     /** Bug-report funnel (POST /v1/feedback → server-side bug ticket). Same

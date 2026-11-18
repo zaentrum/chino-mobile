@@ -24,6 +24,15 @@ sealed interface AccountDeletion {
     data class Failed(val message: String) : AccountDeletion
 }
 
+/** The toast once a deleted account is signed out on this phone (section
+ *  16.5.6 of the specification). */
+const val ACCOUNT_DELETED_TOAST = "Account deleted"
+
+/** An account the server deleted, signed out on this phone: [wasActive],
+ *  it was the account signed in; [othersRemain], other accounts are still
+ *  signed in here. */
+data class AccountLeft(val accountId: String, val wasActive: Boolean, val othersRemain: Boolean)
+
 const val ACCOUNT_DELETION_UNAVAILABLE =
     "Deleting your account isn't available on this server — ask its administrator."
 
@@ -62,24 +71,28 @@ fun accountDeletionAnswer(status: Int, message: String?): AccountDeletion = when
     else -> AccountDeletion.Failed(message ?: "Your account couldn't be deleted right now (HTTP $status).")
 }
 
-/** Asks chino-api to delete the signed-in account. Never throws but for
- *  cancellation: a request that does not reach the server is a failure. */
-suspend fun ChinoApi.deleteAccount(): AccountDeletion = try {
-    accountDeletionAnswer(deleteMe(), null)
+/** Said where the deletion's request did not reach the server. */
+const val ACCOUNT_DELETION_NOT_REACHED = "The server couldn't be reached."
+
+/** Asks chino-api to delete the account whose own token [bearer] is. Never
+ *  throws but for cancellation: a request that does not reach the server is
+ *  a failure. */
+suspend fun ChinoApi.deleteAccount(bearer: String): AccountDeletion = try {
+    accountDeletionAnswer(deleteMe(bearer), null)
 } catch (e: CancellationException) {
     throw e
 } catch (e: ApiStatusException) {
     accountDeletionAnswer(e.status, e.personMessage)
 } catch (e: Exception) {
-    AccountDeletion.Failed("The server couldn't be reached.")
+    AccountDeletion.Failed(ACCOUNT_DELETION_NOT_REACHED)
 }
 
 /**
- * Deletes the signed-in account and, once the server says it is gone — and
- * only then — runs [signOut]. Returns the answer.
+ * Deletes the account whose own token [bearer] is and, once the server says
+ * it is gone — and only then — runs [signOut]. Returns the answer.
  */
-suspend fun ChinoApi.deleteAccountThenSignOut(signOut: suspend () -> Unit): AccountDeletion {
-    val answer = deleteAccount()
+suspend fun ChinoApi.deleteAccountThenSignOut(bearer: String, signOut: suspend () -> Unit): AccountDeletion {
+    val answer = deleteAccount(bearer)
     if (answer == AccountDeletion.Deleted) signOut()
     return answer
 }

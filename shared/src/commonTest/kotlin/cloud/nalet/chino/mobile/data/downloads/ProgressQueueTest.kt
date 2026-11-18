@@ -125,6 +125,8 @@ class ProgressQueueTest {
         // sign-in it did not accept.
         listOf(401, 502, 503, 504).forEach { assertEquals(SendOutcome.Wait, status(it), "HTTP $it") }
         assertEquals(SendOutcome.Wait, sendOutcomeOf(IOException("no route to host")))
+        // An account the server deleted: nothing more is kept for it.
+        assertEquals(SendOutcome.Drop, sendOutcomeOf(ApiStatusException(401, "v1/items/x/progress", accountDeleted = true)))
     }
 
     @Test
@@ -264,6 +266,62 @@ class ProgressSyncTest {
         assertFalse(posted.any { it.second.dismiss })
         assertFalse(sync(store).hasUnsent("film"))
         assertFalse(sync(store).hasPending())
+    }
+
+    @Test
+    fun aPlayerWritesNothingOnceAnotherAccountThanTheOneItOpenedForIsSignedIn() = runTest {
+        serverUp = true
+        val s = sync(JsonBookStore())
+        // The player opened for anna: its positions go as hers.
+        assertEquals(SendOutcome.Sent, s.saveNow("film", 600, 5_400, openedFor = "anna"))
+        assertTrue(s.signedIn("anna"))
+        // She leaves - deleted, signed out - and ben is the one signed in
+        // now: her player's last position and its watched mark go to nobody,
+        // at once or later.
+        account = "ben"
+        // The client's bearer forgotten, as the app does when another
+        // account is signed in: his, from the next request.
+        forgetBearer = true
+        bearers.clear()
+        assertNull(s.saveNow("film", 610, 5_400, openedFor = "anna"))
+        assertNull(s.markWatchedNow("film", openedFor = "anna"))
+        assertFalse(s.signedIn("anna"))
+        assertTrue(bearers.isEmpty())
+        assertEquals(listOf("film" to 600), posted.map { it.first to it.second.positionSec })
+        assertTrue(watchedPosts.isEmpty())
+        assertFalse(s.hasPending())
+        // Nobody signed in: nobody's.
+        account = null
+        assertFalse(s.signedIn(null))
+        // His own player writes as him.
+        account = "ben"
+        assertEquals(SendOutcome.Sent, s.saveNow("film", 30, 5_400, openedFor = "ben"))
+        assertEquals(listOf<String?>("Bearer token-of-ben"), bearers)
+    }
+
+    @Test
+    fun anAccountForgottenLeavesNothingToSendOrToResumeAndTheOthersStay() = runTest {
+        val store = JsonBookStore()
+        val s = sync(store)
+        // Played without the server: a position and a watched mark of anna's.
+        s.saveNow("film", 600, 5_400)
+        s.markWatchedNow("episode")
+        val q = ProgressQueue(store)
+        q.enqueue(played("film", 20, at = 2, account = "ben"))
+        q.enqueue(played("film", 30, at = 3, server = "https://other.example.com/api"))
+
+        s.forgetAccount("anna")
+
+        assertTrue(q.pending(SERVER, "anna").isEmpty())
+        assertTrue(q.pendingWatched(SERVER, "anna").isEmpty())
+        assertNull(q.lastPlayed(SERVER, "anna", "film"))
+        assertEquals(listOf(20), q.pending(SERVER, "ben").map { it.positionSec })
+        assertEquals(listOf(30), q.pending("https://other.example.com/api", "anna").map { it.positionSec })
+        // She signs in again: nothing of before is sent for her.
+        serverUp = true
+        assertEquals(FlushResult(0, 0, 0), s.flush())
+        assertTrue(posted.isEmpty())
+        assertTrue(watchedPosts.isEmpty())
     }
 
     @Test

@@ -129,6 +129,18 @@ class ProgressQueue(
         book.copy(last = book.last.filter(keep))
     }
 
+    /** Forgets everything kept for [accountId] on [server] - its positions
+     *  and watched marks still to send, its last positions played: an
+     *  account that left this phone for good. Other accounts' stay. */
+    suspend fun forgetAccount(server: String, accountId: String) = edit { book ->
+        fun of(s: String, a: String) = s == server && a == accountId
+        book.copy(
+            queue = book.queue.filterNot { of(it.server, it.accountId) },
+            last = book.last.filterNot { of(it.server, it.accountId) },
+            watched = book.watched.filterNot { of(it.server, it.accountId) },
+        )
+    }
+
     /** Queues [p] to be sent; it takes the place of an earlier one of the
      *  same title. True when it is the first one waiting for its account on
      *  its server: nothing was queued for them before. */
@@ -263,14 +275,15 @@ class ProgressQueue(
 }
 
 /** What a failed POST of a position means for it: no answer, the server
- *  down behind its proxy (502-504) or a sign-in it did not accept (401)
- *  wait for the server; another server error, a timeout or too many
- *  requests (408, 429) is tried again, counted; any other refusal - the
- *  title gone, not the viewer's, not a position the server takes - drops
- *  it. */
+ *  down behind its proxy (502-504; a write that waited out an account's
+ *  deletion still open, 503 `account busy`, too) or a sign-in it did not
+ *  accept (401) wait for the server; another server error, a timeout or too
+ *  many requests (408, 429) is tried again, counted; any other refusal - the
+ *  title gone, not the viewer's, not a position the server takes, an account
+ *  the server deleted (401 `account_deleted`) - drops it. */
 fun sendOutcomeOf(e: Throwable): SendOutcome = when {
     e !is ApiStatusException -> SendOutcome.Wait
-    e.status == 401 || e.status in SERVER_DOWN -> SendOutcome.Wait
+    (e.status == 401 && !e.accountDeleted) || e.status in SERVER_DOWN -> SendOutcome.Wait
     e.status >= 500 || e.status == 408 || e.status == 429 -> SendOutcome.Retry
     else -> SendOutcome.Drop
 }
@@ -319,17 +332,23 @@ class ProgressSync(
     private val now: () -> Long = { currentTimeMillis() },
 ) {
     /** Saves a position of [itemId], in the app's scope: it outlives the
-     *  player that played it. */
-    fun save(itemId: String, positionSec: Int, durationSec: Int) {
-        scope.launch { runCatching { saveNow(itemId, positionSec, durationSec) } }
+     *  player that played it. [openedFor]: the account the player opened
+     *  for ([saveNow]). */
+    fun save(itemId: String, positionSec: Int, durationSec: Int, openedFor: String? = null) {
+        scope.launch { runCatching { saveNow(itemId, positionSec, durationSec, openedFor) } }
     }
 
-    /** [save], waited for: what became of the position. */
-    suspend fun saveNow(itemId: String, positionSec: Int, durationSec: Int): SendOutcome? {
+    /** [save], waited for: what became of the position. Given [openedFor],
+     *  the account the player opened for, it goes with that account's own
+     *  bearer, and nothing is saved once another account is signed in
+     *  ([signedIn]); null: for the account signed in now. */
+    suspend fun saveNow(itemId: String, positionSec: Int, durationSec: Int, openedFor: String? = null): SendOutcome? {
         val accountId = account() ?: return null
+        if (openedFor != null && accountId != openedFor) return null
+        val bearer = openedFor?.let { ownBearer(it) ?: return null }?.value
         val p = PlayedPosition(server(), accountId, itemId, positionSec, durationSec, now())
         if (onPhone(accountId, itemId)) queue.remember(p)
-        val outcome = send(p, bearer = null, queued = false)
+        val outcome = send(p, bearer = bearer, queued = false)
         when (outcome) {
             SendOutcome.Sent, SendOutcome.Drop -> queue.supersede(p)
             SendOutcome.Retry, SendOutcome.Wait -> if (queue.enqueue(p)) onQueued()
@@ -338,15 +357,17 @@ class ProgressSync(
     }
 
     /** Marks [itemId] watched, in the app's scope: kept and sent later when
-     *  the server cannot be reached. */
-    fun markWatched(itemId: String) {
-        scope.launch { runCatching { markWatchedNow(itemId) } }
+     *  the server cannot be reached. [openedFor]: as for [save]. */
+    fun markWatched(itemId: String, openedFor: String? = null) {
+        scope.launch { runCatching { markWatchedNow(itemId, openedFor) } }
     }
 
-    suspend fun markWatchedNow(itemId: String): SendOutcome? {
+    suspend fun markWatchedNow(itemId: String, openedFor: String? = null): SendOutcome? {
         val accountId = account() ?: return null
+        if (openedFor != null && accountId != openedFor) return null
+        val bearer = openedFor?.let { ownBearer(it) ?: return null }?.value
         val m = WatchedMark(server(), accountId, itemId, now())
-        val outcome = sendWatched(m, bearer = null, queued = false)
+        val outcome = sendWatched(m, bearer = bearer, queued = false)
         if (outcome == SendOutcome.Retry || outcome == SendOutcome.Wait) {
             if (queue.enqueueWatched(m)) onQueued()
         }
@@ -417,6 +438,41 @@ class ProgressSync(
     /** Forgets the last positions of titles no longer on the phone. */
     suspend fun forgetLastOfTitlesNotOnThePhone() {
         queue.forgetLastExcept { onPhone(it.accountId, it.itemId) }
+    }
+
+    /** The bearer a player's write goes with, for [openedFor]: its own
+     *  ([bearerOf]); null - nothing is sent - once another account is signed
+     *  in. Where its token could not be had while it is still the one signed
+     *  in (no answer to a renewal), the client's, its too: [Bearer.value]
+     *  null, and the write fares as it did before. */
+    private suspend fun ownBearer(openedFor: String): Bearer? {
+        val own = try {
+            bearerOf(openedFor)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        return when {
+            own != null -> Bearer(own)
+            signedIn(openedFor) -> Bearer(null)
+            else -> null
+        }
+    }
+
+    /** A bearer to send with; [value] null: the client's own. */
+    private class Bearer(val value: String?)
+
+    /** Whether [accountId] is the account signed in now: a player writes -
+     *  its positions, its watched mark - for the account it opened for, and
+     *  nothing once another is signed in. */
+    suspend fun signedIn(accountId: String?): Boolean = accountId != null && account() == accountId
+
+    /** Forgets what is kept for [accountId] on the connected server, sent
+     *  or not ([ProgressQueue.forgetAccount]): an account the server
+     *  deleted. */
+    suspend fun forgetAccount(accountId: String) {
+        queue.forgetAccount(server(), accountId)
     }
 
     private suspend fun send(p: PlayedPosition, bearer: String?, queued: Boolean): SendOutcome = try {

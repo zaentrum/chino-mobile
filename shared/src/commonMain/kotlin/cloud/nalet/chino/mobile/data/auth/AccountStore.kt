@@ -30,6 +30,12 @@ interface AccountStore {
 
     suspend fun remove(id: String)
 
+    /** Removes [id], an account the server deleted, and says which it was,
+     *  under the store's own lock: [RemovedAccount.WasActive] - nobody is
+     *  signed in after it, not the next account (who's watching follows) -
+     *  or [RemovedAccount.WasOther]; null where it is not here. */
+    suspend fun removeDeleted(id: String): RemovedAccount?
+
     suspend fun setActive(id: String)
 
     /** Synchronous snapshot of the current state — used by the navigator on
@@ -59,6 +65,10 @@ interface AccountStore {
      *  is a no-op. */
     suspend fun migrateFromTokenStoreIfPresent(legacy: TokenStore)
 }
+
+/** What [AccountStore.removeDeleted] removed: the account signed in, or
+ *  another one. */
+enum class RemovedAccount { WasActive, WasOther }
 
 /** Per-platform factory — Android gives us a Context, iOS gives us a suite
  *  name (mirrors PlatformTokenStoreFactory's split). The host app wires the

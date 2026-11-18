@@ -105,7 +105,13 @@ class ListsByKindTest {
      *  far as is known without asking - and [ask], what asking beside the
      *  lists answers: by default the same. */
     private fun TestScope.model(server: FakeServer, held: () -> KindSplit?, ask: suspend (Boolean) -> KindSplit? = { held() }) =
-        WatchlistScreenModel(WatchlistsRepository(server.api, backgroundScope), server.api, ask, held)
+        WatchlistScreenModel(
+            // Its lists' writes go as the one account signed in here.
+            WatchlistsRepository(server.api, backgroundScope, accountNow = { "anna" }, bearerOf = { "tok-shared" }),
+            server.api,
+            ask,
+            held,
+        )
 
     private fun KindRow.titles(): List<String> = (this as KindRow.Loaded).items.map { it.title }
 

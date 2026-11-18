@@ -23,12 +23,22 @@ import kotlinx.coroutines.sync.withLock
  * "saved" signal the app surfaces — detail toggle fill + card badge — now
  * means "in AT LEAST ONE list", which callers compute by OR-ing the default
  * set with [membershipsFor].
+ *
+ * A write - a list made, renamed or deleted, a title put in a list or taken
+ * out - is the account's signed in as it is made: it goes with that
+ * account's own token, and is not sent once another account is signed in,
+ * or nobody is.
  */
 class WatchlistsRepository(
     private val api: ChinoApi,
     /** Application-lifetime scope so optimistic write-throughs survive the
      *  screen-model that initiated them — same backing scope as UserFlags. */
     private val scope: CoroutineScope,
+    /** The account signed in now; null for nobody. */
+    private val accountNow: () -> String?,
+    /** [accountId]'s own token while it is the account signed in; null once
+     *  it is not. */
+    private val bearerOf: suspend (accountId: String) -> String?,
 ) {
     private val mutex = Mutex()
 
@@ -110,16 +120,23 @@ class WatchlistsRepository(
      *  the membership cache and the list's item count, then writes through.
      *  Rolls back on failure. */
     fun setMembership(itemId: String, listId: String, present: Boolean) {
+        val account = accountNow() ?: return
         applyMembership(itemId, listId, present)
         scope.launch {
             runCatching {
-                if (present) api.addItemToList(listId, itemId)
-                else api.removeItemFromList(listId, itemId)
+                val bearer = bearerOf(account) ?: throw NotSignedInNow()
+                if (present) api.addItemToList(listId, itemId, bearer)
+                else api.removeItemFromList(listId, itemId, bearer)
             }.onFailure {
-                applyMembership(itemId, listId, !present)
+                // Undone in the cache of the account it was made for alone.
+                if (accountNow() == account) applyMembership(itemId, listId, !present)
             }
         }
     }
+
+    /** The token of the account signed in now, for a write it makes now:
+     *  its own; [NotSignedInNow] where nobody is signed in. */
+    private suspend fun bearerNow(): String = accountNow()?.let { bearerOf(it) } ?: throw NotSignedInNow()
 
     private fun applyMembership(itemId: String, listId: String, present: Boolean) {
         val current = _memberships.value[itemId] ?: emptySet()
@@ -140,7 +157,7 @@ class WatchlistsRepository(
      *  (default stays first), and returns it. Throws on a server rejection
      *  (duplicate / too many / empty) so the dialog can surface the error. */
     suspend fun create(name: String): Watchlist {
-        val created = api.createWatchlist(name)
+        val created = api.createWatchlist(name, bearerNow())
         mutex.withLock {
             // Insert after the default list (which sorts first), matching the
             // server's "default first, then createdAt asc" order.
@@ -153,7 +170,7 @@ class WatchlistsRepository(
 
     /** Renames a list and updates the cached overview. Throws on rejection. */
     suspend fun rename(listId: String, name: String): Watchlist {
-        val updated = api.renameWatchlist(listId, name)
+        val updated = api.renameWatchlist(listId, name, bearerNow())
         _lists.value = _lists.value.map { if (it.id == listId) updated else it }
         return updated
     }
@@ -162,7 +179,7 @@ class WatchlistsRepository(
      *  prunes its id from every cached membership set. Throws on rejection
      *  (e.g. deleting the default list -> 409). */
     suspend fun delete(listId: String) {
-        api.deleteWatchlist(listId)
+        api.deleteWatchlist(listId, bearerNow())
         _lists.value = _lists.value.filterNot { it.id == listId }
         _memberships.value = _memberships.value.mapValues { (_, set) -> set - listId }
     }

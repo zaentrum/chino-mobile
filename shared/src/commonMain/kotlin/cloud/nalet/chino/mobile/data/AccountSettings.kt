@@ -263,6 +263,10 @@ class AccountSettings(
      * its account left the phone says nothing.
      */
     fun press(on: Boolean, under: String): Boolean {
+        // Where the account leaves the phone after this, its banner stays
+        // away: counted before the save takes the account's place, so that
+        // a forget in between counts too.
+        val began = asks.value
         while (true) {
             val out = _saving.value
             if (under in out) return false
@@ -270,18 +274,18 @@ class AccountSettings(
         }
         // The banner of a save before goes as the switch is used again.
         _saveFailed.update { it - under }
-        // Where the account leaves the phone after this, its banner stays away.
-        val began = asks.value
         scope.launch {
-            val result = try {
-                save(on, under)
+            try {
+                val result = save(on, under)
+                // Said while the save still holds the account's place: a
+                // press meanwhile does nothing, and the next one clears it.
+                if (result is SettingSave.Failed) {
+                    keeps.withLock {
+                        if ((savesFrom[under] ?: 0L) <= began) _saveFailed.update { it + (under to result.failure) }
+                    }
+                }
             } finally {
                 _saving.update { it - under }
-            }
-            if (result is SettingSave.Failed) {
-                keeps.withLock {
-                    if ((savesFrom[under] ?: 0L) <= began) _saveFailed.update { it + (under to result.failure) }
-                }
             }
         }
         return true

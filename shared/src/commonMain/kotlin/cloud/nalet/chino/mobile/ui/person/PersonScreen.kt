@@ -156,6 +156,8 @@ class PersonScreen(private val personId: String, private val initialName: String
                         LoadFailure.Removed -> PersonGone(onBack = { nav.pop() })
                         // A sign-in that no longer holds is no empty state: the sign-in.
                         LoadFailure.SignedOut -> LaunchedEffect(Unit) { nav.replaceAll(cloud.nalet.chino.mobile.ui.auth.AuthScreen()) }
+                        // Signed out, the app starting over by itself.
+                        LoadFailure.AccountDeleted -> Unit
                         LoadFailure.NoAccess -> CouldntLoad(
                             title = "you don't have access to this",
                             sentence = null,

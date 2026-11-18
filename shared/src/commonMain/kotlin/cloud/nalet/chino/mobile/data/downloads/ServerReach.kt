@@ -178,8 +178,10 @@ enum class StartScreen {
  * after "Who's watching?" where the phone has several accounts. Downloads
  * are an account's: nobody signed in sees none, and the sign-in waits for
  * the server. Else as before: the sign-in, the account picker for several
- * accounts, the shell. [downloadsSupported]: the platform keeps downloads
- * (Android); without them the server's reach changes nothing.
+ * accounts, the shell. Accounts on the phone with none of them signed in -
+ * the one signed in deleted - open on the account picker too.
+ * [downloadsSupported]: the platform keeps downloads (Android); without them
+ * the server's reach changes nothing.
  */
 fun startScreen(
     serverConfigured: Boolean,
@@ -191,10 +193,10 @@ fun startScreen(
     val offline = reach == Reach.Unreachable && downloadsSupported
     return when {
         !serverConfigured -> StartScreen.AddServer
-        offline && accounts >= 2 -> StartScreen.AccountPickerThenDownloads
-        offline && hasActiveAccount -> StartScreen.Downloads
-        !hasActiveAccount -> StartScreen.SignIn
-        accounts >= 2 -> StartScreen.AccountPicker
+        accounts == 0 -> StartScreen.SignIn
+        offline && (accounts >= 2 || !hasActiveAccount) -> StartScreen.AccountPickerThenDownloads
+        offline -> StartScreen.Downloads
+        accounts >= 2 || !hasActiveAccount -> StartScreen.AccountPicker
         else -> StartScreen.Home
     }
 }

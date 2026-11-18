@@ -36,6 +36,9 @@ fun ListCouldntLoad(
             val nav = LocalNavigator.currentOrThrow
             LaunchedEffect(Unit) { nav.replaceAll(AuthScreen()) }
         }
+        // The account is deleted: it is signed out, and the app starts over
+        // by itself (who's watching, or sign in).
+        LoadFailure.AccountDeleted -> Unit
         LoadFailure.NoAccess -> CouldntLoad(
             title = NO_ACCESS_TITLE,
             sentence = null,

@@ -83,6 +83,9 @@ actual class PlayerScreen actual constructor(
         val container = LocalAppContainer.current
         val nav = LocalNavigator.currentOrThrow
         val closeGuard = LocalAutoCloseGuard.current
+        // The account signed in as the player opens: what it writes goes to
+        // that account, and nothing once another is signed in.
+        val openedFor = remember { container.accountStore.snapshotBlocking().activeAccount?.id }
         var loadAttempt by remember { mutableStateOf(0) }
         var state by remember { mutableStateOf<IosPlayState?>(null) }
         var loadError by remember { mutableStateOf<String?>(null) }
@@ -160,6 +163,7 @@ actual class PlayerScreen actual constructor(
             ready == null -> PlayerLoading()
             else -> IosPlaybackSurface(
                 state = ready,
+                openedFor = openedFor,
                 onBack = close,
                 onHome = { nav.replaceAll(MainShellScreen()) },
                 // Replace, so back from the next episode does not walk the chain.
@@ -345,6 +349,8 @@ private suspend fun loadTrickplay(container: AppContainer, state: IosPlayState):
 @Composable
 private fun IosPlaybackSurface(
     state: IosPlayState,
+    /** The account the player opened for ([IosPlaybackController]). */
+    openedFor: String?,
     onBack: () -> Unit,
     onHome: () -> Unit,
     onSwitchItem: (String) -> Unit,
@@ -355,7 +361,7 @@ private fun IosPlaybackSurface(
 ) {
     val container = LocalAppContainer.current
     val settings by container.settings.flow.collectAsState(initial = AppSettings())
-    val c = remember { IosPlaybackController(state, container, onSwitchItem) }
+    val c = remember { IosPlaybackController(state, container, openedFor, onSwitchItem) }
 
     DisposableEffect(c) {
         c.start()

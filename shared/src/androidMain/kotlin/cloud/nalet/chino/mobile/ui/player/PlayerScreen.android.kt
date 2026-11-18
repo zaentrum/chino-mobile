@@ -220,6 +220,9 @@ actual class PlayerScreen actual constructor(
         val closeGuard = LocalAutoCloseGuard.current
         val playerMode = PlayerMode.of(extraId)
         val scope = rememberCoroutineScope()
+        // The account signed in as the player opens: what it writes goes to
+        // that account, and nothing once another is signed in (ProgressSync).
+        val openedFor = remember { container.accountStore.snapshotBlocking().activeAccount?.id }
 
         // Own the system-back explicitly: pop exactly once and CONSUME the
         // event. Voyager 1.1.0-beta03's implicit Navigator BackHandler can
@@ -630,6 +633,7 @@ actual class PlayerScreen actual constructor(
             else -> PlaybackSurface(
                 state = ready!!,
                 itemId = itemId,
+                openedFor = openedFor,
                 onBack = close,
                 // Home: reset the stack to the signed-in shell root. Same idiom
                 // the auth/profile flows use (replaceAll(MainShellScreen())),
@@ -1134,6 +1138,10 @@ private fun ImmersiveFullscreenEffect(active: Boolean) {
 private fun PlaybackSurface(
     state: PlayState,
     itemId: String,
+    /** The account the player opened for: its positions and watched mark
+     *  are written for it alone, none once another account is signed in;
+     *  null, nobody was: none. */
+    openedFor: String?,
     onBack: () -> Unit,
     onHome: () -> Unit,
     onSwitchItem: (String) -> Unit,
@@ -1188,11 +1196,13 @@ private fun PlaybackSurface(
     var signedAnewAtMs by remember { mutableStateOf<Long?>(null) }
     val signScope = rememberCoroutineScope()
     fun saveProgress(p: ExoPlayer) {
+        val account = openedFor ?: return
         val pos = guard.position() ?: return
         val durMs = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.info?.durationMs ?: 0L
         // Sent at once, or kept on the phone and sent once the server can
-        // be reached (ProgressSync).
-        container.progressSync.save(itemId, positionSec = pos, durationSec = (durMs / 1000L).toInt())
+        // be reached (ProgressSync); nothing once another account than the
+        // one it opened for is signed in - the dispose after a sign-out too.
+        container.progressSync.save(itemId, positionSec = pos, durationSec = (durMs / 1000L).toInt(), openedFor = account)
     }
 
     // On the app's one connection pool (SharedConnections): the master goes
@@ -1670,8 +1680,9 @@ private fun PlaybackSurface(
                     markedWatched = true
                     // Sent at once, or kept and sent once the server can be
                     // reached: a title finished in its credits offline is
-                    // watched all the same (ProgressSync).
-                    container.progressSync.markWatched(itemId)
+                    // watched all the same (ProgressSync). For the account the
+                    // player opened for alone, as its positions.
+                    openedFor?.let { container.progressSync.markWatched(itemId, openedFor = it) }
                     playbackEvent(
                         "mark_watched",
                         mapOf("at" to (playedMs / 1000).toString(), "via" to if (credits) "credits" else "p95"),

@@ -254,6 +254,8 @@ class DetailScreen(private val itemId: String) : Screen {
                         details = s.details,
                     )
                     LoadFailure.SignedOut -> LaunchedEffect(Unit) { nav.replaceAll(AuthScreen()) }
+                    // Signed out, the app starting over by itself.
+                    LoadFailure.AccountDeleted -> Unit
                     else -> CouldntLoad(
                         title = "couldn't load this title",
                         sentence = s.failure.sentence(),

@@ -27,17 +27,17 @@ class AccountDeletionTest {
         val deleted = FakeServer(accessToken = { "tok-1" }) {
             respondJson("""{"account":"deleted","deleted":{"progress":12,"watched":30,"watchlists":2,"likes":4}}""")
         }
-        assertEquals(AccountDeletion.Deleted, deleted.api.deleteAccount())
+        assertEquals(AccountDeletion.Deleted, deleted.api.deleteAccount("tok-1"))
         // The account was gone already: now its data is too.
         val gone = FakeServer(accessToken = { "tok-1" }) { respondJson("""{"account":"gone","deleted":{}}""") }
-        assertEquals(AccountDeletion.Deleted, gone.api.deleteAccount())
+        assertEquals(AccountDeletion.Deleted, gone.api.deleteAccount("tok-1"))
     }
 
     @Test
     fun theRequestIsADeleteOfMeWithTheBearerInTheHeaderNeverInTheUrl() = runTest {
-        val server = FakeServer(accessToken = { "tok-secret" }) { respondJson("""{"account":"deleted"}""") }
+        val server = FakeServer(accessToken = { "tok-other" }) { respondJson("""{"account":"deleted"}""") }
 
-        server.api.deleteAccount()
+        server.api.deleteAccount("tok-secret")
 
         val request = server.requests.single()
         assertEquals(HttpMethod.Delete, request.method)
@@ -48,10 +48,10 @@ class AccountDeletionTest {
     }
 
     @Test
-    fun theDeletionCarriesTheTokenOfTheAccountSignedInNow() = runTest {
-        // The Auth plugin keeps the bearer it loaded first. Another account
-        // signed in since (Switch account) must not have the first one
-        // deleted.
+    fun theDeletionCarriesItsAccountsOwnTokenNotTheOneTheClientHolds() = runTest {
+        // The Auth plugin holds the token of whoever it loaded one for;
+        // another account signed in since must not be deleted in its place,
+        // nor the account deleted be another than the one asked for.
         var active = "tok-first"
         val server = FakeServer(accessToken = { active }) { request ->
             if (request.method == HttpMethod.Delete) respondJson("""{"account":"deleted"}""")
@@ -60,10 +60,10 @@ class AccountDeletionTest {
         server.api.listItems()
         active = "tok-now"
 
-        server.api.deleteAccount()
+        server.api.deleteAccount("tok-mine")
 
         assertEquals(
-            listOf("Bearer tok-first", "Bearer tok-now"),
+            listOf("Bearer tok-first", "Bearer tok-mine"),
             server.requests.map { it.headers[HttpHeaders.Authorization] },
         )
     }
@@ -77,7 +77,7 @@ class AccountDeletionTest {
             if (request.method == HttpMethod.Delete) respondJson("""{"account":"deleted"}""")
             else respondJson("""{"items":[]}""")
         }
-        server.api.deleteAccount()
+        server.api.deleteAccount("tok-deleted")
         active = "tok-next"
         server.http.forgetBearer()
 
@@ -94,7 +94,7 @@ class AccountDeletionTest {
                 HttpStatusCode.Conflict,
             )
         }
-        val refused = server.api.deleteAccount()
+        val refused = server.api.deleteAccount("tok-1")
         assertEquals(
             AccountDeletion.Refused("You are the last admin of this server: make someone else an admin first."),
             refused,
@@ -104,7 +104,7 @@ class AccountDeletionTest {
 
         // No message to show: still a refusal, said plainly.
         val bare = FakeServer { respond("", HttpStatusCode.Conflict) }
-        assertEquals(AccountDeletion.Refused("This server won't delete your account."), bare.api.deleteAccount())
+        assertEquals(AccountDeletion.Refused("This server won't delete your account."), bare.api.deleteAccount("tok-1"))
     }
 
     @Test
@@ -115,7 +115,7 @@ class AccountDeletionTest {
                 HttpStatusCode.NotImplemented,
             )
         }
-        val unavailable = server.api.deleteAccount()
+        val unavailable = server.api.deleteAccount("tok-1")
         assertEquals(AccountDeletion.Unavailable, unavailable)
         assertEquals("Not Available", unavailable.title)
         assertEquals("Deleting your account isn't available on this server — ask its administrator.", unavailable.text)
@@ -130,7 +130,7 @@ class AccountDeletionTest {
                 HttpStatusCode.BadGateway,
             )
         }
-        val failed = server.api.deleteAccount()
+        val failed = server.api.deleteAccount("tok-1")
         assertEquals(
             AccountDeletion.Failed("Your account could not be deleted right now, so nothing was. Try again later."),
             failed,
@@ -149,57 +149,62 @@ class AccountDeletionTest {
         }
         assertEquals(
             AccountDeletion.Failed("Your data could not be deleted, so nothing was. Try again later."),
-            dataNotDeleted.api.deleteAccount(),
+            dataNotDeleted.api.deleteAccount("tok-1"),
         )
         // A proxy's page, a plain-text error: no server words.
         val proxy = FakeServer {
             respond("<html><body>502 Bad Gateway</body></html>", HttpStatusCode.BadGateway, headersOf(HttpHeaders.ContentType, "text/html"))
         }
-        assertEquals(AccountDeletion.Failed("Your account couldn't be deleted right now (HTTP 502)."), proxy.api.deleteAccount())
+        assertEquals(AccountDeletion.Failed("Your account couldn't be deleted right now (HTTP 502)."), proxy.api.deleteAccount("tok-1"))
         val plain = FakeServer { respondText("upstream connect error\n", HttpStatusCode.ServiceUnavailable) }
-        assertEquals(AccountDeletion.Failed("Your account couldn't be deleted right now (HTTP 503)."), plain.api.deleteAccount())
+        assertEquals(AccountDeletion.Failed("Your account couldn't be deleted right now (HTTP 503)."), plain.api.deleteAccount("tok-1"))
     }
 
     @Test
-    fun aSignInTheServerNoLongerTakesEvenRenewedIsAFailure() = runTest {
+    fun aSignInTheServerNoLongerTakesIsAFailure() = runTest {
         val server = FakeServer(accessToken = { "old" }, renewedToken = { null }) {
             respondText("unauthorized\n", HttpStatusCode.Unauthorized)
         }
         assertEquals(
             AccountDeletion.Failed("This server no longer accepts your sign-in. Sign in again, then try once more."),
-            server.api.deleteAccount(),
+            server.api.deleteAccount("tok-1"),
         )
     }
 
     @Test
-    fun aSignInTheAuthPluginRenewsStillDeletes() = runTest {
+    fun aDeletionsTokenRefusedIsNotRenewedWithTheClientsOwn() = runTest {
+        // The account's own token, which the server did not take: renewing
+        // it with the token the client holds could delete another account.
         val server = FakeServer(accessToken = { "old" }, renewedToken = { "new" }) { request ->
             if (request.headers[HttpHeaders.Authorization] == "Bearer new") respondJson("""{"account":"deleted"}""")
             else respondText("token expired\n", HttpStatusCode.Unauthorized)
         }
-        assertEquals(AccountDeletion.Deleted, server.api.deleteAccount())
-        assertEquals(listOf("Bearer old", "Bearer new"), server.requests.map { it.headers[HttpHeaders.Authorization] })
+        assertEquals(
+            AccountDeletion.Failed("This server no longer accepts your sign-in. Sign in again, then try once more."),
+            server.api.deleteAccount("tok-mine"),
+        )
+        assertEquals(listOf("Bearer tok-mine"), server.requests.map { it.headers[HttpHeaders.Authorization] })
     }
 
     @Test
     fun onlyA200SignsOutAnother2xxIsNoProof() = runTest {
         for (status in listOf(HttpStatusCode.Accepted, HttpStatusCode.NoContent)) {
             val server = FakeServer { respond("", status) }
-            assertIs<AccountDeletion.Failed>(server.api.deleteAccount(), status.toString())
+            assertIs<AccountDeletion.Failed>(server.api.deleteAccount("tok-1"), status.toString())
         }
     }
 
     @Test
     fun aRequestThatNeverReachesTheServerIsAFailureNotAThrow() = runTest {
         val offline = FakeServer { throw RuntimeException("connect timed out") }
-        assertEquals(AccountDeletion.Failed("The server couldn't be reached."), offline.api.deleteAccount())
+        assertEquals(AccountDeletion.Failed("The server couldn't be reached."), offline.api.deleteAccount("tok-1"))
     }
 
     @Test
     fun theAccountIsSignedOutOnlyOnceTheServerSaysItIsGone() = runTest {
         suspend fun signOuts(server: FakeServer): Int {
             var count = 0
-            server.api.deleteAccountThenSignOut { count++ }
+            server.api.deleteAccountThenSignOut("tok-1") { count++ }
             return count
         }
         assertEquals(1, signOuts(FakeServer { respondJson("""{"account":"deleted"}""") }))
@@ -213,7 +218,7 @@ class AccountDeletionTest {
     @Test
     fun aLongServerMessageIsCutToAFewSentences() = runTest {
         val server = FakeServer { respondJson("""{"error":"refused","message":"${"x".repeat(1000)}"}""", HttpStatusCode.Conflict) }
-        val refused = assertIs<AccountDeletion.Refused>(server.api.deleteAccount())
+        val refused = assertIs<AccountDeletion.Refused>(server.api.deleteAccount("tok-1"))
         assertEquals(300, refused.message.length)
     }
 }

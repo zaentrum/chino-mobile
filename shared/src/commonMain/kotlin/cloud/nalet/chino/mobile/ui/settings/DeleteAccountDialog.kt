@@ -87,8 +87,9 @@ fun DeleteAccountDialog(
         answer = null
         scope.launch {
             val result = withContext(NonCancellable) {
-                // The bearer is the active account's: never send it for
-                // another one than the account on screen.
+                // The deletion goes with the account's own token, whoever is
+                // signed in by the time it is sent (AppContainer.deleteAccount);
+                // another account signed in since the dialog opened is said.
                 if (container.accountStore.snapshotBlocking().activeAccount?.id != account.id) {
                     AccountDeletion.Failed("Another account is signed in now. Open Delete Account again.")
                 } else {

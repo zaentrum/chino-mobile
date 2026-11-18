@@ -3,6 +3,8 @@ package cloud.nalet.chino.mobile.data.auth
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 
 /**
@@ -13,13 +15,18 @@ import kotlinx.serialization.json.Json
  *
  * Concurrency: the underlying platform storage is single-writer per-process
  * and atomic at the file level on both Android (DataStore commit) and iOS
- * (NSUserDefaults synchronize), so we don't need a Mutex in the common base.
+ * (NSUserDefaults synchronize). Each change reads the blob and writes it
+ * whole, one change at a time ([changing]): what one decides from the blob
+ * it read - which account was signed in, say - holds for what it writes.
  * The "blob is one big JSON string" model means every mutation is a full
  * rewrite — fine because account changes happen at human-tap cadence, never
  * in hot paths.
  */
 abstract class BaseAccountStore : AccountStore {
     protected val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    /** One change of the blob at a time: each reads it and writes it whole. */
+    private val changing = Mutex()
 
     /** Synchronous read used by snapshotBlocking + currentAccessTokenBlocking +
      *  the addOrUpdate / remove / setActive read-modify-write cycle. Platform
@@ -53,7 +60,7 @@ abstract class BaseAccountStore : AccountStore {
         blobFlow.map { b -> b.accounts.firstOrNull { it.id == b.activeId } }.distinctUntilChanged()
     }
 
-    override suspend fun addOrUpdate(account: Account, setActive: Boolean) {
+    override suspend fun addOrUpdate(account: Account, setActive: Boolean) = changing.withLock {
         val blob = readBlobBlocking()
         val without = blob.accounts.filter { it.id != account.id }
         val updated = (without + account).sortedByDescending { it.lastUsedAt }
@@ -63,16 +70,26 @@ abstract class BaseAccountStore : AccountStore {
         ))
     }
 
-    override suspend fun remove(id: String) {
+    override suspend fun remove(id: String) = changing.withLock {
         val blob = readBlobBlocking()
         val updated = blob.accounts.filter { it.id != id }
         val newActive = if (blob.activeId == id) updated.firstOrNull()?.id else blob.activeId
         writeBlob(blob.copy(accounts = updated, activeId = newActive))
     }
 
-    override suspend fun setActive(id: String) {
+    override suspend fun removeDeleted(id: String): RemovedAccount? = changing.withLock {
         val blob = readBlobBlocking()
-        if (blob.accounts.none { it.id == id }) return
+        if (blob.accounts.none { it.id == id }) return@withLock null
+        val wasActive = blob.activeId == id
+        // Nobody signed in after the account signed in: not the next one,
+        // whose name the deleted account's screens would write in.
+        writeBlob(blob.copy(accounts = blob.accounts.filter { it.id != id }, activeId = blob.activeId.takeUnless { wasActive }))
+        if (wasActive) RemovedAccount.WasActive else RemovedAccount.WasOther
+    }
+
+    override suspend fun setActive(id: String) = changing.withLock {
+        val blob = readBlobBlocking()
+        if (blob.accounts.none { it.id == id }) return@withLock
         // Bump lastUsedAt so the picker preserves recency ordering across
         // sessions — most-recent shows leftmost.
         val now = cloud.nalet.chino.mobile.currentTimeMillis()
@@ -91,7 +108,7 @@ abstract class BaseAccountStore : AccountStore {
         return blob.accounts.firstOrNull { it.id == blob.activeId }?.accessToken
     }
 
-    override suspend fun updateTokensForBlocking(accountId: String, tokens: Tokens) {
+    override suspend fun updateTokensForBlocking(accountId: String, tokens: Tokens) = changing.withLock {
         val blob = readBlobBlocking()
         val updated = blob.accounts.map {
             if (it.id == accountId) {

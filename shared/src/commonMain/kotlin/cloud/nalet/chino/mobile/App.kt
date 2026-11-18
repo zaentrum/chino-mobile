@@ -29,6 +29,7 @@ import cloud.nalet.chino.mobile.data.downloads.StartScreen
 import cloud.nalet.chino.mobile.data.downloads.startScreen
 import cloud.nalet.chino.mobile.ui.auth.AccountPickerScreen
 import cloud.nalet.chino.mobile.ui.auth.AuthScreen
+import cloud.nalet.chino.mobile.ui.auth.StartOverWhenAccountDeleted
 import cloud.nalet.chino.mobile.ui.downloads.ProvideDeviceKind
 import cloud.nalet.chino.mobile.ui.shell.Section
 import cloud.nalet.chino.mobile.ui.notices.NoticesPolling
@@ -170,6 +171,9 @@ fun App(
                     // nothing to the screen it returned to.
                     HoldInputAfterAutoClose(autoCloseGuard) {
                         Navigator(initialScreen) { navigator ->
+                            // An account the server deleted: the app starts
+                            // over, whichever screen is open.
+                            StartOverWhenAccountDeleted(navigator)
                             // The bar while casting, part of the screen's
                             // layout at its foot - a title's page, a person's,
                             // the notices. The shell draws its own above its

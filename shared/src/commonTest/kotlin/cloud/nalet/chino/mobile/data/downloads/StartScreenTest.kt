@@ -37,6 +37,19 @@ class StartScreenTest {
     }
 
     @Test
+    fun accountsWithNoneSignedInOpenWhosWatching() {
+        // The account signed in was deleted: nobody is signed in after it,
+        // and who's watching follows - one account left or several.
+        for (reach in listOf(Reach.Reachable, Reach.Unknown)) {
+            assertEquals(StartScreen.AccountPicker, start(accounts = 1, active = false, reach = reach))
+            assertEquals(StartScreen.AccountPicker, start(accounts = 2, active = false, reach = reach))
+        }
+        assertEquals(StartScreen.AccountPickerThenDownloads, start(accounts = 1, active = false, reach = Reach.Unreachable))
+        // None left: the sign-in.
+        assertEquals(StartScreen.SignIn, start(accounts = 0, active = false, reach = Reach.Reachable))
+    }
+
+    @Test
     fun withoutAServerTheAddServerScreenWhateverTheReach() {
         assertEquals(StartScreen.AddServer, start(configured = false, accounts = 0, active = false, reach = Reach.Unreachable))
     }

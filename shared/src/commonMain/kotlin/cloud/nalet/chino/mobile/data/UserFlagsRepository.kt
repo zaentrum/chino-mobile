@@ -13,7 +13,10 @@ import kotlinx.coroutines.sync.withLock
  * In-memory cache of the user's watchlist + likes sets shared across the
  * whole app. Mirrors chino-androidtv's UserFlagsRepository + chino-web's
  * hooks/useUserFlags pattern: one fetch per kind on first access,
- * optimistic toggle, server reconciliation on failure.
+ * optimistic toggle, server reconciliation on failure. A toggle is the
+ * account's signed in as it is pressed: its write goes with that account's
+ * own token, and is not sent once another account is signed in, or nobody
+ * is.
  */
 class UserFlagsRepository(
     private val api: ChinoApi,
@@ -21,6 +24,11 @@ class UserFlagsRepository(
      *  ViewModel that initiated them — backing scope is wired in
      *  AppContainer (Dispatchers.Default + SupervisorJob). */
     private val scope: CoroutineScope,
+    /** The account signed in now; null for nobody. */
+    private val accountNow: () -> String?,
+    /** [accountId]'s own token while it is the account signed in; null once
+     *  it is not. */
+    private val bearerOf: suspend (accountId: String) -> String?,
 ) {
     private val mutex = Mutex()
 
@@ -63,24 +71,33 @@ class UserFlagsRepository(
     }
 
     fun setWatchlist(itemId: String, present: Boolean) {
+        val account = accountNow() ?: return
         _watchlist.value = if (present) _watchlist.value + itemId else _watchlist.value - itemId
         scope.launch {
             runCatching {
-                if (present) api.addToWatchlist(itemId) else api.removeFromWatchlist(itemId)
+                val bearer = bearerOf(account) ?: throw NotSignedInNow()
+                if (present) api.addToWatchlist(itemId, bearer) else api.removeFromWatchlist(itemId, bearer)
             }.onFailure {
-                _watchlist.value = if (present) _watchlist.value - itemId else _watchlist.value + itemId
+                // Undone in the cache of the account it was pressed for alone.
+                if (accountNow() == account) _watchlist.value = if (present) _watchlist.value - itemId else _watchlist.value + itemId
             }
         }
     }
 
     fun setLike(itemId: String, present: Boolean) {
+        val account = accountNow() ?: return
         _likes.value = if (present) _likes.value + itemId else _likes.value - itemId
         scope.launch {
             runCatching {
-                if (present) api.addLike(itemId) else api.removeLike(itemId)
+                val bearer = bearerOf(account) ?: throw NotSignedInNow()
+                if (present) api.addLike(itemId, bearer) else api.removeLike(itemId, bearer)
             }.onFailure {
-                _likes.value = if (present) _likes.value - itemId else _likes.value + itemId
+                if (accountNow() == account) _likes.value = if (present) _likes.value - itemId else _likes.value + itemId
             }
         }
     }
 }
+
+/** A write made for an account that is no longer the one signed in, by the
+ *  time it would go: not sent. */
+class NotSignedInNow : Exception("That account is no longer the one signed in.")

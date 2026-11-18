@@ -24,12 +24,14 @@ const val FAKE_API_BASE = "https://media.example.com/api/"
  * (from [accessToken], [renewedToken] after a 401) and its check of every
  * answer — so a test sees what the app would see. [dispatcher]: where the
  * fake answers, the test's own where a test waits for requests the app sends
- * in the background (its IO threads else).
+ * in the background (its IO threads else). [onAccountDeleted]: the bearer of
+ * each request answered 401 `account_deleted`.
  */
 class FakeServer(
     private val accessToken: suspend () -> String? = { null },
     private val renewedToken: suspend () -> String? = { null },
     dispatcher: CoroutineDispatcher? = null,
+    private val onAccountDeleted: (bearer: String) -> Unit = {},
     private val handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
 ) {
     val requests = mutableListOf<HttpRequestData>()
@@ -45,7 +47,7 @@ class FakeServer(
             },
         ),
     ) {
-        chinoApiClient(FAKE_API_BASE, accessToken, renewedToken)
+        chinoApiClient(FAKE_API_BASE, accessToken, renewedToken, onAccountDeleted = onAccountDeleted)
     }
 
     val api: ChinoApi = ChinoApi(http)

@@ -718,6 +718,53 @@ class AccountSettingsTest {
     }
 
     @Test
+    fun aFailedSavesBannerIsSaidBeforeTheSwitchTakesAnotherPressSoALaterSaveThatWorksLeavesNone() = runTest {
+        val phone = Phone()
+        // The phone's copy slow to forget: a forget holds the lock the
+        // banner is said under for as long.
+        val forgetting = CompletableDeferred<Unit>()
+        val device = object : KnownChoices by phone.device {
+            override suspend fun forgetWatchlistByKind(accountId: String) {
+                forgetting.await()
+                phone.device.forgetWatchlistByKind(accountId)
+            }
+        }
+        val held = CompletableDeferred<Unit>()
+        val route = SettingsRoute(kept = false).apply {
+            patch = {
+                held.await()
+                respondText("busy", HttpStatusCode.ServiceUnavailable)
+            }
+        }
+        val settings = AccountSettings(server(route).api, phone.active, { phone.active.value }, phone.bearerOf, backgroundScope, device)
+
+        assertTrue(settings.press(true, under = "anna"))
+        runCurrent()
+        // Ben's choice forgotten meanwhile; Anna's save fails, its banner
+        // waiting for the lock.
+        val forget = async { settings.forget("ben") }
+        runCurrent()
+        held.complete(Unit)
+        runCurrent()
+
+        // A press now does nothing: the failed save still holds Anna's place.
+        route.patch = null
+        assertFalse(settings.press(true, under = "anna"))
+        forgetting.complete(Unit)
+        forget.await()
+        runCurrent()
+        assertEquals(LoadFailure.Busy, settings.saveFailed.value["anna"])
+        assertTrue(settings.saving.value.isEmpty())
+
+        // Pressed again: the banner goes, the save is kept, and no banner of
+        // the save before comes back.
+        assertTrue(settings.press(true, under = "anna"))
+        runCurrent()
+        assertNull(settings.saveFailed.value["anna"])
+        assertEquals(AccountSetting("anna", true), settings.current())
+    }
+
+    @Test
     fun aSaveThatFailsAfterItsAccountLeftThePhoneSaysNothing() = runTest {
         val phone = Phone()
         val held = CompletableDeferred<Unit>()

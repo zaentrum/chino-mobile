@@ -29,6 +29,9 @@ class ApiStatusException(
      *  the person (deleting an account: why it was refused); null when the
      *  body carries none. */
     val personMessage: String? = null,
+    /** chino-api's 401 `{"error":"account_deleted",…}`: the server has
+     *  deleted the account the request went out for ([saysAccountDeleted]). */
+    val accountDeleted: Boolean = false,
 ) : Exception(
     buildString {
         append(path).append(": HTTP ").append(status)
@@ -45,8 +48,24 @@ private const val MAX_PERSON_MESSAGE = 300
 /** This answer as an [ApiStatusException], with the server's messages. */
 internal suspend fun HttpResponse.apiStatusException(): ApiStatusException {
     val text = runCatching { bodyAsText() }.getOrNull()?.trim().orEmpty()
-    return ApiStatusException(status.value, call.request.url.encodedPath, serverMessage(text), personMessage(text))
+    return ApiStatusException(
+        status.value,
+        call.request.url.encodedPath,
+        serverMessage(text),
+        personMessage(text),
+        accountDeleted = saysAccountDeleted(status.value, text),
+    )
 }
+
+/** chino-api's code for an account whose deletion has begun (section 16.5.6
+ *  of the specification). */
+internal const val ACCOUNT_DELETED = "account_deleted"
+
+/** Whether an answer of [status] with the body [text] is chino-api's 401
+ *  `{"error":"account_deleted",…}`. A plain-text 401 ("invalid token") or a
+ *  JSON one with another code is not. */
+internal fun saysAccountDeleted(status: Int, text: String): Boolean =
+    status == 401 && text.trimStart().startsWith("{") && jsonField(text.trim(), "error") == ACCOUNT_DELETED
 
 /** What a non-2xx body says, in one line — see [ApiStatusException.serverMessage]. */
 internal fun serverMessage(text: String): String? {
@@ -125,6 +144,11 @@ enum class LoadFailure {
 
     /** 401, after the app's own renewal: no empty state - the sign-in. */
     SignedOut,
+
+    /** 401 `account_deleted`: the server has deleted the account. No empty
+     *  state and no sign-in of the screen's own: the account is signed out
+     *  and the app starts over (AppContainer.startOver). */
+    AccountDeleted,
 }
 
 fun Throwable.loadFailure(singleThing: Boolean): LoadFailure {
@@ -135,6 +159,7 @@ fun Throwable.loadFailure(singleThing: Boolean): LoadFailure {
         else -> return LoadFailure.NotAccepted
     }
     return when {
+        this is ApiStatusException && accountDeleted -> LoadFailure.AccountDeleted
         status == 401 -> LoadFailure.SignedOut
         status == 403 -> LoadFailure.NoAccess
         (status == 404 || status == 410) && singleThing -> LoadFailure.Removed
@@ -152,7 +177,7 @@ fun LoadFailure.sentence(): String? = when (this) {
     LoadFailure.ServerProblem -> "The server ran into a problem."
     LoadFailure.Busy -> "The server is busy."
     LoadFailure.NotAccepted -> "The server didn't accept the request. Check for an app update."
-    LoadFailure.Removed, LoadFailure.NoAccess, LoadFailure.SignedOut -> null
+    LoadFailure.Removed, LoadFailure.NoAccess, LoadFailure.SignedOut, LoadFailure.AccountDeleted -> null
 }
 
 /** The design system's heading for no access (403): what the screen is,
@@ -180,7 +205,8 @@ val Throwable.titleGone: Boolean
  */
 val Throwable.signInRefused: Boolean
     get() = when (this) {
-        is ApiStatusException -> status == 401 || status == 403
+        // An account the server deleted is signed out, not asked to sign in.
+        is ApiStatusException -> (status == 401 && !accountDeleted) || status == 403
         is ResponseException -> response.status.value == 401 || response.status.value == 403
         else -> false
     }

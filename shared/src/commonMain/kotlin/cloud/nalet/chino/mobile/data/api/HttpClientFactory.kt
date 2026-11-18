@@ -16,6 +16,8 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.URLBuilder
 import io.ktor.http.isSuccess
 import io.ktor.http.takeFrom
@@ -40,13 +42,16 @@ internal val ChinoJson: Json = Json { ignoreUnknownKeys = true; explicitNulls = 
  * server's message. Ktor installs the response check before the Auth plugin
  * sends, so it sees the answer after a renewed token's retry: a 401 the
  * renewal fixes is no error. Every 2xx answer is the server reached
- * ([onAnswered]).
+ * ([onAnswered]). A 401 `account_deleted` is never renewed: it goes to
+ * [onAccountDeleted] with the bearer the request went out with, before the
+ * caller has the error.
  */
 internal fun HttpClientConfig<*>.chinoApiClient(
     apiBaseUrl: String,
     accessToken: suspend () -> String?,
     renewedToken: suspend () -> String?,
     onAnswered: () -> Unit = {},
+    onAccountDeleted: (bearer: String) -> Unit = {},
 ) {
     install(ContentNegotiation) { json(ChinoJson) }
     apiTimeouts()
@@ -59,12 +64,27 @@ internal fun HttpClientConfig<*>.chinoApiClient(
             // it itself; TokenManager owns refresh entirely via the issuer's
             // token endpoint. An empty string satisfies BearerTokens.
             loadTokens { accessToken()?.let { BearerTokens(accessToken = it, refreshToken = "") } }
-            refreshTokens { renewedToken()?.let { BearerTokens(accessToken = it, refreshToken = "") } }
+            refreshTokens {
+                // The account is deleted on the server (section 16.5.6): no
+                // fresh token mends that, so none is asked for and the
+                // request is not sent again.
+                val text = runCatching { response.bodyAsText() }.getOrDefault("")
+                if (saysAccountDeleted(response.status.value, text)) return@refreshTokens null
+                renewedToken()?.let { BearerTokens(accessToken = it, refreshToken = "") }
+            }
         }
     }
     HttpResponseValidator {
         validateResponse { response ->
-            if (!response.status.isSuccess()) throw response.apiStatusException()
+            if (!response.status.isSuccess()) {
+                val e = response.apiStatusException()
+                // The account the request went out for is signed out on this
+                // phone: the one whose bearer it carried.
+                if (e.accountDeleted) {
+                    response.call.request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.let(onAccountDeleted)
+                }
+                throw e
+            }
             onAnswered()
         }
     }
@@ -117,7 +137,12 @@ object HttpClientFactory {
      *  tokens through [TokenManager] which is multi-account aware — switching
      *  the active account in AccountStore propagates here without rewiring.
      *  [onAnswered]: a call had its answer, a 2xx - the server is reached. */
-    fun create(config: AppConfig, tokenManager: TokenManager, onAnswered: () -> Unit = {}): HttpClient = HttpClient {
+    fun create(
+        config: AppConfig,
+        tokenManager: TokenManager,
+        onAnswered: () -> Unit = {},
+        onAccountDeleted: (bearer: String) -> Unit = {},
+    ): HttpClient = HttpClient {
         // On the connections the player streams over, so its first request
         // to the server goes over one these calls just used (shareConnections).
         engine { shareConnections() }
@@ -126,6 +151,7 @@ object HttpClientFactory {
             accessToken = { tokenManager.validAccessToken() },
             renewedToken = { tokenManager.forceRefresh() },
             onAnswered = onAnswered,
+            onAccountDeleted = onAccountDeleted,
         )
         install(Logging) {
             level = if (config.isBeta) LogLevel.INFO else LogLevel.NONE

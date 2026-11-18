@@ -115,6 +115,8 @@ class ServerBootstrapTest {
     fun featuresTheAppCantReadNeverStopAConnectAndFillNoListByKind() = runTest {
         for (odd in listOf(
             ""","features":{"watchlist_kinds":"yes"}""",
+            // "true" as a string: only the JSON true says so.
+            ""","features":{"watchlist_kinds":"true"}""",
             ""","features":{"watchlist_kinds":null}""",
             ""","features":{"watchlist_kinds":1}""",
             ""","features":[]""",

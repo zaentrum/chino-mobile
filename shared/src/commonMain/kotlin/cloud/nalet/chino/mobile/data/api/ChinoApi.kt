@@ -190,13 +190,11 @@ class ChinoApi(private val http: HttpClient) {
      *  person. [cloud.nalet.chino.mobile.data.account.deleteAccount] reads
      *  both.
      *
-     *  The bearer is loaded afresh first ([forgetBearer]): the Auth plugin
-     *  keeps the one it loaded first, and the account deleted must be the
-     *  one signed in now, never one signed in before it in this process. */
-    suspend fun deleteMe(): Int {
-        http.forgetBearer()
-        return http.delete("v1/me").status.value
-    }
+     *  [bearer] is the account's own token: the deletion goes for that
+     *  account, never for the one the client holds a token of, whoever is
+     *  signed in by the time it is sent. */
+    suspend fun deleteMe(bearer: String): Int =
+        http.delete("v1/me") { asAccount(bearer) }.status.value
 
     /** Mints a 6-hour HMAC-signed token used as `?stream=<token>` on playback
      *  URLs. The OIDC bearer rotates on silent renew; the stream token
@@ -268,8 +266,19 @@ class ChinoApi(private val http: HttpClient) {
     }
 
     suspend fun getWatchlist(): UserFlagList = http.get("v1/me/watchlist").body()
-    suspend fun addToWatchlist(id: String) { http.put("v1/me/watchlist/$id") }
-    suspend fun removeFromWatchlist(id: String) { http.delete("v1/me/watchlist/$id") }
+
+    // The writes a press makes (the watchlist flag, likes, the lists and
+    // what they hold) take [bearer], the token of the account the press was
+    // made for (data/UserFlagsRepository, data/WatchlistsRepository): sent
+    // for that account, never for whoever is signed in by then. Null: as the
+    // account signed in now.
+    suspend fun addToWatchlist(id: String, bearer: String? = null) {
+        http.put("v1/me/watchlist/$id") { bearer?.let { asAccount(it) } }
+    }
+
+    suspend fun removeFromWatchlist(id: String, bearer: String? = null) {
+        http.delete("v1/me/watchlist/$id") { bearer?.let { asAccount(it) } }
+    }
 
     // ---- Multiple named watchlists ----------------------------------------
     // The default list ("Watchlist", isDefault=true) is created lazily by the
@@ -286,23 +295,27 @@ class ChinoApi(private val http: HttpClient) {
      *  lists/user (409 "too many lists"), case-insensitive duplicate name
      *  (409 "name exists"), empty (400). A refusal is an [ApiStatusException]
      *  with that reason ([watchlistRefusal]); the dialog stays open. */
-    suspend fun createWatchlist(name: String): Watchlist =
+    suspend fun createWatchlist(name: String, bearer: String? = null): Watchlist =
         http.post("v1/me/watchlists") {
             contentType(ContentType.Application.Json)
             setBody(WatchlistNameBody(name))
+            bearer?.let { asAccount(it) }
         }.body()
 
     /** Rename; same validation as create. Renaming the default keeps
      *  isDefault=true. 404 when not the caller's list. */
-    suspend fun renameWatchlist(listId: String, name: String): Watchlist =
+    suspend fun renameWatchlist(listId: String, name: String, bearer: String? = null): Watchlist =
         http.patch("v1/me/watchlists/$listId") {
             contentType(ContentType.Application.Json)
             setBody(WatchlistNameBody(name))
+            bearer?.let { asAccount(it) }
         }.body()
 
     /** Cascades its items. Deleting the default list -> 409 "cannot delete
      *  default"; 404 when not the caller's. */
-    suspend fun deleteWatchlist(listId: String) { http.delete("v1/me/watchlists/$listId") }
+    suspend fun deleteWatchlist(listId: String, bearer: String? = null) {
+        http.delete("v1/me/watchlists/$listId") { bearer?.let { asAccount(it) } }
+    }
 
     /** A single list's header + its item ids (newest-added first). */
     suspend fun getWatchlist(listId: String): WatchlistDetail =
@@ -321,13 +334,13 @@ class ChinoApi(private val http: HttpClient) {
         }.body()
 
     /** Idempotent add. 404 when the list isn't the caller's. */
-    suspend fun addItemToList(listId: String, itemId: String) {
-        http.put("v1/me/watchlists/$listId/items/$itemId")
+    suspend fun addItemToList(listId: String, itemId: String, bearer: String? = null) {
+        http.put("v1/me/watchlists/$listId/items/$itemId") { bearer?.let { asAccount(it) } }
     }
 
     /** Idempotent remove. */
-    suspend fun removeItemFromList(listId: String, itemId: String) {
-        http.delete("v1/me/watchlists/$listId/items/$itemId")
+    suspend fun removeItemFromList(listId: String, itemId: String, bearer: String? = null) {
+        http.delete("v1/me/watchlists/$listId/items/$itemId") { bearer?.let { asAccount(it) } }
     }
 
     /** Which of the caller's lists each requested item belongs to. Powers the
@@ -341,8 +354,8 @@ class ChinoApi(private val http: HttpClient) {
     }
 
     suspend fun getLikes(): UserFlagList = http.get("v1/me/likes").body()
-    suspend fun addLike(id: String) { http.put("v1/me/likes/$id") }
-    suspend fun removeLike(id: String) { http.delete("v1/me/likes/$id") }
+    suspend fun addLike(id: String, bearer: String? = null) { http.put("v1/me/likes/$id") { bearer?.let { asAccount(it) } } }
+    suspend fun removeLike(id: String, bearer: String? = null) { http.delete("v1/me/likes/$id") { bearer?.let { asAccount(it) } } }
 
     suspend fun seriesEpisodes(id: String): SeriesEpisodes =
         http.get("v1/series/$id/episodes").body()
@@ -435,8 +448,8 @@ class ChinoApi(private val http: HttpClient) {
 
     /** GET /v1/notices: `{notices, unread, available}`, a 200 whether or not
      *  portal-api answered — [cloud.nalet.chino.mobile.data.notices.noticesAnswer]
-     *  reads it. The bearer is loaded afresh first ([forgetBearer]), as for
-     *  [deleteMe]: what a person was told is theirs, so the list is asked for
+     *  reads it. The bearer is loaded afresh first ([forgetBearer]): what a
+     *  person was told is theirs, so the list is asked for
      *  with the bearer of the account signed in now — on a switch, never the
      *  one signed in before it. */
     suspend fun notices(): JsonElement {
