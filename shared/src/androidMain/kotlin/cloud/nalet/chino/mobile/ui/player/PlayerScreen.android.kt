@@ -1200,7 +1200,7 @@ private fun PlaybackSurface(
     val streamClient = remember {
         cloud.nalet.chino.mobile.data.api.SharedConnections.client.newBuilder()
             .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            // 120s (was 45s): under nas001 NFS read contention a single packaged
+            // 120s (was 45s): under read contention on the media's NFS share a single packaged
             // segment can stall well past 45s; the short timeout ABORTED the fetch
             // (SocketTimeoutException) so the buffer never filled and playback
             // rebuffered. Let the slow segment complete — same fix as chino-androidtv.
