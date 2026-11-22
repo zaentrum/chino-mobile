@@ -35,12 +35,11 @@ builds one when started by hand, with the keystore held as repository secrets.
 ## Test
 
 ```sh
-bash scripts/check-neutrality.sh
 ./gradlew :shared:testDebugUnitTest
 ```
 
-`.github/workflows/ci.yml` runs these on every push and pull request (jobs
-`neutrality` and `android-build`), then builds the debug APK. The Gradle task
+`.github/workflows/ci.yml` runs it on every push and pull request (job
+`android-build`), then builds the debug APK. The Gradle task
 runs `shared/src/commonTest` and `shared/src/androidUnitTest` on the JVM, with
 no device and no server: chino-api's answers come from a Ktor `MockEngine`
 (`FakeServer`), the download tests stand up an OkHttp `MockWebServer`, and most
@@ -93,8 +92,5 @@ against; `FakeServer` serves the tests only.
 
 ## Before a pull request
 
-`bash scripts/check-neutrality.sh` is the workflow's `neutrality` job: it fails
-on an internal hostname, another media product's name or acquisition words in
-every tracked text file, this one included, but `LICENSE` and the script
-itself, which lists the patterns it bans; binary files are skipped. It reads
-tracked files only, so a new file counts once it is added to git.
+The organisation's shared check, the workflow's `neutrality-shared` job, is the
+one neutrality check.

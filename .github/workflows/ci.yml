@@ -21,24 +21,6 @@ jobs:
     permissions:
       contents: read
     uses: zaentrum/.github/.github/workflows/neutrality.yml@v1
-    with:
-      exceptions: |
-        scripts/check-neutrality.sh  holds the older neutrality check until the shared check replaces it
-
-  # Fails the build if any internal hostname, other media product's name, or
-  # content-acquisition vocabulary leaks into the public tree. This client is a
-  # neutral, bring-your-own-server app for the zaentrum platform; product names
-  # (chino / musig / tv) and the reverse-DNS app ids (io.github.zaentrum.chino,
-  # cloud.nalet.chino.*) are stable identifiers and are intentionally allowed.
-  # The rules and their self-test live in scripts/check-neutrality.sh, which
-  # runs the same way locally.
-  neutrality:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Neutrality guard
-        run: bash scripts/check-neutrality.sh
 
   # Runs the shared unit tests (commonTest on the JVM) and builds the
   # installable debug APK on every push. iOS is not built here (the App Store
@@ -137,7 +119,7 @@ jobs:
   # number, which may lie below Play's.
   android-release:
     runs-on: ubuntu-latest
-    needs: [neutrality, android-build, check-secrets]
+    needs: [android-build, check-secrets]
     if: ${{ github.event_name == 'workflow_dispatch' && needs.check-secrets.outputs.has_keystore == 'true' }}
     steps:
       - uses: actions/checkout@v4
