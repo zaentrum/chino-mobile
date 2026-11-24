@@ -198,6 +198,23 @@ the phone and a quality switch fit the same.
   where it was. A pinch is the picture's once it starts - a pinch begun on the
   seek bar never seeks - and does nothing while a menu is open, upright, or
   where fill is fit (a picture of the screen's shape).
+- **Double tap** — two taps on the picture, the second within 0.3 seconds of
+  the first and in the same half of the player, skip 10 seconds: back in the
+  left half, forward in the right; the black beside the picture counts with
+  its half (`ui/player/DoubleTapSkip.kt`, `PictureTaps.kt`). Each further tap
+  in that half within 0.6 seconds of the last adds 10 seconds, and the player
+  seeks to the sum, counted from the place the first skip started at. The
+  mark, in the middle of that half, shows rewind or fast forward with the
+  seconds asked for, "−10 s" or "+30 s", and goes 0.6 seconds after the last
+  tap. Only a touch of one finger alone counts. Back never goes before the
+  start; forward stops a second before the end, and does nothing while the
+  title's length is not known. The controls
+  stay as they were, hidden or showing; a single tap wakes them once the 0.3
+  seconds a second tap may take have passed. A tap on the bars or on a button
+  is no part of a double tap; nor is any tap while a menu is open or a card
+  shows over the picture (up next), which does at once what a single tap
+  does. With TalkBack on nothing is skipped: the seek bar's steps of 10
+  seconds are the way.
 - **Screen reader** — where a pinch would zoom, TalkBack finds the picture,
   named by the title playing, with one action: "zoom to fill", or "zoom to
   fit" while it fills the screen. It does what a pinch does, and keeps the

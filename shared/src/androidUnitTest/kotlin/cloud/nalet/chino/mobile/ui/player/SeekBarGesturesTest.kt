@@ -26,9 +26,9 @@ import kotlin.test.assertTrue
 
 /**
  * The player's own seek bar (Scrubber) under the player's gestures, stacked
- * as PlaybackSurface stacks them: the tap that wakes the controls and the
- * pinch of the picture on the screen, the controls' tap absorber over the
- * whole of it, the bar at its bottom. A pinch begun on the bar zooms the
+ * as PlaybackSurface stacks them: the picture's taps and the pinch of the
+ * picture on the screen, the controls over it, and at their bottom the bar,
+ * in a strip that keeps its own taps. A pinch begun on the bar zooms the
  * picture and never seeks; a tap on the bar seeks there, a drag along it
  * where the finger lets go.
  */
@@ -51,13 +51,19 @@ class SeekBarGesturesTest {
                 modifier = Modifier
                     .size(800.dp, 360.dp)
                     .testTag("player")
-                    .pointerInput(Unit) { detectTapGestures(onTap = { }) }
+                    .pictureTaps { _, _, _ -> }
                     .pointerInput(Unit) {
                         detectPinch(mayBegin = { true }, onBegin = { pinches++ }, onSpread = { }, onEnd = { })
                     },
             ) {
-                Box(modifier = Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = { }) }) {
-                    Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().testTag("bar")) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .testTag("bar")
+                            .pointerInput(Unit) { detectTapGestures(onTap = { }) },
+                    ) {
                         Scrubber(
                             positionMs = 1_000_000L,
                             durationMs = 6_000_000L,

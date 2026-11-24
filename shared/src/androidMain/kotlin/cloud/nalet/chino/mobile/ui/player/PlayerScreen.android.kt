@@ -194,6 +194,10 @@ import kotlin.math.roundToLong
  * Auto-hide: 4 s playing / 8 s paused; suppressed while user is scrubbing,
  * dragging volume, or a popover is open (any → keep visible).
  *
+ * The picture: a tap wakes the controls; two taps in the player's left or
+ * its right half skip 10 seconds back or forward, with their mark, and leave
+ * the controls as they were ([DoubleTapSkips], [pictureTaps]).
+ *
  * Fullscreen: WindowInsetsControllerCompat hide(systemBars); restored
  * on DisposableEffect.onDispose so back-nav doesn't leak the immersive flag.
  * On a phone a title opens sideways, the fullscreen button turns the player
@@ -1398,6 +1402,12 @@ private fun PlaybackSurface(
     var playbackSpeed by remember { mutableStateOf(1f) }
     // A large screen's fullscreen: the system bars hidden upright too.
     var fullscreen by remember { mutableStateOf(false) }
+    // A double tap's seek is under way on a title that plays: the player
+    // loads for a moment and says it is not playing. Until it plays again
+    // the controls' clock still reads "playing", so the seek neither shows
+    // the controls nor starts their time anew - a double tap leaves them as
+    // they were.
+    var skipSettling by remember { mutableStateOf(false) }
 
     // Re-apply the user's playback prefs to the freshly built player after a
     // quality switch. The player instance is rebuilt (remember(activeMasterUrl))
@@ -1450,6 +1460,7 @@ private fun PlaybackSurface(
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(p: Boolean) {
                 isPlaying = p
+                if (p) skipSettling = false
                 // An extra's one trailer_play: the extra, and that it played
                 // from this server.
                 if (p && state.playerMode.trailerPlay && !trailerPlaySent) {
@@ -1462,9 +1473,15 @@ private fun PlaybackSurface(
                 }
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
+                // The title ended or stopped: no double tap's seek settles.
+                if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) skipSettling = false
                 // An extra closes at its end; a title stays there (the
                 // up-next countdown, the chrome).
                 if (playbackState == Player.STATE_ENDED && state.playerMode.closesAtEnd) onEnded()
+            }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // Paused: nothing settles into playing.
+                if (!playWhenReady) skipSettling = false
             }
             override fun onTracksChanged(t: Tracks) {
                 audioTracks = collectAudioTracks(t, state.info?.audioTracks.orEmpty())
@@ -1781,10 +1798,12 @@ private fun PlaybackSurface(
     var lastInteraction by remember { mutableStateOf(cloud.nalet.chino.mobile.currentTimeMillis()) }
     val noteInteraction: () -> Unit = { lastInteraction = cloud.nalet.chino.mobile.currentTimeMillis() }
     val screenReaderOnControls = screenReaderFocus != ScreenReaderFocus.None
-    LaunchedEffect(lastInteraction, isPlaying, scrubbing, volumeDragging, openPopover, screenReaderOnControls) {
+    // Playing, for the controls: also while a double tap's seek settles.
+    val playingForControls = isPlaying || skipSettling
+    LaunchedEffect(lastInteraction, playingForControls, scrubbing, volumeDragging, openPopover, screenReaderOnControls) {
         chromeVisible = true
         val grace = controlsHideAfterMs(
-            playing = isPlaying,
+            playing = playingForControls,
             dragging = scrubbing || volumeDragging,
             menuOpen = openPopover != OpenPopover.NONE,
             screenReaderOnThem = screenReaderOnControls,
@@ -1989,28 +2008,60 @@ private fun PlaybackSurface(
     val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
     val cutoutSide = maxOf(cutout.getLeft(density, layoutDirection), cutout.getRight(density, layoutDirection), 0).toFloat()
 
+    // A single tap on the picture is ONLY a wake gesture. When chrome is
+    // hidden, the tap brings it back. When visible, the auto-hide timer
+    // handles dismissal, and the tap does nothing, as before: a tap on the
+    // picture does not hide the controls yet.
+    val wakeControls: () -> Unit = {
+        if (!chromeVisible) {
+            chromeVisible = true
+            noteInteraction()
+        }
+    }
+    // Two taps in one half of the player - the black beside the picture
+    // counts with its half - skip 10 seconds, back in the left half and
+    // forward in the right, more taps adding up, with their mark
+    // (DoubleTapSkips). A single tap waits out the time a second one may
+    // take, then wakes the controls.
+    val pictureTaps = rememberPictureTaps()
+    val accessibility = remember(context) {
+        context.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    // Tap-to-toggle is ONLY a wake gesture. When chrome
-                    // is hidden, tap brings it back. When visible, the
-                    // auto-hide timer handles dismissal — don't toggle
-                    // off on tap, because empty-space taps between
-                    // buttons (or near chrome backgrounds) were
-                    // accidentally dismissing the chrome mid-interaction,
-                    // making popover buttons appear to do nothing.
-                    if (!chromeVisible) {
-                        chromeVisible = true
-                        noteInteraction()
-                    } else {
-                        // Bump the timer so any chrome interaction resets
-                        // the auto-hide clock.
-                        noteInteraction()
-                    }
-                })
+            .pictureTaps { atMs, rightHalf, oneFinger ->
+                pictureTaps.tap(
+                    atMs = atMs,
+                    forward = rightHalf,
+                    positionMs = player.currentPosition.coerceAtLeast(0L),
+                    // The title's length, the player's or the play info's;
+                    // 0 while neither knows it: forward does nothing then.
+                    durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: state.info?.durationMs ?: 0L,
+                    // Only one finger alone, from down to up. Not with a
+                    // screen reader on - a double tap is its own gesture,
+                    // for pressing what has its focus - nor while a menu is
+                    // open or a card shows over the picture (up next, the
+                    // next episode's): a tap is that part's then, beside it
+                    // too. Else it does at once what a single tap does.
+                    offered = doubleTapOffered(
+                        oneFingerAlone = oneFinger,
+                        screenReaderOn = accessibility?.isTouchExplorationEnabled == true,
+                        menuOpen = openPopover != OpenPopover.NONE && openPopover != OpenPopover.VOLUME,
+                        cardShown = state.nextEpisodeId != null && (activePreviewSegment != null || autoNextSec != null),
+                    ),
+                    onSingleTap = wakeControls,
+                    onSkip = { toMs ->
+                        // The controls stay as they were: hidden, they stay
+                        // hidden while the seek loads (skipSettling); where
+                        // they show, their time to hide starts again.
+                        if (player.isPlaying) skipSettling = true
+                        seekTo(toMs)
+                        if (chromeVisible) noteInteraction()
+                    },
+                )
             }
             // Two fingers zoom the picture, from fit to fill and back, the
             // picture following them; let go, it settles at fill if they
@@ -2119,6 +2170,8 @@ private fun PlaybackSurface(
                 }
             },
         )
+        // A double tap's mark, in the middle of the half that was tapped.
+        SkipMarkOverlay(mark = pictureTaps.mark)
         AnimatedVisibility(visible = chromeVisible, enter = fadeIn(), exit = fadeOut()) {
             Chrome(
                 state = state,
@@ -2486,19 +2539,13 @@ private fun Chrome(
     // fill the full screen, including under the bars. When fullscreen
     // is on, ImmersiveFullscreenEffect hides the bars so the insets
     // resolve to 0 and chrome rides edge-to-edge.
-    // Stray-tap absorber: when Chrome is visible, taps on empty chrome
-    // backdrop (between buttons, gradient regions) used to fall through
-    // to the video-surface tap handler and toggle chrome OFF, making
-    // popover buttons appear inert. This intercepts taps on the Chrome
-    // overlay so only intentional button taps (which have their own
-    // clickable) propagate further.
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = { /* absorb */ })
-            },
-    ) {
+    // Stray-tap absorbers: a tap on a bar's backdrop (between its buttons,
+    // on its gradient) is the bar's own and does nothing. It never falls
+    // through to the picture, where it would count towards a double tap.
+    // The top bar and the bottom strip each take theirs (ownTaps); between
+    // the two the picture's taps are the picture's, while the controls show
+    // too.
+    Box(modifier = Modifier.fillMaxSize()) {
         TopBar(
             title = state.title,
             onBack = onBack,
@@ -2507,10 +2554,10 @@ private fun Chrome(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .ownTaps(),
         ) {
-            // Gradient sits BEHIND the controls so taps on the empty
-            // area still toggle chrome.
+            // Gradient sits BEHIND the controls.
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -2673,7 +2720,7 @@ private fun Chrome(
 
 @Composable
 private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth()) {
+    Box(modifier = Modifier.fillMaxWidth().ownTaps()) {
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -2737,6 +2784,11 @@ private fun TopBar(title: String, onBack: () -> Unit, onHome: () -> Unit) {
         }
     }
 }
+
+/** The taps on a bar of the controls, between its buttons too: the bar's
+ *  own, which do nothing, and never the picture's - no double tap begins
+ *  there. */
+private fun Modifier.ownTaps(): Modifier = pointerInput(Unit) { detectTapGestures(onTap = { }) }
 
 /** The seek bar's track not played yet, and what is buffered of it: solid
  *  greys, so the bar reads the same over a bright picture as over a dark one

@@ -308,3 +308,11 @@ public val Lucide.Puzzle: ImageVector
 private var _checkCheck: ImageVector? = null
 public val Lucide.CheckCheck: ImageVector
     get() = _checkCheck ?: lucide("CheckCheck", listOf("M18 6 7 17l-5-5", "m22 10-7.5 7.5L13 16")).also { _checkCheck = it }
+
+private var _fastForward: ImageVector? = null
+public val Lucide.FastForward: ImageVector
+    get() = _fastForward ?: lucide("FastForward", listOf("M12 6a2 2 0 0 1 3.414-1.414l6 6a2 2 0 0 1 0 2.828l-6 6A2 2 0 0 1 12 18z", "M2 6a2 2 0 0 1 3.414-1.414l6 6a2 2 0 0 1 0 2.828l-6 6A2 2 0 0 1 2 18z")).also { _fastForward = it }
+
+private var _rewind: ImageVector? = null
+public val Lucide.Rewind: ImageVector
+    get() = _rewind ?: lucide("Rewind", listOf("M12 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 12 18z", "M22 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 22 18z")).also { _rewind = it }

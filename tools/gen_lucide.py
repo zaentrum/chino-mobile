@@ -30,6 +30,8 @@ ICONS = {
  "Clapperboard":"clapperboard","LayoutGrid":"layout-grid","Server":"server","Boxes":"boxes",
  "Globe":"globe","Wrench":"wrench","FileText":"file-text","Image":"image","ListVideo":"list-video",
  "Users":"users","Database":"database","Puzzle":"puzzle","CheckCheck":"check-check",
+ # The mark of a double tap on the player's picture.
+ "FastForward":"fast-forward","Rewind":"rewind",
 }
 BASE="https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/{}.svg"
 
