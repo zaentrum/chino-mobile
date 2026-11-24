@@ -9,8 +9,9 @@ import kotlin.test.assertTrue
 /**
  * Which way the phone app's player stands after each thing that happens to
  * it (section 11.4.3 of the specification): fullscreen and exit fullscreen
- * (change 11.C8), the phone turned, the player left - on a phone and on a
- * large screen, with the phone's own setting for turning on and off.
+ * (change 11.C8), a title opened and the next episode (change 11.C53), the
+ * phone turned, the player left - on a phone and on a large screen, with the
+ * phone's own setting for turning on and off.
  */
 class PlayerStandTest {
     private val withThePhone = PlayerStand.WithThePhone
@@ -23,6 +24,62 @@ class PlayerStandTest {
     private fun PlayerStand.fullscreen() = afterFullscreenButton(standsSideways = false, phone = true)
 
     private fun PlayerStand.exitFullscreen() = afterFullscreenButton(standsSideways = true, phone = true)
+
+    @Test
+    fun change11_C53_onAPhoneATitleOpensSidewaysWhateverThePhonesSettingSays() {
+        val stand = playerStandAsOpened(phone = true)
+
+        assertEquals(PlayerStand.Sideways, stand)
+        // Sideways is asked of the system as such: the phone's setting for
+        // turning has no say in it, and either sideways position is right.
+        assertEquals(ScreenTurn.Sideways, turnAsked(stand))
+        // However the phone is held: upright still, the player stays sideways.
+        assertEquals(ScreenTurn.Sideways, turnAsked(stand.held(sideways = false)))
+        assertEquals(ScreenTurn.Sideways, turnAsked(stand.held(sideways = false, turnsApps = false)))
+    }
+
+    @Test
+    fun change11_C53_onceThePhoneHasBeenTurnedSidewaysThePlayerTurnsWithIt() {
+        val followed = playerStandAsOpened(phone = true).held(sideways = true)
+        assertEquals(ScreenTurn.Sideways, turnAsked(followed))
+
+        // Turned back upright: upright, the phone's to turn from here on.
+        assertEquals(withThePhone, followed.held(sideways = false))
+    }
+
+    @Test
+    fun change11_C53_whereThePhonesSettingHoldsAppsUprightTheButtonsAreTheWay() {
+        // Opened, the phone turned to follow and turned back: nothing changes.
+        val sideways = playerStandAsOpened(phone = true).held(sideways = true, turnsApps = false).held(sideways = false, turnsApps = false)
+        assertEquals(ScreenTurn.Sideways, turnAsked(sideways))
+
+        val upright = sideways.exitFullscreen()
+        assertEquals(ScreenTurn.Upright, turnAsked(upright.held(sideways = false, turnsApps = false).held(sideways = true, turnsApps = false)))
+        assertEquals(ScreenTurn.Sideways, turnAsked(upright.fullscreen()))
+    }
+
+    @Test
+    fun change11_C53_aTitleStartedFromThePlayerKeepsTheWayThePlayerStands() {
+        // The next episode: upright after exit fullscreen, sideways as
+        // opened, with the phone - whichever it was.
+        PlayerStand.entries.forEach { stand ->
+            assertEquals(stand, playerStandAsOpened(phone = true, keeps = stand), "the next episode from $stand")
+        }
+    }
+
+    @Test
+    fun change11_C53_aLargeScreenOpensAsItIsHeld() {
+        assertEquals(withThePhone, playerStandAsOpened(phone = false))
+        assertEquals(ScreenTurn.AsTheApp, turnAsked(playerStandAsOpened(phone = false)))
+        // Also a phone unfolded to a tablet's size between two episodes.
+        assertEquals(withThePhone, playerStandAsOpened(phone = false, keeps = PlayerStand.Sideways))
+    }
+
+    @Test
+    fun change11_C53_leavingThePlayerGivesTheAppBackAsItWas() {
+        assertEquals(ScreenTurn.Sideways, turnAsked(playerStandAsOpened(phone = true)))
+        assertEquals(ScreenTurn.AsTheApp, turnAsked(null))
+    }
 
     @Test
     fun change11_C8_uprightFullscreenTurnsThePlayerSideways() {

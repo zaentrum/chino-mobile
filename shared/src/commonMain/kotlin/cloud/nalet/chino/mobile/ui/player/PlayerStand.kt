@@ -3,10 +3,11 @@ package cloud.nalet.chino.mobile.ui.player
 /*
  * The way the phone app's player stands on the screen, upright or sideways
  * (section 11.4.3 of the specification): pure, so the tests pin how it stands
- * after each thing that happens to it - fullscreen and exit fullscreen, the
- * phone turned, on a phone and on a large screen, with the phone's own
- * setting for turning on and off - and the Android player only passes on
- * what the stand asks of the system.
+ * after each thing that happens to it - a title opened, fullscreen and exit
+ * fullscreen, the phone turned, the next episode, the player left, on a
+ * phone and on a large screen, with the phone's own setting for turning on
+ * and off - and the Android player only passes on what the stand asks of the
+ * system.
  */
 
 /** From this smallest width of the screen on, in dp, the app is on a large
@@ -26,9 +27,10 @@ enum class PlayerStand {
      *  turns with the phone where the phone's own setting lets apps turn. */
     WithThePhone,
 
-    /** Turned sideways by the player - fullscreen was pressed - however the
-     *  phone is held and whatever its setting says. The phone has not been
-     *  turned sideways since: the person turns it to follow. */
+    /** Turned sideways by the player - a title opened, or fullscreen was
+     *  pressed - however the phone is held and whatever its setting says.
+     *  The phone has not been turned sideways since: the person turns it to
+     *  follow. */
     Sideways,
 
     /** Sideways as [Sideways], and the phone has been turned sideways too:
@@ -63,6 +65,19 @@ fun turnAsked(stand: PlayerStand?): ScreenTurn = when (stand) {
     null, PlayerStand.WithThePhone -> ScreenTurn.AsTheApp
     PlayerStand.Sideways, PlayerStand.SidewaysFollowed -> ScreenTurn.Sideways
     PlayerStand.Upright, PlayerStand.UprightFollowed -> ScreenTurn.Upright
+}
+
+/**
+ * The stand as a title opens. On a [phone] a title opens sideways and full
+ * screen, however the phone is held and whatever the phone's own setting for
+ * turning says. A title that starts from the player itself - the next
+ * episode among them - keeps the way the player stands at that moment
+ * ([keeps]). On a large screen a title opens as the device is held.
+ */
+fun playerStandAsOpened(phone: Boolean, keeps: PlayerStand? = null): PlayerStand = when {
+    !phone -> PlayerStand.WithThePhone
+    keeps != null -> keeps
+    else -> PlayerStand.Sideways
 }
 
 /**

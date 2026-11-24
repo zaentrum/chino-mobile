@@ -219,18 +219,22 @@ the phone and a quality switch fit the same.
 - **Downloads** — the play info a download keeps (`title.json`) has the
   picture area, so a downloaded title fits the same without the server.
 
-On an Android phone the fullscreen button turns the player
-(`ui/player/PlayerStand.kt`). Upright, it turns the player sideways and full
-screen, however the phone is held and whatever its auto-rotate setting says;
-once the phone has been turned to follow, the player turns with the phone
-again, and turned back upright it leaves full screen. Held sideways, however
-it got there, the button is exit fullscreen and turns the player upright,
-where it stays until the phone is turned sideways again or fullscreen is
-pressed. Where the phone's setting holds apps upright, turning the phone
-changes nothing, and the buttons are the way. Leaving the player gives the
-app back as it was. A large screen (smallest width 600 dp and up) is not
-turned - Android 16 ignores the request there for an app targeting API 36 -
-and its button hides the system bars upright, as before.
+On an Android phone a title opens sideways and full screen, however the
+phone is held and whatever its auto-rotate setting says, either way round
+(`ui/player/PlayerStand.kt`); it starts without waiting for the turn. Once
+the phone has been turned sideways too, the player turns with the phone:
+turned back upright it leaves full screen. The fullscreen button turns the
+player the same way: upright, it turns it sideways and full screen. Held
+sideways, however it got there, the button is exit fullscreen and turns the
+player upright, where it stays until the phone is turned sideways again or
+fullscreen is pressed. Where the phone's setting holds apps upright, turning
+the phone changes nothing, and the buttons are the way. A title started from
+the player - the next episode, try again - keeps the way the player stands,
+and leaving the player gives the app back as it was. A title that goes to a
+TV as it opens does not turn the phone. A large screen (smallest width 600 dp
+and up) opens as it is held and is not turned - Android 16 ignores the
+request there for an app targeting API 36 - and its button hides the system
+bars upright, as before.
 
 Zap's cards start on the master's first variant and the audio it starts
 with — what chino-stream lists first for the device's caps, and warms — and

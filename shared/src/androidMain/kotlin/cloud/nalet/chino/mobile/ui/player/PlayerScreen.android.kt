@@ -196,9 +196,9 @@ import kotlin.math.roundToLong
  *
  * Fullscreen: WindowInsetsControllerCompat hide(systemBars); restored
  * on DisposableEffect.onDispose so back-nav doesn't leak the immersive flag.
- * On a phone the fullscreen button turns the player sideways, and exit
- * fullscreen upright ([PlayerStand], [rememberPlayerStand]); sideways the
- * bars hide.
+ * On a phone a title opens sideways, the fullscreen button turns the player
+ * sideways, and exit fullscreen upright ([PlayerStand],
+ * [rememberPlayerStand]); sideways the bars hide.
  *
  * Extra mode ([extraId], [PlayerMode.Extra]): one of the title's extras — its
  * trailer — in this same player, chrome, menus and gestures: its master from
@@ -215,6 +215,12 @@ actual class PlayerScreen actual constructor(
     private val extraId: String?,
 ) : Screen {
     override val key: ScreenKey = uniqueScreenKey
+
+    /** The stand of the player this title was started from - its next
+     *  episode, say - which it keeps ([PlayerStandHold.passOn]). Not saved
+     *  with the screen: a title the system restores opens anew. */
+    @Transient
+    internal var startedFrom: PlayerStandHold? = null
 
     @Composable
     actual override fun Content() {
@@ -255,10 +261,14 @@ actual class PlayerScreen actual constructor(
         BackHandler(enabled = true, onBack = close)
         // The player's black edge to edge, the display cutout's strip too.
         PlayerWindowEffect()
-        // The way the player stands, upright or sideways: a phone's
-        // fullscreen button turns it, and leaving the player gives the app
-        // back as it was (PlayerStand).
-        val stand = rememberPlayerStand()
+        // The way the player stands, upright or sideways: on a phone a
+        // title opens sideways, the fullscreen button turns it, and leaving
+        // the player gives the app back as it was (PlayerStand). A title
+        // started from another player keeps that one's stand. One that goes
+        // to the TV as it opens - a device is connected - plays there, and
+        // the phone is not turned for it, unless it plays here after all
+        // (PlaybackSurface).
+        val stand = rememberPlayerStand(startedFrom = startedFrom, opens = remember { !ChinoCast.castingNow() })
 
         var ready: PlayState? by remember { mutableStateOf(null) }
         // Stopped for good, and why (PlaybackFailure.kt); "try again" starts
@@ -649,8 +659,9 @@ actual class PlayerScreen actual constructor(
                 onHome = { nav.replaceAll(MainShellScreen()) },
                 onSwitchItem = { newId ->
                     // Replace this player screen with the new one so back
-                    // doesn't pile up sibling episodes in the stack.
-                    nav.replace(PlayerScreen(itemId = newId, fromStart = true))
+                    // doesn't pile up sibling episodes in the stack. A title
+                    // started from the player keeps the way it stands.
+                    nav.replace(PlayerScreen(itemId = newId, fromStart = true).also { it.startedFrom = stand.passOn() })
                 },
                 onPlaybackError = { stop = it },
                 // The stream token signed anew: the session's links with it,
@@ -1150,7 +1161,8 @@ private fun PlaybackSurface(
      *  are written for it alone, none once another account is signed in;
      *  null, nobody was: none. */
     openedFor: String?,
-    /** The way the player stands: a phone's fullscreen button turns it. */
+    /** The way the player stands: a title opens sideways on a phone, and
+     *  the phone's fullscreen button turns it. */
     stand: PlayerStandHold,
     onBack: () -> Unit,
     onHome: () -> Unit,
@@ -1756,6 +1768,10 @@ private fun PlaybackSurface(
     val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val phone = isPhoneScreen(LocalConfiguration.current.smallestScreenWidthDp)
     ImmersiveFullscreenEffect(active = playerHidesSystemBars(fullscreen = fullscreen && !phone, landscape = landscape))
+    // The title plays on this screen: it has opened here - also one that
+    // went to the TV first and stands here again. One opened here before
+    // keeps the way the player stands.
+    LaunchedEffect(stand) { stand.titleOpens(phone) }
 
     // Auto-hide chrome — bumped on any interaction, suppressed while user
     // is dragging anything, a popover is open, or TalkBack's focus is on a

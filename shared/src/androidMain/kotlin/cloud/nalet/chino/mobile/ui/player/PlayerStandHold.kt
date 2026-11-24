@@ -39,18 +39,46 @@ internal class PlayerStandHold {
     /** What the Activity asked of the system before the player. */
     private var askedBefore: Int? = null
 
+    /** Whether a title has opened in this player: the titles started from
+     *  it keep the way it stands. */
+    private var opened = false
+
+    /** Whether the stand goes on with the title started from this player
+     *  ([passOn]). */
+    private var passedOn = false
+
     /** The player shows on [activity] (null where there is none: a preview). */
     fun attach(activity: Activity?) {
         this.activity = activity
+        passedOn = false
         if (askedBefore == null) askedBefore = activity?.requestedOrientation
         ask(turnAsked(stand))
     }
 
-    /** The player was left: the app as it was. */
+    /** The player's screen went. The player was left: the app as it was.
+     *  Its stand went on with the title started from it ([passOn]): the
+     *  screen stays as it stands. */
     fun leave() {
-        ask(turnAsked(null))
+        if (!passedOn) {
+            ask(turnAsked(null))
+            askedBefore = null
+        }
         activity = null
-        askedBefore = null
+    }
+
+    /** A title opens in the player: the first sideways on a phone, one
+     *  started from the player itself as the player stands
+     *  ([playerStandAsOpened]). */
+    fun titleOpens(phone: Boolean) {
+        stands(playerStandAsOpened(phone, keeps = stand.takeIf { opened }))
+        opened = true
+    }
+
+    /** The stand for the title started from this player - its next episode,
+     *  say - which keeps it: this screen leaves the Activity as it stands. */
+    fun passOn(): PlayerStandHold {
+        passedOn = true
+        return this
     }
 
     /** fullscreen or exit fullscreen was pressed, the player standing
@@ -82,27 +110,31 @@ internal class PlayerStandHold {
 
 /**
  * The player's stand, kept for as long as the player's screen shows
- * ([PlayerStandHold]). While the player has turned itself sideways or
- * upright, the phone's sensor says how the phone is held, so that the player
- * turns with the phone again once the phone has followed it
- * ([afterPhoneHeld]) - read only then, and only while the app is in front.
- * Whether the phone lets apps turn is its own auto-rotate setting, read as
- * the phone is turned.
+ * ([PlayerStandHold]): its own, or the one of the player this title was
+ * started from ([startedFrom]), which it keeps. Where the title [opens] on
+ * this screen it opens with the screen ([PlayerStandHold.titleOpens]); one
+ * that goes to a TV first opens here only if it plays here after all. While
+ * the player has turned itself sideways or upright, the phone's sensor says
+ * how the phone is held, so that the player turns with the phone again once
+ * the phone has followed it ([afterPhoneHeld]) - read only then, and only
+ * while the app is in front. Whether the phone lets apps turn is its own
+ * auto-rotate setting, read as the phone is turned.
  */
 @Composable
-internal fun rememberPlayerStand(): PlayerStandHold {
-    val hold = remember { PlayerStandHold() }
-    PlayerStandEffect(hold)
+internal fun rememberPlayerStand(startedFrom: PlayerStandHold? = null, opens: Boolean = true): PlayerStandHold {
+    val hold = remember { startedFrom ?: PlayerStandHold() }
+    PlayerStandEffect(hold, opens)
     return hold
 }
 
 @Composable
-private fun PlayerStandEffect(hold: PlayerStandHold) {
+private fun PlayerStandEffect(hold: PlayerStandHold, opens: Boolean) {
     val context = LocalContext.current
     val view = LocalView.current
     val phone = isPhoneScreen(LocalConfiguration.current.smallestScreenWidthDp)
     DisposableEffect(context) {
         hold.attach(context.findActivity())
+        if (opens) hold.titleOpens(phone)
         onDispose { hold.leave() }
     }
     LaunchedEffect(phone) { hold.onScreen(phone) }
