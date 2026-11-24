@@ -196,6 +196,9 @@ import kotlin.math.roundToLong
  *
  * Fullscreen: WindowInsetsControllerCompat hide(systemBars); restored
  * on DisposableEffect.onDispose so back-nav doesn't leak the immersive flag.
+ * On a phone the fullscreen button turns the player sideways, and exit
+ * fullscreen upright ([PlayerStand], [rememberPlayerStand]); sideways the
+ * bars hide.
  *
  * Extra mode ([extraId], [PlayerMode.Extra]): one of the title's extras — its
  * trailer — in this same player, chrome, menus and gestures: its master from
@@ -252,6 +255,10 @@ actual class PlayerScreen actual constructor(
         BackHandler(enabled = true, onBack = close)
         // The player's black edge to edge, the display cutout's strip too.
         PlayerWindowEffect()
+        // The way the player stands, upright or sideways: a phone's
+        // fullscreen button turns it, and leaving the player gives the app
+        // back as it was (PlayerStand).
+        val stand = rememberPlayerStand()
 
         var ready: PlayState? by remember { mutableStateOf(null) }
         // Stopped for good, and why (PlaybackFailure.kt); "try again" starts
@@ -634,6 +641,7 @@ actual class PlayerScreen actual constructor(
                 state = ready!!,
                 itemId = itemId,
                 openedFor = openedFor,
+                stand = stand,
                 onBack = close,
                 // Home: reset the stack to the signed-in shell root. Same idiom
                 // the auth/profile flows use (replaceAll(MainShellScreen())),
@@ -1142,6 +1150,8 @@ private fun PlaybackSurface(
      *  are written for it alone, none once another account is signed in;
      *  null, nobody was: none. */
     openedFor: String?,
+    /** The way the player stands: a phone's fullscreen button turns it. */
+    stand: PlayerStandHold,
     onBack: () -> Unit,
     onHome: () -> Unit,
     onSwitchItem: (String) -> Unit,
@@ -1374,6 +1384,7 @@ private fun PlaybackSurface(
     var muted by remember { mutableStateOf(false) }
     var volume by remember { mutableStateOf(1f) }
     var playbackSpeed by remember { mutableStateOf(1f) }
+    // A large screen's fullscreen: the system bars hidden upright too.
     var fullscreen by remember { mutableStateOf(false) }
 
     // Re-apply the user's playback prefs to the freshly built player after a
@@ -1738,9 +1749,13 @@ private fun PlaybackSurface(
 
     // Held sideways the picture fills the screen, and the status bar would
     // sit over its top: the system bars hide, as in fullscreen, and a swipe
-    // from the edge brings them back for a moment.
+    // from the edge brings them back for a moment. A phone's fullscreen
+    // button turns the player sideways (PlayerStand) and hides nothing
+    // upright; a large screen's hides the bars upright too, as before - the
+    // system does not let the app turn it.
     val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    ImmersiveFullscreenEffect(active = playerHidesSystemBars(fullscreen = fullscreen, landscape = landscape))
+    val phone = isPhoneScreen(LocalConfiguration.current.smallestScreenWidthDp)
+    ImmersiveFullscreenEffect(active = playerHidesSystemBars(fullscreen = fullscreen && !phone, landscape = landscape))
 
     // Auto-hide chrome — bumped on any interaction, suppressed while user
     // is dragging anything, a popover is open, or TalkBack's focus is on a
@@ -2100,7 +2115,9 @@ private fun PlaybackSurface(
                 muted = muted,
                 volume = volume,
                 captionsOn = subtitlesEnabled,
-                fullscreen = fullscreen,
+                // Sideways on a phone, however it got there, the button is
+                // exit fullscreen.
+                fullscreen = playerOffersExitFullscreen(phone = phone, standsSideways = landscape, barsHidden = fullscreen),
                 playbackSpeed = playbackSpeed,
                 openPopover = openPopover,
                 audioTracks = audioTracks,
@@ -2204,7 +2221,9 @@ private fun PlaybackSurface(
                     noteInteraction()
                 },
                 onToggleFullscreen = {
-                    fullscreen = !fullscreen
+                    // A phone's turns the player: sideways from upright,
+                    // upright from sideways.
+                    if (phone) stand.fullscreenPressed(standsSideways = landscape, phone = true) else fullscreen = !fullscreen
                     noteInteraction()
                 },
                 onPrevEpisode = state.prevEpisodeId?.let { id -> { onSwitchItem(id) } },

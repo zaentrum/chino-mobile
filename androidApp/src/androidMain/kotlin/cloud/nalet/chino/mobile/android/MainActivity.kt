@@ -1,5 +1,6 @@
 package cloud.nalet.chino.mobile.android
 
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
@@ -33,6 +34,17 @@ class MainActivity : FragmentActivity() {
             authEndpoint = discovered?.authEndpoint,
             tokenEndpoint = discovered?.tokenEndpoint,
         )
+        // The Activity starts by asking the system for no orientation of its
+        // own. Android keeps what an Activity last asked on the Activity's
+        // record in the system, not in the app's process, and nothing resets
+        // it when the process dies: after the system has killed the app with
+        // the player open, the Activity it brings back still asks for the
+        // player's sideways. The player's hold would take that for what the
+        // app asked before the player (PlayerStandHold) and give it back on
+        // leaving, so the whole app stayed sideways; Zap's portrait hold the
+        // same way, upright. Whatever holds the screen asks again as it is
+        // drawn.
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         setContent {
             App(
                 container = container,
