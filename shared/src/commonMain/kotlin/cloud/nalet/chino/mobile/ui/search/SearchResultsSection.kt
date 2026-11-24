@@ -88,9 +88,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * 250 ms so typing doesn't fire a request per keystroke.
  *
  * A "Cast & crew" people section — the people of the same answer, ranked
- * apart (GET /v1/people?q=… on an older server) — renders above the title
- * grid: name + "· N titles" + their portrait (initials without one). Tapping
- * a person opens the Person / Filmography surface.
+ * apart (GET /v1/people?q=… on an older server) — renders under the title
+ * grid, and at the top where only people match ([searchGroupOrder]): name +
+ * "· N titles" + their portrait (initials without one). Tapping a person
+ * opens the Person / Filmography surface.
  *
  * A search that finds no titles and no people shows what addons contribute
  * to the `search.empty` slot, the query carried as {q} ([ExtensionSlot]).
@@ -131,6 +132,10 @@ fun SearchResultsSection(
 
     val baseUrl = container.config.apiBaseUrl.trimEnd('/')
     val token = streamToken ?: ""
+    // Where cast & crew stands: under the titles, at the top where only
+    // people match, nowhere while nobody does (searchGroupOrder).
+    val castAndCrewAt = searchGroupOrder(titlesFound = (ui as? SearchState.Ready)?.items?.size, peopleFound = people.size)
+        .indexOf(SearchGroup.CastAndCrew)
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 168.dp),
@@ -139,9 +144,8 @@ fun SearchResultsSection(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        // Cast & crew — matching people above the title grid. Hidden when the
-        // people search returned nothing.
-        if (people.isNotEmpty()) {
+        // Cast & crew — the matching people, across the grid's width.
+        val castAndCrew = {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 PeopleSection(
                     people = people,
@@ -152,6 +156,7 @@ fun SearchResultsSection(
                 )
             }
         }
+        if (castAndCrewAt == 0) castAndCrew()
 
         item(span = { GridItemSpan(maxLineSpan) }) {
             val count = (ui as? SearchState.Ready)?.items?.size ?: 0
@@ -216,6 +221,7 @@ fun SearchResultsSection(
                 }
             }
         }
+        if (castAndCrewAt > 0) castAndCrew()
     }
 }
 
@@ -226,9 +232,10 @@ private sealed interface SearchState {
     data class Error(val failure: LoadFailure, val details: String? = null) : SearchState
 }
 
-/** "Cast & crew" — matching people, rendered above the title grid. Each row
- *  is the person's portrait (initials without one) + name + "· N titles",
- *  tappable to the Person surface. Server order is rendered as-is. */
+/** "Cast & crew" — matching people, rendered under the title grid, or at the
+ *  top where only people match. Each row is the person's portrait (initials
+ *  without one) + name + "· N titles", tappable to the Person surface. Server
+ *  order is rendered as-is. */
 @Composable
 private fun PeopleSection(
     people: List<Person>,
